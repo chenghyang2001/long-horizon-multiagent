@@ -1,0 +1,18 @@
+# 階段 3 控制政策：gate.py 每次工具呼叫前都讀這份檔
+# 改這裡就能改規則，不必改程式碼（對照 K142 IntentVerifier／CapabilityBudget）
+
+# 意圖合約：每個角色只能用清單上的工具，清單外一律 deny
+# host 是主持人自己（hook 輸入沒有 agent_type 時）
+roles:
+  host:       {tools: [Agent, Read, send_report]}
+  researcher: {tools: [WebSearch, Write]}
+  reviewer:   {tools: [Read]}
+
+# 權限預算：同一個 session 內，某角色某工具最多被 allow 幾次
+# 防止研究員無止境搜尋把時間與額度燒光
+budgets:
+  researcher:
+    WebSearch: 5
+
+# 一律要人工核准的動作（對外寄出是不可逆的，所以要人點頭）
+escalate: [send_report]
