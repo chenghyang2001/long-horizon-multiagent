@@ -73,9 +73,13 @@ PROTECTED_PATHS = (
     "{RUN}/logs/**",
     "{ENGINE}/**",
 )
-# 工作目錄的控制檔：寫得進去就能改 Claude 的權限設定、MCP 伺服器或 git hook，繞過 gate
-# 對 WORK 與 agent_cwd 都展開。gate 一律拒絕；config 只拒絕「明確指向」這些位置的 write（見 validate_protected）
-CONTROL_PATHS = ("{BASE}/.claude/**", "{BASE}/.mcp.json", "{BASE}/.git/**")
+# 工作目錄的控制檔：寫得進去就能改 Claude 的權限設定與記憶、MCP 伺服器或 git hook／設定，繞過 gate
+# 判斷方式：位於 WORK 或 agent_cwd 之下，且路徑中任何一段是 CONTROL_SEGMENTS（.git 可能是 worktree 的
+# gitdir 檔，所以 .git 本身與底下都算），或檔名是 CLAUDE.md／CLAUDE.local.md（任何子目錄、不分大小寫）。
+# gate 一律拒絕；config 只拒絕「明確指向」這些位置的 write（見 validate_protected）。CLAUDE.md 只能由人更新。
+CONTROL_SEGMENTS = frozenset({".git", ".gitmodules", ".gitattributes", ".claude", ".mcp.json"})
+CONTROL_FILENAMES = frozenset({"claude.md", "claude.local.md"})
+DRIVE_RE = re.compile(r"^[a-z]:$")
 
 # 站鏈階段與允許的站型；順序就是鏈的先後（規格 §9）
 CHAIN_ORDER = ("plan", "producer", "verify", "qa", "review", "finish")
@@ -201,6 +205,28 @@ def norm_text(text):
     return str(text).replace("\\", "/").lower()
 
 
+def windows_clean(path_text):
+    """照 Windows 的路徑語意正規化：每段結尾的「.」與空白會被系統忽略（.claude. 就是 .claude），
+    「檔名:串流」的替代資料串流指向同一個檔（.git::$DATA 就是 .git）。先轉小寫、反斜線轉 /。"""
+    parts = norm_text(path_text).split("/")
+    cleaned = []
+    for index, segment in enumerate(parts):
+        if not (index == 0 and DRIVE_RE.match(segment)):
+            segment = segment.split(":", 1)[0]
+            if segment not in (".", ".."):
+                segment = segment.rstrip(". ")
+        cleaned.append(segment)
+    return "/".join(cleaned)
+
+
+def is_control_relative(segments):
+    """相對於工作目錄的路徑段：任何一段是控制目錄／檔，或最後一段是 CLAUDE.md 類。"""
+    segments = [s for s in segments if s]
+    if not segments:
+        return False
+    return any(s in CONTROL_SEGMENTS for s in segments) or segments[-1] in CONTROL_FILENAMES
+
+
 def literal_prefix(pattern):
     """萬用字元之前的固定前綴；用來判斷兩個 glob 會不會涵蓋同一批檔案。"""
     cut = min((pattern.find(ch) for ch in WILDCARD_CHARS if ch in pattern), default=len(pattern))
@@ -314,23 +340,27 @@ class Config:
         return CHAIN_VERDICTS[station["chain"]]
 
     def protected_patterns(self):
-        """引擎內部檔＋工作目錄控制檔（已展開、正規化）；gate 固定拒絕寫入這些位置。"""
+        """引擎內部檔（已展開、正規化）；gate 固定拒絕寫入這些位置。工作目錄控制檔另見 is_control_path。"""
         mapping = self.vars()
-        engine = [norm_text(render_path(pattern, mapping)) for pattern in PROTECTED_PATHS]
-        return engine + self.control_patterns()
+        return [norm_text(render_path(pattern, mapping)) for pattern in PROTECTED_PATHS]
 
-    def control_patterns(self):
-        """WORK 與 agent_cwd 底下的 .claude／.mcp.json／.git；agent_cwd 需要單位變數時只保護 WORK。"""
+    def control_bases(self):
+        """WORK 與 agent_cwd（已正規化）；agent_cwd 需要單位變數時只保護 WORK（agent_cwd 通常在 WORK 底下）。"""
         mapping = self.vars()
         bases = [mapping["WORK"]]
         try:
             bases.append(render_path(self.data.get("agent_cwd") or "{WORK}", mapping))
         except MissingVar:
             pass
-        patterns = []
-        for base in dict.fromkeys(posix(b).rstrip("/") for b in bases):
-            patterns += [norm_text(p.replace("{BASE}", base)) for p in CONTROL_PATHS]
-        return patterns
+        return list(dict.fromkeys(windows_clean(posix(b)).rstrip("/") for b in bases))
+
+    def is_control_path(self, target):
+        """target（已正規化的絕對路徑）是否為工作目錄控制檔。"""
+        target = windows_clean(target)
+        for base in self.control_bases():
+            if target.startswith(base + "/") and is_control_relative(target[len(base) + 1 :].split("/")):
+                return True
+        return False
 
     def round_time_limit(self):
         """hours 每輪總時限：所有 claude -p 都跑滿＋所有指令站在最多退回次數下都跑滿＋10 分鐘餘裕。"""
@@ -826,7 +856,6 @@ def validate_protected(cfg):
     在專案裡很常見（整個工作目錄都是產出），一律擋掉會讓設定寫不出來；這類寫法由 gate 逐筆固定拒絕。"""
     mapping = cfg.vars(unit=cfg.unit_ids[0], round_no=1)
     engine_files = [norm_text(render_path(p, cfg.vars())) for p in PROTECTED_PATHS]
-    controls = cfg.control_patterns()
     for role in cfg.roles:
         for pattern in rendered_patterns(cfg, role, mapping):
             for guarded in engine_files:
@@ -835,18 +864,18 @@ def validate_protected(cfg):
                     f"roles.{role}.write",
                     f"與引擎內部檔重疊（{pattern} ↔ {guarded}）：代理不可寫 state、trace、核准、設定或引擎程式",
                 )
-            for guarded in controls:
-                need(
-                    not points_into(pattern, guarded),
-                    f"roles.{role}.write",
-                    f"明確指向工作目錄控制檔（{pattern} ↔ {guarded}）：.claude／.mcp.json／.git 一律不可寫",
-                )
+            need(
+                not points_into_control(cfg, pattern),
+                f"roles.{role}.write",
+                f"明確指向工作目錄控制檔（{pattern}）：.git／.gitmodules／.gitattributes／.claude／.mcp.json／"
+                "CLAUDE.md 一律不可寫（CLAUDE.md 只能由人更新）",
+            )
 
 
-def points_into(pattern, guarded):
-    """pattern 的固定前綴已經落在受保護位置裡（或就是那個檔）＝明確指向。"""
-    base = literal_prefix(guarded)
-    return literal_prefix(pattern).startswith(base) or fnmatch.fnmatchcase(pattern, guarded)
+def points_into_control(cfg, pattern):
+    """把含萬用字元的段換成一般名稱再判斷：{WORK}/** 不算明確指向，{WORK}/**/CLAUDE.md、{WORK}/.git 算。"""
+    plain = "/".join("x" if any(ch in segment for ch in WILDCARD_CHARS) else segment for segment in pattern.split("/"))
+    return cfg.is_control_path(plain)
 
 
 def validate_finish_commands(stations):

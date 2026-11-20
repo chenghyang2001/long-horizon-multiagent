@@ -10,6 +10,11 @@
    → 輸出一律寫暫存檔，不用管線；殺完樹直接讀檔即可返回。
 3. 輸入（prompt）用管線同步寫入時，子程序不讀就會卡在寫入、逾時根本還沒開始計算。
    → 輸入也先寫暫存檔，以檔案 handle 當 stdin；逾時從程序啟動那一刻算。
+
+具名引擎 Job：持鎖的引擎程序另外建立一個具名 job（名稱記在 run.lock），每個子程序先放進它、再放進
+各自的逾時 job（巢狀）。之後子孫不論怎麼脫離父子關係（start /b、Start-Process、孤兒）都還在這個 job 裡，
+人工指令用 IsProcessInJob 判斷「我是不是引擎底下的程序」。名稱外洩沒關係：知道名稱也無法脫離 job。
+POSIX 沒有對應機制，這層檢查略過（仍有環境旗標與祖先鏈兩層）。
 """
 
 import codecs
@@ -38,6 +43,11 @@ if os.name == "nt":
     _K32.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
     _K32.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
     _K32.CloseHandle.argtypes = [wintypes.HANDLE]
+    _K32.OpenJobObjectW.restype = wintypes.HANDLE
+    _K32.OpenJobObjectW.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR]
+    _K32.IsProcessInJob.argtypes = [wintypes.HANDLE, wintypes.HANDLE, ctypes.POINTER(wintypes.BOOL)]
+    _K32.GetCurrentProcess.restype = wintypes.HANDLE
+    JOB_OBJECT_QUERY = 0x0004
     _NTDLL.NtResumeProcess.argtypes = [wintypes.HANDLE]
     CREATE_SUSPENDED = 0x00000004
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
@@ -70,6 +80,42 @@ if os.name == "nt":
         ]
 
 
+_ENGINE_JOB = {"name": None, "handle": None, "failed": False}
+
+
+def set_engine_job(name):
+    """持鎖的引擎程序呼叫一次；之後這個程序啟動的子程序都會放進這個具名 job。"""
+    _ENGINE_JOB.update(name=name, handle=None, failed=False)
+
+
+def engine_job_handle():
+    """第一次用到時才建立；建立失敗只警告一次，不擋執行（仍有旗標與祖先鏈兩層）。"""
+    if os.name != "nt" or not _ENGINE_JOB["name"] or _ENGINE_JOB["failed"]:
+        return None
+    if _ENGINE_JOB["handle"] is None:
+        try:
+            _ENGINE_JOB["handle"] = _new_job(_ENGINE_JOB["name"])
+        except OSError as exc:
+            _ENGINE_JOB["failed"] = True
+            print(f"（警告：無法建立具名引擎 Job（{exc}），人工指令的 Job 檢查停用）", file=sys.stderr, flush=True)
+    return _ENGINE_JOB["handle"]
+
+
+def in_named_job(name):
+    """目前程序是否在名為 name 的 job 裡；job 不存在或非 Windows 一律 False。"""
+    if os.name != "nt" or not name:
+        return False
+    job = _K32.OpenJobObjectW(JOB_OBJECT_QUERY, False, name)
+    if not job:
+        return False
+    try:
+        result = wintypes.BOOL(False)
+        ok = _K32.IsProcessInJob(_K32.GetCurrentProcess(), job, ctypes.byref(result))
+        return bool(ok and result.value)
+    finally:
+        _K32.CloseHandle(job)
+
+
 @dataclass
 class ProcResult:
     returncode: object  # int；逾時為 None
@@ -96,6 +142,11 @@ class Tree:
         """用 Popen 自己的 process handle（不另外 OpenProcess，免得權限不足拿不到 handle、子程序永遠停在暫停）。
         job 掛不上時印警告並改用 taskkill /T 後備；恢復失敗就直接殺掉並報錯，絕不留下停住的程序。"""
         handle = int(self.proc._handle)  # noqa: SLF001 — Popen 在 Windows 上一定有這個 handle
+        engine_job = engine_job_handle()
+        if engine_job and not _K32.AssignProcessToJobObject(engine_job, handle):
+            print(
+                f"（警告：子程序無法放進具名引擎 Job（錯誤碼 {ctypes.get_last_error()}））", file=sys.stderr, flush=True
+            )
         try:
             self.job = _create_job(handle)
         except OSError as exc:
@@ -147,15 +198,27 @@ class Tree:
             self.job = None
 
 
-def _create_job(handle):
-    """建立「關掉 handle 就殺光所有成員」的 job 並把程序放進去；任何一步失敗都丟 OSError。"""
-    job = _K32.CreateJobObjectW(None, None)
+def _new_job(name=None):
+    """建立「關掉 handle 就殺光所有成員」的 job；失敗丟 OSError。"""
+    job = _K32.CreateJobObjectW(None, name)
     if not job:
         raise OSError(f"CreateJobObject 失敗（錯誤碼 {ctypes.get_last_error()}）")
+    if name and ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS：名稱被占用，不能信任這個 job
+        _K32.CloseHandle(job)
+        raise OSError(f"Job 名稱 {name} 已存在")
     info = _ExtendedLimit()
     info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-    ok = _K32.SetInformationJobObject(job, JOB_EXTENDED_LIMIT_INFO, ctypes.byref(info), ctypes.sizeof(info))
-    if not (ok and _K32.AssignProcessToJobObject(job, handle)):
+    if not _K32.SetInformationJobObject(job, JOB_EXTENDED_LIMIT_INFO, ctypes.byref(info), ctypes.sizeof(info)):
+        error = ctypes.get_last_error()
+        _K32.CloseHandle(job)
+        raise OSError(f"設定 Job 失敗（錯誤碼 {error}）")
+    return job
+
+
+def _create_job(handle):
+    """每棵程序樹自己的逾時 job；程序已在引擎 job 裡時，這個 job 會巢狀在它底下。"""
+    job = _new_job()
+    if not _K32.AssignProcessToJobObject(job, handle):
         error = ctypes.get_last_error()
         _K32.CloseHandle(job)
         raise OSError(f"無法把程序放進 Job Object（錯誤碼 {error}）")

@@ -159,11 +159,19 @@ def add_dirs(cfg, mapping):
 
 def build_claude_cmd(cfg, role, prefix, hook_path, mapping):
     """長內容一律不上命令列：prompt 走 stdin、角色說明走 --append-system-prompt-file。
+    --restricted：不載入任何 CLAUDE.md（含使用者全域 ~/.claude/CLAUDE.md）與 user／project／local 設定檔，
+      只有 --tools 指名的工具可用，檔案工具限在工作目錄＋--add-dir；--settings 的 gate hook 照樣生效。
+      2026-11-21 以 claude 2.1.329 實測：光靠 --setting-sources project,local 仍會載入全域 CLAUDE.md，
+      代理會吃到使用者的個人規則（例如自己 commit＋push），破壞 §9 角色分離。
+    --strict-mcp-config：不載入任何 MCP 伺服器。
+    --setting-sources project,local：在 --restricted 下已多餘，保留是為了相容舊版 CLI（實測與 --restricted 不衝突）。
     --permission-mode default：不沿用使用者的寬鬆模式（bypass／acceptEdits），一切交給 gate 判斷。"""
     tools = [str(tool) for tool in cfg.roles[role]["tools"]]
     cmd = [
         *prefix,
         "-p",
+        "--restricted",
+        "--strict-mcp-config",
         "--append-system-prompt-file",
         posix(cfg.agents_dir / f"{role}.md"),
         "--tools",

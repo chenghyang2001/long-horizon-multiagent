@@ -1,8 +1,11 @@
 """執行鎖 run/.runtime/run.lock：同一個專案同時只能有一個 run／hours 在改 state.json。
 
-鎖內容＝PID＋該程序的啟動時間＋token。只看 PID 不夠：程序當掉後 PID 可能被別的程序重用，
+鎖內容＝PID＋該程序的啟動時間＋token＋引擎 Job 名稱。只看 PID 不夠：程序當掉後 PID 可能被別的程序重用，
 所以要同時比對啟動時間，不符就視為殘留舊鎖、自動清掉。
-hours 拿到鎖後把 token 放進環境變數 LH_LOCK_TOKEN，它啟動的每一輪 run 子程序憑 token 沿用同一把鎖。
+token 只透過 hours.child_env 交給 hours 自己啟動的 run 子程序（不寫進 os.environ，也不會出現在
+代理或指令站的環境裡），run 子程序憑它沿用同一把鎖。
+job 欄位是持鎖程序建立的具名 Job Object（Windows）；引擎底下所有子孫都在這個 job 裡，
+人工指令用它判斷自己是不是引擎底下的程序（見 round.guard_human）。
 """
 
 import json
@@ -113,13 +116,30 @@ def _create(cfg, purpose):
         "since": now_str(),
         "argv": " ".join(sys.argv[:3]),
     }
+    info["job"] = f"lhf-{secrets.token_hex(12)}"
+    text = json.dumps(info, ensure_ascii=False)
     tmp = path.with_name(f"{LOCK_NAME}.{os.getpid()}.{info['token']}.tmp")
-    tmp.write_text(json.dumps(info, ensure_ascii=False), encoding="utf-8")
+    tmp.write_text(text, encoding="utf-8")
     try:
         os.link(tmp, path)  # 目標已存在就丟 FileExistsError
+    except FileExistsError:
+        raise
+    except (OSError, AttributeError, NotImplementedError) as exc:
+        # 檔案系統不支援硬連結（FAT、部分網路磁碟；有的回「拒絕存取」）。PermissionError 也可能是 Windows
+        # 的「刪除中」：那種情況 O_EXCL 會再丟 PermissionError，交給 acquire 當暫時狀態重試
+        _create_exclusive(path, text, exc)
     finally:
         tmp.unlink(missing_ok=True)
     return info
+
+
+def _create_exclusive(path, text, reason):
+    """退回 O_CREAT|O_EXCL：仍是原子「建立且不覆蓋」，只是內容寫入前的一瞬間別人可能讀到空檔
+    （acquire 的 young_unreadable 會把剛建立又讀不懂的鎖當成「有人在用」，不會誤刪）。"""
+    fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(text)
+    print(f"（警告：檔案系統不支援 os.link（{reason}），執行鎖改用 O_EXCL 建立）", file=sys.stderr, flush=True)
 
 
 def busy(info):
@@ -199,6 +219,10 @@ def release(cfg, info):
 @contextmanager
 def holding(cfg, purpose):
     info, created = acquire(cfg, purpose)
+    if created and info.get("job"):
+        from lhf import proc
+
+        proc.set_engine_job(info["job"])  # 這個程序之後啟動的子孫都進同一個具名 job
     try:
         yield info
     finally:

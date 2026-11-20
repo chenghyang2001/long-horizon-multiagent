@@ -14,7 +14,7 @@ import shlex
 import sys
 import time
 
-from lhf import ancestry, claude_call, lock, stations
+from lhf import ancestry, claude_call, integrity, lock, proc, stations
 from lhf.common import (
     EXIT_ENGINE_ERROR,
     EXIT_INTERRUPTED,
@@ -110,14 +110,34 @@ def precheck(cfg, command, unit):
 
 
 def guard_human(cfg, command):
-    """人工指令只能由人發出：兩層檢查。
+    """人工指令只能由人發出：三層檢查。
     1. 環境旗標（引擎子程序都帶）：快，但可被 env -u 清掉
-    2. 祖先鏈：持鎖的引擎程序在我的祖先裡＝我是引擎底下的程序（指令站腳本、代理的 Bash），清不掉"""
+    2. 具名引擎 Job（Windows）：start /b、Start-Process、孤兒程序都脫離不了 job
+    3. 祖先鏈：持鎖的引擎程序在我的祖先裡＝我是引擎底下的程序（指令站腳本、代理的 Bash）"""
     if os.environ.get(IN_ENGINE_ENV) == "1":
         raise EngineDescendant(f"引擎底下的程序不可下人工指令（{command}）：偵測到 {IN_ENGINE_ENV}")
     owner = lock.read_lock(cfg)
+    if owner and lock.lock_alive(owner) and proc.in_named_job(owner.get("job")):
+        raise EngineDescendant(f"引擎底下的程序不可下人工指令（{command}）：目前程序在引擎的 Job 裡")
     if owner and lock.lock_alive(owner) and ancestry.is_descendant_of(owner.get("pid")):
         raise EngineDescendant(f"引擎底下的程序不可下人工指令（{command}）：引擎 PID {owner.get('pid')} 在祖先程序鏈上")
+
+
+STATION_WAIT_SEC = 3600  # 最多等一個指令站跑完；超過就放棄（請稍後再下一次指令）
+
+
+def wait_station_idle(cfg):
+    """指令站執行期間佇列檔被改會被當成竄改；所以人下的指令要等指令站跑完才排入。"""
+    marker = integrity.marker_path(cfg)
+    deadline = time.monotonic() + STATION_WAIT_SEC
+    announced = False
+    while marker.exists() and lock.lock_alive(lock.read_lock(cfg)):
+        if time.monotonic() > deadline:
+            raise RoundError(f"等了 {STATION_WAIT_SEC} 秒指令站還沒跑完，請稍後再下一次指令")
+        if not announced:
+            print("指令站執行中，等它跑完再排入佇列…", flush=True)
+            announced = True
+        time.sleep(1)
 
 
 def cmd_mutate(cfg, command, unit):
@@ -126,6 +146,7 @@ def cmd_mutate(cfg, command, unit):
     owner = lock.held_by_other(cfg)
     if owner:
         precheck(cfg, command, unit)
+        wait_station_idle(cfg)
         queue_command(cfg, command, unit)
         print(f"引擎正在執行（PID {owner.get('pid')}），{command} {unit} 已排入 commands.jsonl，下一站開始時套用")
         return EXIT_OK

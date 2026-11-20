@@ -14,7 +14,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from lhf import claude_call, proc
+from lhf import claude_call, integrity, proc
 from lhf.common import now_str
 from lhf.config import DEFAULT_FEEDBACK, is_fake, is_wsl_bash, posix, render, render_path
 from lhf.errors import CallBudgetExceeded, RoundError
@@ -436,6 +436,35 @@ def run_checks(rt, station, mapping):
     return chr(10).join(blocks), reason
 
 
+def run_checks_guarded(rt, station, mapping):
+    """站前站後比對受保護檔；回傳 (raw log, 自動失敗原因, 變動檔清單, 站前快照, 執行時的錯誤或 None)。"""
+    cfg = rt["cfg"]
+    integrity.set_marker(cfg, rt, station)  # 先放標記：人下的 approve／reset 會等它消失才排入
+    before = integrity.snapshot(cfg)
+    raw_text, auto_fail, error = "", "", None
+    try:
+        raw_text, auto_fail = run_checks(rt, station, mapping)
+    except RoundError as exc:
+        error = exc
+    finally:
+        after = integrity.snapshot(cfg)
+        integrity.clear_marker(cfg)
+    return raw_text, auto_fail, integrity.diff(before, after), before, error
+
+
+def tampered(rt, station, changed, before):
+    """指令站期間受保護檔被改：還原引擎檔（本站期間的佇列指令與核准因此作廢），單位標 failed＋ALERT。"""
+    restored = integrity.restore(before, changed)
+    listing = "、".join(Path(p).name if len(changed) > 10 else p for p in changed[:10])
+    more = f" 等 {len(changed)} 個" if len(changed) > 10 else ""
+    text = (
+        f"{label_of(station)}：指令站執行期間受保護檔被改動（{listing}{more}），已還原 {len(restored)} 個引擎檔；"
+        "本站期間新增的佇列指令與核准不套用"
+    )
+    finish(rt, "failed", text, alert=True)
+    return "FAIL（受保護檔被改動）"
+
+
 def station_command(rt, station):
     """客觀驗證：程式自己跑，不靠模型說。必要檔缺漏或任何指令結束碼非 0（未標 allow_nonzero）→
     引擎直接判 FAIL 退回，不呼叫 QA。finish 鏈的 command 站（部署／push）失敗則標 failed＋ALERT。"""
@@ -444,7 +473,11 @@ def station_command(rt, station):
     if missing:
         raw_text, auto_fail = f"缺檔：{'、'.join(missing)}\n", f"缺少必要檔案 {'、'.join(missing)}"
     else:
-        raw_text, auto_fail = run_checks(rt, station, mapping)
+        raw_text, auto_fail, changed, before, error = run_checks_guarded(rt, station, mapping)
+        if changed:
+            return tampered(rt, station, changed, before)
+        if error:
+            raise error
     log_path = Path(render_path(station["log"], mapping))
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_path.write_text(f"# {rt['unit']} 執行紀錄　{now_str()}" + chr(10) * 2 + raw_text, encoding="utf-8")
@@ -452,17 +485,22 @@ def station_command(rt, station):
         finish(rt, "failed", f"{label_of(station)} 失敗（收尾站不退回）：{auto_fail[:300]}", alert=True)
         return "FAIL（收尾）"
     if auto_fail:
-        report = Path(render_path(station["fail_report"], mapping))
-        report.parent.mkdir(parents=True, exist_ok=True)
-        report.write_text(
-            f"# {rt['unit']} 自動判定（站 {station['id']}）\n\n{auto_fail}\n\n原始紀錄：{posix(log_path)}\n\n"
-            "VERDICT: FAIL\n",
-            encoding="utf-8",
-        )
-        apply_fail(rt, station, "FAIL", f"（站 {station['id']} 自動）", report)
-        return "FAIL（自動：" + auto_fail[:40] + "）"
+        return auto_fail_station(rt, station, mapping, auto_fail, log_path)
     advance(rt, station, f"{label_of(station)} 完成 → {log_path.name}")
     return "執行完成"
+
+
+def auto_fail_station(rt, station, mapping, auto_fail, log_path):
+    """引擎自己判 FAIL：寫失敗報告（同時是給撰寫者的退回意見），再走退回規則。"""
+    report = Path(render_path(station["fail_report"], mapping))
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(
+        f"# {rt['unit']} 自動判定（站 {station['id']}）\n\n{auto_fail}\n\n原始紀錄：{posix(log_path)}\n\n"
+        "VERDICT: FAIL\n",
+        encoding="utf-8",
+    )
+    apply_fail(rt, station, "FAIL", f"（站 {station['id']} 自動）", report)
+    return "FAIL（自動：" + auto_fail[:40] + "）"
 
 
 # ---------- commit／approve ----------

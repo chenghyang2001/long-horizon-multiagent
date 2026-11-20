@@ -52,7 +52,19 @@ python -m pytest tests -q                              # 假模型模式回歸�
 - **逾時殺整棵程序樹**：Windows 用 Job Object（Git Bash 的背景孫程序 taskkill /T 殺不到），輸出寫暫存檔不用管線。
 - **執行鎖** `run/.runtime/run.lock`：PID＋程序啟動時間，殘留舊鎖用互斥檔安全清除；鎖 token 只交給 hours 自己啟動的
   run 子程序，代理與指令站拿不到（它們執行 approve／reset 只會排進佇列）。
-- **人工指令只能由人下**：approve／reset／reset-calls／init／migrate 兩層檢查——引擎子程序都帶 `LHF_IN_ENGINE=1`（快速擋下），加上祖先程序鏈檢查（持鎖的引擎 PID 在祖先鏈上就拒絕；`env -u` 清掉旗標也擋得住）。佇列裡沒有提交者檢查紀錄的指令不套用並發 ALERT。限制：指令站跑的撰寫者腳本目前沒有沙箱，理論上能直接改 run/ 底下的檔案（verify 站沙箱排在後續階段）。
+- **代理不載入任何 CLAUDE.md**：claude -p 一律加 `--restricted --strict-mcp-config`。2026-11-21 以 claude 2.1.329
+  實測，光靠 `--setting-sources project,local` 仍會載入使用者全域 `~/.claude/CLAUDE.md`（個人規則會讓代理自己
+  commit／push、破壞 §9 角色分離）；`--restricted` 下全域與專案 CLAUDE.md 都不載入，`--settings` 的 gate hook
+  照樣觸發、deny 生效，`--tools` 指名的 Bash／WebFetch 仍可用，Max 訂閱登入正常。不可改用 `--bare`
+  （只吃 API key）或 `--safe-mode`（停用 hook）。
+- **工作目錄控制檔**：workdir 與 agent_cwd 之下，路徑任何一段是 `.git`（worktree 的 gitdir 檔也算）、`.gitmodules`、
+  `.gitattributes`、`.claude`、`.mcp.json`，或檔名是 `CLAUDE.md`／`CLAUDE.local.md`（任何子目錄、不分大小寫），
+  gate 一律拒絕寫入。比對前照 Windows 語意去掉每段結尾的「.」與空白、`::$DATA` 串流。CLAUDE.md 只能由人更新。
+- **指令站前後比對**（verify 站沙箱完成前的過渡措施）：指令站執行前後比對佇列、核准、state、設定快照、
+  factory.yaml、agents、工作目錄控制檔與 CLAUDE*.md；有變動 → 該單位標 failed＋ALERT，引擎檔還原
+  （本站期間新增的佇列指令與核准作廢）。人下的 approve／reset 會等指令站跑完才排入，不會被誤判。
+- **人工指令只能由人下**：approve／reset／reset-calls／init／migrate 三層檢查——引擎子程序都帶 `LHF_IN_ENGINE=1`（快速擋下）；Windows 上持鎖程序建立具名 Job，引擎所有子孫（含 start /b、Start-Process 的孤兒）都在 job 裡，
+  `IsProcessInJob` 為真就拒絕；再加祖先程序鏈檢查（持鎖的引擎 PID 在祖先鏈上就拒絕）。POSIX 沒有 job 這層。佇列裡沒有提交者檢查紀錄的指令不套用並發 ALERT。限制：指令站跑的撰寫者腳本目前沒有沙箱，理論上能直接改 run/ 底下的檔案（verify 站沙箱排在後續階段）。
 - **指令佇列** `run/commands.jsonl`：每筆有 id，套用結果存進 state.json 後才刪認領檔，當機後重讀也不會重複套用。
 - **子程序環境**：claude -p 只拿到 gate 需要的 `LH_PROJECT_DIR／LH_UNIT／LH_ROUND／LH_ROLE／LH_STATION／LH_TRACE_OFFSET`；
   指令站一個 `LH_*` 都沒有。gate 也拒絕 Bash 指令呼叫引擎本身（`-m lhf`、`lhf/`、引擎路徑）。
@@ -81,6 +93,7 @@ python -m pytest tests -q                              # 假模型模式回歸�
 | 設定 | `policy.yaml`＋程式內常數 | `factory.yaml`（`schema: 1`） |
 | 指令站非 0 | 交給 tester 判 | 引擎直接判 FAIL（`allow_nonzero` 例外）；k143 已核對結果相同 |
 | 退回意見 | 只附失敗報告 | 失敗報告＋raw log＋（審查退回時）最近一次 QA 報告 |
+| 代理上下文 | `--setting-sources project,local`（仍會載入全域 CLAUDE.md） | `--restricted`：不載入任何 CLAUDE.md（含全域）、只有 `--tools` 指名的工具 |
 | run 結束碼 | 0／1／130 | 0／1／2／3／4／130（見上表） |
 | hours 停止 | 連續 2 輪非 0 | 只有引擎錯誤連發才停；單位失敗會繼續下一個 |
 | commit 前 | 不檢查分支 | 檢查 `branch`，不同就拒絕 |

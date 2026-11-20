@@ -62,7 +62,8 @@ def test_producer_script_cannot_self_approve(tmp_path, monkeypatch, strip_flag):
     round_mod.cmd_run(cfg, "u2")
     raw = (cfg.run_dir / "raw" / "u2.log").read_text(encoding="utf-8")
     assert "RC= 5" in raw, raw[-500:]
-    assert ("祖先程序鏈" in raw) if strip_flag else (IN_ENGINE_ENV in raw)
+    # 旗標被清掉時由具名引擎 Job（Windows）或祖先鏈擋下；旗標還在時由旗標擋下
+    assert ("引擎的 Job" in raw or "祖先程序鏈" in raw) if strip_flag else (IN_ENGINE_ENV in raw)
     assert load_state(cfg)["units"]["u1"]["status"] == "pending_approval"
     assert not read_jsonl(commands_path(cfg))
 

@@ -34,7 +34,7 @@ if __package__ in (None, ""):  # 被 hook 以檔案路徑執行時，把 engine/
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from lhf.common import now_iso  # noqa: E402
-from lhf.config import ENGINE_DIR, ID_RE, load_config, norm_text, render_path  # noqa: E402
+from lhf.config import ENGINE_DIR, ID_RE, load_config, norm_text, render_path, windows_clean  # noqa: E402
 from lhf.errors import MissingVar  # noqa: E402
 from lhf.snapshot import load_for_gate  # noqa: E402
 from lhf.state import (  # noqa: E402
@@ -86,8 +86,9 @@ def trace_offset_env():
 
 
 def norm_path(raw_path, cwd):
-    """把工具給的路徑轉成正規化的絕對路徑字串；相對路徑以 hook 的 cwd 為基準。"""
-    candidate = Path(str(raw_path).replace("\\", "/"))
+    """把工具給的路徑轉成正規化的絕對路徑字串；相對路徑以 hook 的 cwd 為基準。
+    先照 Windows 語意去掉每段結尾的「.」與空白、替代資料串流（:$DATA），再解析 .. 等相對段。"""
+    candidate = Path(windows_clean(raw_path))
     if not candidate.is_absolute():
         candidate = Path(str(cwd)) / candidate
     return norm_text(candidate.resolve().as_posix())
@@ -181,6 +182,8 @@ def check_protected(cfg, target):
     for pattern in cfg.protected_patterns():
         if fnmatch.fnmatchcase(target, pattern):
             return f"引擎內部檔不可寫入：{target}"
+    if cfg.is_control_path(target):
+        return f"引擎內部檔不可寫入（工作目錄控制檔 .git／.claude／.mcp.json／CLAUDE.md 等）：{target}"
     return None
 
 
