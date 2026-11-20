@@ -1,5 +1,5 @@
 {
-  "round": 10,
+  "round": 11,
   "queue": [
     "ch04",
     "ch05",
@@ -725,18 +725,64 @@
       "engine_errors": 0
     },
     "ch14": {
-      "status": "pending",
-      "station": "plan",
+      "status": "done",
+      "station": "commit",
       "retries": {},
-      "verdicts": [],
-      "calls": 0,
-      "started": null,
-      "finished": null,
-      "round": null,
-      "once_done": [],
+      "verdicts": [
+        {
+          "ts": "2026-11-21 07:09:49",
+          "station": "judge",
+          "verdict": "PASS",
+          "note": ""
+        },
+        {
+          "ts": "2026-11-21 07:10:47",
+          "station": "review",
+          "verdict": "PASS",
+          "note": ""
+        }
+      ],
+      "calls": 5,
+      "started": "2026-11-21 07:03:22",
+      "finished": "2026-11-21 07:10:47",
+      "round": 11,
+      "once_done": [
+        "now-updater"
+      ],
       "feedback": null,
-      "cost_usd": 0.0,
-      "sessions": [],
+      "cost_usd": 2.368388,
+      "sessions": [
+        {
+          "role": "planner",
+          "session_id": "7b9c11c7-b481-486b-866c-befcb651ccff",
+          "cost_usd": 1.0014159999999999,
+          "turns": 21
+        },
+        {
+          "role": "writer",
+          "session_id": "095ea99c-64db-46e7-871a-04e34bf384d6",
+          "cost_usd": 0.4916178,
+          "turns": 6
+        },
+        {
+          "role": "now-updater",
+          "session_id": "34984be5-1cee-456d-909d-c46909ad2a20",
+          "cost_usd": 0.1847714,
+          "turns": 6
+        },
+        {
+          "role": "tester",
+          "session_id": "c96b9b86-4272-4540-85e4-7ba8e1ded3f8",
+          "cost_usd": 0.2864904,
+          "turns": 4
+        },
+        {
+          "role": "reviewer",
+          "session_id": "8363e0e0-23e9-4b88-ba24-26ae286b5868",
+          "cost_usd": 0.404093,
+          "turns": 12
+        }
+      ],
       "approved": [],
       "approval": null,
       "engine_errors": 0
@@ -1374,6 +1420,49 @@
       "round": 10,
       "unit": "-",
       "event": "由舊版 state 轉移（../capstone/state.json），15 個單位"
+    },
+    {
+      "ts": "2026-11-21 07:03:22",
+      "round": 11,
+      "unit": "ch14",
+      "event": "第 11 輪開始"
+    },
+    {
+      "ts": "2026-11-21 07:07:18",
+      "round": 11,
+      "unit": "ch14",
+      "event": "1 規劃 完成"
+    },
+    {
+      "ts": "2026-11-21 07:09:06",
+      "round": 11,
+      "unit": "ch14",
+      "event": "2 寫腳本＋現況（平行） 完成（writer、now-updater）"
+    },
+    {
+      "ts": "2026-11-21 07:09:16",
+      "round": 11,
+      "unit": "ch14",
+      "event": "3 執行腳本 完成 → ch14-raw.log"
+    },
+    {
+      "ts": "2026-11-21 07:09:49",
+      "round": 11,
+      "unit": "ch14",
+      "event": "4 測試判定 PASS"
+    },
+    {
+      "ts": "2026-11-21 07:10:47",
+      "round": 11,
+      "unit": "ch14",
+      "event": "5 審查 PASS"
+    },
+    {
+      "ts": "2026-11-21 07:10:47",
+      "round": 11,
+      "unit": "ch14",
+      "event": "完成並 commit：工廠：新增 K143 ch14 互動演練腳本（第 11 輪）"
     }
-  ]
+  ],
+  "applied_commands": []
 }
