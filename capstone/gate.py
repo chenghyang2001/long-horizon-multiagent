@@ -63,6 +63,7 @@ def run_context(event):
         "role": role,
         "round": os.environ.get("LH_ROUND", ""),
         "chapter": os.environ.get("LH_CHAPTER", ""),
+        "session": event.get("session_id", ""),  # 預算以每次 claude -p 計，重做時有新額度
     }
 
 
@@ -150,7 +151,7 @@ def count_allowed(ctx):
                 continue
             if (rec.get("kind") == "decision" and rec.get("decision") == "allow"
                     and rec.get("role") == ctx["role"] and rec.get("round") == ctx["round"]
-                    and rec.get("chapter") == ctx["chapter"]):
+                    and rec.get("chapter") == ctx["chapter"] and rec.get("session", "") == ctx.get("session", "")):
                 count += 1
     return count
 
@@ -204,7 +205,7 @@ def preview(value):
 def write_trace(ctx, tool, kind, decision, reason, tool_input):
     """每次決策或結果都留一行，事後才能還原誰在哪一輪做了什麼。"""
     record = {
-        "ts": now_iso(), "round": ctx.get("round", ""), "chapter": ctx.get("chapter", ""),
+        "ts": now_iso(), "round": ctx.get("round", ""), "chapter": ctx.get("chapter", ""), "session": ctx.get("session", ""),
         "role": ctx.get("role", "unknown"), "tool": tool, "kind": kind,
         "decision": decision, "reason": reason, "input": preview(tool_input or {}),
     }

@@ -1,0 +1,667 @@
+# ch04 執行紀錄　2026-11-20 11:36:20　bash=C:\Program Files\Git\usr\bin\bash.EXE
+
+===== bash -n 語法檢查 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' -n ch04.sh
+exit code：0　耗時：0.0 秒
+----- 輸出 -----
+
+
+===== 第 1 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch04.sh 1
+exit code：0　耗時：0.3 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 4 章｜昂貴規劃，廉價建置　第 1 / 8 步
+  主角登場：一個迴圈、四段、兩種價位
+╚══════════════════════════════════════════════════════╝
+
+💡 packet.py 只有四個函式：prep 與 execute 交給便宜的 Sonnet 5，plan_or_audit 與 verify 才用 Fable 5，而且每段的 effort 預設不同。不呼叫模型。
+
+▶ 要執行的指令：
+  │ import inspect
+  │ import job_packet.packet as pk
+  │ print(pk.__doc__.strip())
+  │ print()
+  │ print("FABLE = " + pk.FABLE + "｜CHEAP = " + pk.CHEAP + "｜備援 = " + pk.FALLBACKS[0]["model"])
+  │ print()
+  │ print("  函式            用哪個模型        effort 預設")
+  │ for fn in [pk.prep, pk.plan_or_audit, pk.execute, pk.verify]:
+  │     src = inspect.getsource(fn)
+  │     model = "FABLE（貴）" if "FABLE" in src else "CHEAP（便宜）"
+  │     effort = inspect.signature(fn).parameters["effort"].default
+  │     print("  " + fn.__name__.ljust(15) + " " + model.ljust(14) + " " + effort)
+▶ 執行結果：
+The reusable job-packet loop behind all ten weekend projects.
+
+prep    -- cheap model turns raw input into a job packet Fable can reason
+           over without you re-explaining your stack every time.
+plan_or_audit -- Fable 5 spends its premium on the judgment-dense middle:
+           threat models, audits, refactor plans, migration sequencing.
+execute -- cheap model implements against a plan it didn't have to invent.
+verify  -- fresh-context grader checks the diff against the plan, never
+           against the executor's account of what it did.
+
+See fable5-substack part 4 for the write-up. Every plan_or_audit call can
+get rerouted to Opus 4.8 by Fable's safety classifiers (cyber, bio,
+frontier_llm, reasoning_extraction) -- check the returned category before
+assuming Fable itself saw the prompt.
+
+FABLE = claude-fable-5｜CHEAP = claude-sonnet-5｜備援 = claude-opus-4-8
+
+  函式            用哪個模型        effort 預設
+  prep            CHEAP（便宜）      medium
+  plan_or_audit   FABLE（貴）       high
+  execute         CHEAP（便宜）      medium
+  verify          FABLE（貴）       low
+
+👉 第 1 步完成
+
+===== 第 2 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch04.sh 2
+exit code：0　耗時：0.2 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 4 章｜昂貴規劃，廉價建置　第 2 / 8 步
+  十個專案各走了哪幾段
+╚══════════════════════════════════════════════════════╝
+
+💡 十個週末專案都 import 同一個 job_packet，只是換資料。看每個專案用了四段裡的哪幾段：plan_or_audit 每個都有，成本儀表板連 prep 都沒有。不呼叫模型。
+
+▶ 要執行的指令：
+  │ import re
+  │ from pathlib import Path
+  │ STAGES = ["prep", "plan_or_audit", "execute", "verify"]
+  │ pat = re.compile(r"from job_packet.packet import (.+?)\s+#")
+  │ print("專案".ljust(22) + "".join(s.ljust(15) for s in STAGES))
+  │ for py in sorted(Path("projects").glob("*/*.py")):
+  │     m = pat.search(py.read_text(encoding="utf-8"))
+  │     if not m:
+  │         continue                      # sample_target.py 這類範例資料不算
+  │     used = [x.strip() for x in m.group(1).split(",")]
+  │     print(py.parent.name.ljust(22) + "".join(("✔" if s in used else "－").ljust(15) for s in STAGES))
+  │ print()
+  │ print("註：這是看 import 了哪幾段，第 3 步會看 03 的 prep 為什麼不需要模型。")
+▶ 執行結果：
+專案                    prep           plan_or_audit  execute        verify         
+01_threat_model       ✔              ✔              ✔              －              
+02_mcp_audit          ✔              ✔              ✔              －              
+03_cost_dashboard     －              ✔              ✔              －              
+04_refactor_legacy    ✔              ✔              ✔              ✔              
+05_policy_to_code     ✔              ✔              －              ✔              
+06_grc_clone          ✔              ✔              ✔              ✔              
+07_ship_readiness     ✔              ✔              ✔              －              
+08_soc_dashboard      ✔              ✔              ✔              －              
+09_migration          ✔              ✔              ✔              ✔              
+10_redteam_box        ✔              ✔              ✔              ✔              
+
+註：這是看 import 了哪幾段，第 3 步會看 03 的 prep 為什麼不需要模型。
+
+👉 第 2 步完成
+
+===== 第 3 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch04.sh 3
+exit code：0　耗時：0.2 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 4 章｜昂貴規劃，廉價建置　第 3 / 8 步
+  一句話測試：算術交給 Python，順便做答案卷
+╚══════════════════════════════════════════════════════╝
+
+💡 加總沒有分支、沒有判斷，不必花模型錢。用純 Python 算週摘要，再算 Fable 5 上的小任務改到 Haiku 能省多少，存成 ch04/interactive/answer-key.txt，第 4 步拿來抽驗模型。不呼叫模型。
+
+▶ 要執行的指令：
+  │ import csv, sys
+  │ from pathlib import Path
+  │ sys.path.insert(0, "projects/03_cost_dashboard")
+  │ import cost_dashboard as cd
+  │ with open("projects/03_cost_dashboard/sample_usage_log.csv", newline="", encoding="utf-8") as f:
+  │     rows = list(csv.DictReader(f))
+  │ print("──── 週摘要（cd.summarize，純 Python）────")
+  │ for m, t in cd.summarize(rows).items():
+  │     print("  " + m + ": " + str(t["calls"]) + " calls, " + str(t["tokens"]) + " tokens, USD " + format(t["cost"], ".4f"))
+  │ print()
+  │ 
+  │ def cost(model, r):
+  │     pi, po = cd.PRICES[model]
+  │     return int(r["input_tokens"]) / 1e6 * pi + int(r["output_tokens"]) / 1e6 * po
+  │ 
+  │ SIMPLE = {"typo_fix", "rename_variable", "one_line_summary", "answer_slack_question"}
+  │ JUDGE = {"threat_model", "migration_plan"}
+  │ lines = ["Fable 5 上的每一筆：留在 Fable vs 改用 Haiku 4.5（USD）"]
+  │ week = 0.0
+  │ for r in rows:
+  │     if r["model"] != "claude-fable-5":
+  │         continue
+  │     fa, ha = cost("claude-fable-5", r), cost("claude-haiku-4-5", r)
+  │     t = r["task_type"]
+  │     tag = "一句話任務" if t in SIMPLE else ("需要判斷" if t in JUDGE else "可討論")
+  │     if t in SIMPLE:
+  │         week += fa - ha
+  │     lines.append("  " + t.ljust(22) + " Fable " + format(fa, ".5f") + "  Haiku " + format(ha, ".5f") + "  " + tag)
+  │ lines.append("四個一句話任務改到 Haiku：每週省 USD " + format(week, ".4f") + "，乘 4 約每月 USD " + format(week * 4, ".4f"))
+  │ text = "\n".join(lines)
+  │ out = Path("../ch04/interactive/answer-key.txt")
+  │ out.write_text(text + "\n", encoding="utf-8")
+  │ print(text)
+  │ print()
+  │ print("答案卷已存到 " + str(out.resolve()))
+▶ 執行結果：
+──── 週摘要（cd.summarize，純 Python）────
+  claude-fable-5: 7 calls, 38430 tokens, USD 0.7575
+  claude-sonnet-5: 3 calls, 28700 tokens, USD 0.1190
+  claude-haiku-4-5: 2 calls, 910 tokens, USD 0.0014
+
+Fable 5 上的每一筆：留在 Fable vs 改用 Haiku 4.5（USD）
+  typo_fix               Fable 0.00750  Haiku 0.00075  一句話任務
+  rename_variable        Fable 0.00500  Haiku 0.00050  一句話任務
+  threat_model           Fable 0.32000  Haiku 0.03200  需要判斷
+  one_line_summary       Fable 0.00350  Haiku 0.00035  一句話任務
+  migration_plan         Fable 0.40000  Haiku 0.04000  需要判斷
+  answer_slack_question  Fable 0.00700  Haiku 0.00070  一句話任務
+  fix_one_test           Fable 0.01450  Haiku 0.00145  可討論
+四個一句話任務改到 Haiku：每週省 USD 0.0207，乘 4 約每月 USD 0.0828
+
+答案卷已存到 C:\Users\USER\workspace\kindle-143-fable5-agentic-ai-factory\practice\ch04\interactive\answer-key.txt
+
+👉 第 3 步完成
+
+===== 第 4 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch04.sh 4
+exit code：0　耗時：39.6 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 4 章｜昂貴規劃，廉價建置　第 4 / 8 步
+  跑成本儀表板：Fable 設計路由政策、Sonnet 寫報告
+╚══════════════════════════════════════════════════════╝
+
+💡 會呼叫模型 2 次：plan_or_audit 用 Fable 5（effort high）設計路由政策，execute 用 Sonnet 5 寫執行報告，約需 1～3 分鐘。每次呼叫記到 ch04/interactive/calls-03.jsonl，跑完拿第 3 步的答案卷抽驗模型說的金額。輸出裡的 email 會先遮蔽再顯示與存檔。
+
+▶ 要執行的指令：
+  │ rm -f ../ch04/interactive/calls-03.jsonl ../ch04/interactive/run-03.txt
+  │ K143_CLI_LOG=../ch04/interactive/calls-03.jsonl python ../run_with_cli.py projects/03_cost_dashboard/cost_dashboard.py 2>&1 | sed -E "s/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]+/<email 已遮蔽>/g" | tee ../ch04/interactive/run-03.txt
+  │ echo
+  │ echo "──── 輸出裡出現的金額（含週摘要與模型報告）────"
+  │ grep -oE "[$][0-9][0-9.,]*" ../ch04/interactive/run-03.txt | sort | uniq -c | sort -rn | head -15
+  │ echo
+  │ echo "──── 答案卷（第 3 步純 Python 算的）────"
+  │ cat ../ch04/interactive/answer-key.txt 2>/dev/null || echo "（找不到答案卷，先跑第 3 步）"
+▶ 執行結果：
+=== Week summary ===
+claude-fable-5: 7 calls, 38430 tokens, $0.76
+claude-sonnet-5: 3 calls, 28700 tokens, $0.12
+claude-haiku-4-5: 2 calls, 910 tokens, $0.00
+
+=== Routing policy ===
+# Model-Routing Policy
+
+**Assumption:** per-call token counts aren't in the summary, so I use the per-model average (Fable: ~5,490 tok/call, ~$0.109/call at your observed ~75% input / 25% output mix). Haiku's pricing is exactly 1/10 of Fable's and 1/2 of Sonnet's, Sonnet's is 1/5 of Fable's — so the savings ratios hold regardless of mix.
+
+## Routing tiers
+
+| Tier | Model | Belongs here | Why (one-sentence test) |
+|---|---|---|---|
+| Cheap | **Haiku** | typo_fix, rename_variable, one_line_summary, log_triage, answer_slack_question | Mechanical, single-path tasks — no branches, no judgment, just execute or look up. |
+| Mid | **Sonnet** | implement_diff, fix_one_test, mcp_audit_execute | Scoped code changes with some reasoning (why is the test failing? does the diff fit the codebase?), but one bounded problem. |
+| Premium | **Fable** | threat_model, migration_plan | Open-ended, multi-branch, consequential planning where a wrong call is expensive to unwind. |
+
+## Mis-routed calls this week (5 of 12)
+
+All on Fable at ~$0.109/call:
+
+| Task | Was on | Should be | New cost | Savings/call |
+|---|---|---|---|---|
+| typo_fix | Fable | **Haiku** | ~$0.011 | **~$0.098** |
+| rename_variable | Fable | **Haiku** (you already routed another one there — the policy exists, just inconsistently applied) | ~$0.011 | **~$0.098** |
+| one_line_summary | Fable | **Haiku** | ~$0.011 | **~$0.098** |
+| answer_slack_question | Fable | **Haiku** (it's a lookup-and-reply; escalate to Sonnet only if it requires reading code) | ~$0.011 | **~$0.098** |
+| fix_one_test | Fable | **Sonnet** (needs diagnosis, so not Haiku — but it's one bounded fix, not a plan) | ~$0.022 | **~$0.087** |
+
+**Correctly routed:** threat_model and migration_plan on Fable (genuine judgment/branching); both implement_diff calls and mcp_audit_execute on Sonnet; rename_variable and log_triage on Haiku.
+
+## Bottom line
+
+- Estimated weekly savings: **~$0.48 of your $0.88 spend (~55%)**.
+- Fable drops from 7 calls to 2; your premium model was doing typo fixes 71% of the time.
+- Projected spend under policy: Fable ~$0.22, Sonnet ~$0.14, Haiku ~$0.05 → **~$0.41/week**.
+
+**Policy in one line:** default every task to Haiku; promote to Sonnet only if the task requires diagnosing *why* something is wrong; promote to Fable only if the output is a plan with branches and tradeoffs rather than a change.
+
+=== Enforcement report ===
+```
+$ routing-audit --week-of 2026-11-17 --enforce-policy
+
+MIS-ROUTED CALLS DETECTED: 5
+
+┌────────────────────────┬──────────┬───────────┬──────────┬──────────┬──────────────┐
+│ task_type               │ was_on   │ should_be │ old_cost │ new_cost │ savings/call │
+├────────────────────────┼──────────┼───────────┼──────────┼──────────┼──────────────┤
+│ typo_fix                │ Fable    │ Haiku     │ $0.109   │ $0.011   │ $0.098       │
+│ rename_variable          │ Fable    │ Haiku     │ $0.109   │ $0.011   │ $0.098       │
+│ one_line_summary         │ Fable    │ Haiku     │ $0.109   │ $0.011   │ $0.098       │
+│ answer_slack_question    │ Fable    │ Haiku     │ $0.109   │ $0.011   │ $0.098       │
+│ fix_one_test             │ Fable    │ Sonnet    │ $0.109   │ $0.022   │ $0.087       │
+└────────────────────────┴──────────┴───────────┴──────────┴──────────┴──────────────┘
+
+WEEKLY SAVINGS:  $0.479
+PROJECTED MONTHLY SAVINGS (x4):  $1.92
+
+  breakdown (x4):
+    typo_fix               -> $0.392/mo
+    rename_variable        -> $0.392/mo
+    one_line_summary       -> $0.392/mo
+    answer_slack_question  -> $0.392/mo
+    fix_one_test           -> $0.348/mo
+    ------------------------------------
+    TOTAL                     $1.916/mo
+
+NOTE: absolute dollars are small at current call volume (12/wk), but the
+RATIO holds — Fable was handling mechanical/lookup work at 10x Haiku cost
+and diagnostic work at 5x Sonnet cost. If call volume scales (e.g. team-wide
+rollout, 100x this volume), projected monthly savings scale to ~$192/mo
+at the same mis-routing rate.
+
+STATUS: policy violations are an enforcement issue, not a definition gap —
+rename_variable is already correctly routed to Haiku elsewhere this same
+week, confirming the policy is known but inconsistently applied.
+
+$ _
+```
+[run_with_cli] 本次共呼叫 claude -p 2 次
+
+──── 輸出裡出現的金額（含週摘要與模型報告）────
+      8 $0.098
+      8 $0.011
+      7 $0.109
+      4 $0.392
+      2 $0.087
+      2 $0.022
+      1 $192
+      1 $1.92
+      1 $1.916
+      1 $0.88
+      1 $0.76
+      1 $0.48
+      1 $0.479
+      1 $0.41
+      1 $0.348
+
+──── 答案卷（第 3 步純 Python 算的）────
+Fable 5 上的每一筆：留在 Fable vs 改用 Haiku 4.5（USD）
+  typo_fix               Fable 0.00750  Haiku 0.00075  一句話任務
+  rename_variable        Fable 0.00500  Haiku 0.00050  一句話任務
+  threat_model           Fable 0.32000  Haiku 0.03200  需要判斷
+  one_line_summary       Fable 0.00350  Haiku 0.00035  一句話任務
+  migration_plan         Fable 0.40000  Haiku 0.04000  需要判斷
+  answer_slack_question  Fable 0.00700  Haiku 0.00070  一句話任務
+  fix_one_test           Fable 0.01450  Haiku 0.00145  可討論
+四個一句話任務改到 Haiku：每週省 USD 0.0207，乘 4 約每月 USD 0.0828
+
+👉 第 4 步完成
+
+===== 第 5 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch04.sh 5
+exit code：0　耗時：0.2 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 4 章｜昂貴規劃，廉價建置　第 5 / 8 步
+  用呼叫紀錄驗證，不聽模型自己說
+╚══════════════════════════════════════════════════════╝
+
+💡 成本要從 log 追，不從模型的文字報告追。讀第 4 步的 calls-03.jsonl、交給 fable_scanner monitor 算，再對照兩張價目表：Sonnet 的價格對不上，而且優惠價已過期。注意：轉接層回報的 token 不等於真實帳單，monitor 算出的金額只是用這些值換算。不呼叫模型。
+
+▶ 要執行的指令：
+  │ import json, sys, datetime
+  │ from pathlib import Path
+  │ from fable_scanner import monitor as mon
+  │ sys.path.insert(0, "projects/03_cost_dashboard")
+  │ import cost_dashboard as cd
+  │ log = Path("../ch04/interactive/calls-03.jsonl")
+  │ if not log.exists():
+  │     print("找不到 " + str(log) + "，先跑第 4 步")
+  │ else:
+  │     lines = log.read_text(encoding="utf-8").splitlines()
+  │     print("──── 每一次呼叫（從 log 讀）────")
+  │     for i, line in enumerate(lines, 1):
+  │         o = json.loads(line)
+  │         prompt = o["request"]["messages"][0]["content"]
+  │         stage = "plan_or_audit" if prompt.startswith("Design") else ("execute" if prompt.startswith("Write") else "?")
+  │         usage = o["response"].get("usage", {})
+  │         it = (usage.get("iterations") or [usage])[0]
+  │         print("  #" + str(i) + " " + stage.ljust(14) + " 要求 " + o["request"]["model"].ljust(16) + " 實際 " + o["response"]["model"].ljust(16) + " in " + str(it.get("input_tokens")) + " out " + str(it.get("output_tokens")))
+  │     print()
+  │     print("──── fable_scanner monitor ────")
+  │     mon.print_report(mon.analyze(lines))
+  │ print()
+  │ print("──── 缺口：同一個模型，兩張價目表 ────")
+  │ for m in cd.PRICES:
+  │     print("  " + m.ljust(18) + " cost_dashboard " + str(cd.PRICES[m]) + "   monitor " + str(mon.PRICE_PER_M.get(m)))
+  │ son = [("8000", "3000"), ("9000", "3200"), ("4000", "1500")]   # 這週 Sonnet 的 3 筆（輸入、輸出 token）
+  │ a = sum(int(i) / 1e6 * 2 + int(o) / 1e6 * 10 for i, o in son)
+  │ b = sum(int(i) / 1e6 * 3 + int(o) / 1e6 * 15 for i, o in son)
+  │ print("  Sonnet 這週 3 筆：優惠價 USD " + format(a, ".4f") + "  vs  monitor 價 USD " + format(b, ".4f"))
+  │ today = datetime.date.today()
+  │ print("  cost_dashboard 註解寫優惠價只到 2026-08-31；今天 " + str(today) + "，" + ("已過期" if today > datetime.date(2026, 8, 31) else "還有效"))
+▶ 執行結果：
+──── 每一次呼叫（從 log 讀）────
+  #1 plan_or_audit  要求 claude-fable-5   實際 claude-fable-5   in 2 out 2330
+  #2 execute        要求 claude-sonnet-5  實際 claude-sonnet-5  in 2 out 807
+
+──── fable_scanner monitor ────
+refusal analytics
+total 2   refused 0 (0.0%)   fallback served 0
+
+by category
+
+cost by model
+  claude-fable-5       $0.1165
+  claude-sonnet-5      $0.0121
+
+top refusal-triggering prompt prefixes
+
+──── 缺口：同一個模型，兩張價目表 ────
+  claude-fable-5     cost_dashboard (10, 50)   monitor (10, 50)
+  claude-sonnet-5    cost_dashboard (2, 10)   monitor (3, 15)
+  claude-haiku-4-5   cost_dashboard (1, 5)   monitor (1, 5)
+  Sonnet 這週 3 筆：優惠價 USD 0.1190  vs  monitor 價 USD 0.1785
+  cost_dashboard 註解寫優惠價只到 2026-08-31；今天 2026-11-20，已過期
+
+👉 第 5 步完成
+
+===== 第 6 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch04.sh 6
+exit code：0　耗時：0.2 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 4 章｜昂貴規劃，廉價建置　第 6 / 8 步
+  MCP 連接器稽核，先用四條規則判
+╚══════════════════════════════════════════════════════╝
+
+💡 能用規則判的先用程式判。mcp_audit.py 的 prep 是叫便宜模型算天真風險分數，其實四條規則（權限、驗證、閒置、金鑰位置）就做得到。結果存到 ch04/interactive/mcp-rules.txt。不呼叫模型。
+
+▶ 要執行的指令：
+  │ import json
+  │ from pathlib import Path
+  │ servers = json.loads(Path("projects/02_mcp_audit/sample_mcp_servers.json").read_text(encoding="utf-8"))
+  │ RULES = [
+  │     ("R1 scope 含 admin 或 *", lambda s: any("admin" in x or "*" in x for x in s["scopes"])),
+  │     ("R2 auth 為 none", lambda s: s["auth"] == "none"),
+  │     ("R3 超過 90 天沒用", lambda s: s["last_used_days_ago"] > 90),
+  │     ("R4 金鑰放環境變數", lambda s: s["auth"] == "env_var_key"),
+  │ ]
+  │ rows = []
+  │ for s in servers:
+  │     hits = [name for name, rule in RULES if rule(s)]
+  │     rows.append((len(hits), s["name"], hits))
+  │ rows.sort(key=lambda r: -r[0])                 # 排序穩定，同分照 JSON 原順序
+  │ out = ["分數   連接器                命中規則"]
+  │ for score, name, hits in rows:
+  │     hits_text = "、".join(hits) or "（無）"
+  │     out.append("  " + str(score) + "/4  " + name.ljust(20) + " " + hits_text)
+  │ text = "\n".join(out)
+  │ Path("../ch04/interactive/mcp-rules.txt").write_text(text + "\n", encoding="utf-8")
+  │ print(text)
+  │ print()
+  │ print("規則看得到：權限大小、驗證方式、閒置天數、金鑰放哪。")
+  │ print("規則看不到：功能重疊、某個 scope 實際用到哪些工具——這才需要模型判斷。")
+▶ 執行結果：
+分數   連接器                命中規則
+  3/4  old-jira-connector   R1 scope 含 admin 或 *、R2 auth 為 none、R3 超過 90 天沒用
+  2/4  aws                  R1 scope 含 admin 或 *、R4 金鑰放環境變數
+  2/4  stripe-sandbox       R3 超過 90 天沒用、R4 金鑰放環境變數
+  1/4  github               R1 scope 含 admin 或 *
+  1/4  slack                R1 scope 含 admin 或 *
+  1/4  notion               R3 超過 90 天沒用
+
+規則看得到：權限大小、驗證方式、閒置天數、金鑰放哪。
+規則看不到：功能重疊、某個 scope 實際用到哪些工具——這才需要模型判斷。
+
+👉 第 6 步完成
+
+===== 第 7 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch04.sh 7
+exit code：0　耗時：98.6 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 4 章｜昂貴規劃，廉價建置　第 7 / 8 步
+  跑 MCP 稽核：模型多看出什麼
+╚══════════════════════════════════════════════════════╝
+
+💡 會呼叫模型 3 次：prep 用 Sonnet 整理清單、plan_or_audit 用 Fable 5（effort high）排名與整併、execute 用 Sonnet 寫處置清單，約需 2～4 分鐘。log 寫到 ch04/interactive/calls-02.jsonl，最後並排第 6 步的規則排名。輸出裡的 email 會先遮蔽再顯示與存檔。
+
+▶ 要執行的指令：
+  │ rm -f ../ch04/interactive/calls-02.jsonl ../ch04/interactive/run-02.txt
+  │ K143_CLI_LOG=../ch04/interactive/calls-02.jsonl python ../run_with_cli.py projects/02_mcp_audit/mcp_audit.py 2>&1 | sed -E "s/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]+/<email 已遮蔽>/g" | tee ../ch04/interactive/run-02.txt
+  │ echo
+  │ echo "──── 呼叫紀錄 ────"
+  │ python -m fable_scanner monitor ../ch04/interactive/calls-02.jsonl
+  │ echo
+  │ echo "──── 對照：第 6 步純 Python 規則排名 ────"
+  │ cat ../ch04/interactive/mcp-rules.txt 2>/dev/null || echo "（找不到規則結果，先跑第 6 步）"
+▶ 執行結果：
+=== Connector inventory ===
+## MCP Server Risk Assessment
+
+| Name | Scopes | Auth Method | Days Since Last Use | Risk Score |
+|---|---|---|---|---|
+| github | repo, workflow, admin:org | oauth | 2 | **Medium** — broad org admin scope, but actively used w/ oauth |
+| slack | chat:write, channels:read, admin | oauth | 1 | **Medium** — admin scope present, mitigated by oauth + fresh use |
+| aws | s3:*, iam:*, ec2:* | env_var_key | 45 | **High** — wildcard scopes across core infra, static key auth, going stale |
+| notion | read, write | oauth | 120 | **Medium** — low-impact scopes but very stale, oauth helps |
+| stripe-sandbox | read, write | env_var_key | 200 | **Medium-High** — weak static-key auth + long dormancy, though sandbox limits blast radius |
+| old-jira-connector | admin | none | 300 | **Critical** — admin scope, no auth at all, dormant for 10 months |
+
+**Naive scoring logic:** `risk ≈ scope_power × auth_weakness × staleness`
+- Scope power: wildcard/admin > read+write > read-only
+- Auth weakness: none > env_var_key > oauth
+- Staleness: >180 days = high, 30–180 = medium, <30 = low
+
+**Top priorities to review/revoke:** `old-jira-connector` (no auth, admin, 300 days idle) and `aws` (wildcard IAM/EC2/S3 access on a static key).
+
+=== Audit + consolidation plan ===
+# MCP Connector Audit & Consolidation Plan
+
+## 1. Least-Privilege Violations (scope ≫ observed use)
+
+| Connector | Violation | Evidence |
+|---|---|---|
+| **old-jira-connector** | `admin` with zero observed use in 300 days — the definition of unused privilege | No use = no justified scope at all |
+| **aws** | `iam:*` is never justifiable for an agent connector. `s3:*` and `ec2:*` wildcards almost certainly exceed the handful of actions actually invoked before it went stale | 45 days idle; wildcard across three services |
+| **slack** | `admin` grants user/channel/workspace management; observed use pattern (fresh, daily) is consistent with messaging, which only needs `chat:write` + `channels:read` | Admin tools rarely invoked by chat workflows |
+| **github** | `admin:org` (membership, teams, org settings) is far beyond repo workflows. `workflow` deserves scrutiny too — it permits editing CI definitions, which is remote code execution by another name | Active use likely all under `repo` |
+| **notion** | `write` on a connector idle 120 days — if it were truly needed, it'd be used | Downgrade to `read` or disable |
+
+## 2. Redundant / Overlapping Connectors
+
+- **old-jira-connector ↔ notion**: both cover project/task tracking. The org evidently migrated (Jira dormant 300d, Notion 120d). Keep at most one; the Jira connector is pure legacy surface.
+- **aws ↔ github `workflow`**: if deployments run through GitHub Actions, the direct AWS connector may be a redundant path to the same infrastructure. Two routes to prod = two attack surfaces for one capability. Confirm which path is canonical and kill the other (or scope AWS to non-deploy tasks only).
+- **stripe-sandbox**: not redundant with anything, but 200 days dormant means the capability itself may no longer exist in any workflow. Dormant-and-unique is still removable.
+
+## 3. Exfiltration Risk (broad × stale × weak auth)
+
+Worst combinations first:
+
+1. **old-jira-connector** — `admin` + **no auth** + 300d dormant. Anyone (or any injected prompt) reaching this endpoint has full admin with no credential gate. This isn't a risk to mitigate; it's an incident waiting for a timestamp.
+2. **aws** — wildcard scopes on a **static long-lived key**. `s3:*` is both the loot and the exfil channel (read any bucket, write to an attacker-readable bucket); `iam:*` enables persistence (create new keys/users that survive this connector's revocation). Static keys don't expire, don't bind to a session, and leak via env dumps.
+3. **stripe-sandbox** — static key, 200d dormant. Sandbox caps direct financial damage, but it's still an authenticated write channel nobody is watching, and sandbox data/config often mirrors prod patterns.
+4. **slack (subtle)** — fresh and OAuth'd, so it scores "Medium," but `chat:write` is a **first-class exfiltration channel**: a prompt-injected agent that can read anything (GitHub, AWS, Notion) and post to any Slack channel/DM has a complete read→exfil loop. Freshness mitigates staleness risk but *increases* active-abuse surface. The naive `scope × auth × staleness` formula under-weights this: staleness isn't protective for the exfil leg, only for the credential-theft leg.
+
+## 4. Where Scope Trims Aren't Enough → Per-Tool Policy Required
+
+OAuth scopes are coarse grants over functional areas, not resource- or tool-level controls:
+
+| Connector | Why scope trim fails | Required per-tool policy |
+|---|---|---|
+| **github** | `repo` = read/write **every** repo the token's identity can see; there is no "these three repos" OAuth scope | Allowlist specific repos in the MCP server config; deny writes to `.github/workflows/**` even with `workflow` scope removed (push access can still alter CI via default branch rules) |
+| **slack** | `chat:write` = post to any channel the bot is in; no scope narrows it to one channel | Channel allowlist at the MCP layer; deny DMs and external/shared channels; consider a human-approval gate on posts containing URLs or large payloads |
+| **aws** | Even a "trimmed" `s3:GetObject` applies to **all buckets** unless the IAM policy pins `Resource` ARNs | IAM policy with explicit bucket/path ARNs; tool allowlist exposing only `get_object`/`put_object` to named buckets; remove IAM and EC2 tool surfaces entirely |
+| **notion** | `read` still spans every page the integration is shared to | Limit integration sharing to specific workspaces/pages (Notion's own sharing model is the per-resource control — use it) |
+
+## 5. Ranked Consolidation Plan
+
+| # | Action | Connector | Why this rank |
+|---|---|---|---|
+| **1** | **Revoke today.** Delete the connector and verify the Jira endpoint itself rejects unauthenticated admin calls (the connector's existence suggests the endpoint may too) | old-jira-connector | Unauthenticated + admin + dormant: highest severity, zero business cost |
+| **2** | **Rotate the static key immediately** (assume compromised after 45d of env-var exposure). Replace with short-lived STS credentials via OIDC/role assumption. Delete `iam:*` and `ec2:*` outright; replace `s3:*` with action+resource-pinned policy. Add per-tool/bucket allowlist | aws | Highest blast radius of any live connector; key rotation is urgent independent of the redesign |
+| **3** | **Remove** (200d dormant). If a future need appears, re-provision with a Stripe **restricted key**, read-only, with expiry | stripe-sandbox | Dormant + static key; removal costs nothing |
+| **4** | **Trim `admin` → `chat:write` + `channels:read`**, then apply channel allowlist + content/approval policy per §4 | slack | Active connector, so the trim must not break workflows — but it's the live exfil channel and should be hardened right after dead connectors are culled |
+| **5** | **Drop `admin:org`**; audit whether `workflow` is actually exercised, drop if not; apply repo allowlist and CI-path write denial | github | Same pattern as Slack: active, OAuth'd, but over-scoped with an RCE-adjacent scope |
+| **6** | **Disable or downgrade to read-only** with page-level sharing restriction; re-enable on demand | notion | Lowest blast radius; still shouldn't hold dormant write access |
+
+## 6. Process Fixes (so this list doesn't regrow)
+
+- **Auto-expiry**: any connector unused 90 days gets auto-disabled (would have caught Jira, Stripe, Notion, and nearly AWS).
+- **Ban static keys** for connectors touching infra or payments: OAuth or short-lived federated creds only.
+- **Fix the scoring model**: add a *write/exfil-channel* factor, and stop treating freshness as purely mitigating — fresh + broad + write is the active-abuse profile, stale + broad + weak-auth is the credential-theft profile. They're different risks and both matter.
+- **Require per-tool allowlists** as a provisioning gate for any connector whose coarsest OAuth scope spans more resources than the workflow needs — which, per §4, is essentially all of them.
+
+=== Routing policy ===
+# MCP Connector Routing Policy
+
+**Effective:** 2026-11-20
+**Status:** Active — supersedes default-allow connector routing
+**Owner:** Platform/Security (audit basis: MCP Connector Audit & Consolidation Plan, 2026-11-20)
+
+---
+
+## 1. Purpose
+
+This document converts the consolidation plan's findings into enforceable routing rules: what gets revoked immediately, what gets scoped down (and exactly how), and how the remaining surface gets reviewed so it doesn't silently re-expand. Until the corresponding row below is implemented, treat the connector as **routed per its current (unsafe) state** — this policy is the target, not yet the live config.
+
+---
+
+## 2. Immediate Revocation (execute now, no review window)
+
+| Connector | Action | Verification step |
+|---|---|---|
+| **old-jira-connector** | Delete connector registration entirely. | Confirm the underlying Jira endpoint itself rejects unauthenticated admin calls — the connector's existence suggests the endpoint may too. File a separate ticket if it doesn't. |
+| **stripe-sandbox** | Delete connector registration entirely. | None required (200d dormant, no dependents found). If a future workflow needs it, re-provision fresh per §4 — do not restore the old credential. |
+
+**Routing rule:** both connector IDs removed from the MCP server allowlist. Any agent request targeting them should fail at the router (unknown connector), not at the destination service.
+
+---
+
+## 3. Immediate Credential Rotation + Scope-Down (execute now, treat as incident)
+
+| Connector | Action | New scope |
+|---|---|---|
+| **aws** | Rotate the static key now — treat as compromised after 45d of idle exposure. Replace with short-lived STS credentials via OIDC/role assumption. | Remove `iam:*` and `ec2:*` entirely. Replace `s3:*` with an action+resource-pinned policy (e.g., `s3:GetObject`/`s3:PutObject` on named bucket ARNs only). Tool surface exposes only `get_object`/`put_object` against the allowlisted buckets — no IAM or EC2 tools exposed at all. |
+
+**Routing rule:** router enforces a bucket allowlist independent of the IAM policy (defense in depth). Requests naming a bucket not on the list are rejected at the router before reaching AWS.
+
+---
+
+## 4. Scope-Down for Active Connectors (execute this week)
+
+These are live, OAuth'd, in-use connectors. Scope trims must not break current workflows — apply the OAuth scope reduction first, then layer the per-tool allowlist (OAuth scopes are coarse; they don't give resource-level control, so the allowlist is mandatory, not optional).
+
+### slack
+- **OAuth scope:** `admin` → `chat:write` + `channels:read`
+- **Per-tool policy:**
+  - Channel allowlist at the MCP layer (explicit list of channels the agent may post to)
+  - Deny DMs and external/shared channels
+  - Human-approval gate on any outbound message containing URLs or payloads above a size threshold
+- **Rationale for priority:** this is the live read→exfil channel (agent can read GitHub/AWS/Notion and post to Slack). Fresh + broad + write = active-abuse profile, harden first among the "keep" connectors.
+
+### github
+- **OAuth scope:** drop `admin:org`. Audit whether `workflow` is actually exercised in the last 90 days of logs; drop if not.
+- **Per-tool policy:**
+  - Repo allowlist in MCP server config (explicit named repos only — `repo` scope has no native "these three repos" granularity)
+  - Deny writes to `.github/workflows/**` regardless of `workflow` scope status (default-branch rule changes can alter CI even without the scope)
+
+### notion
+- **OAuth scope:** `write` → `read` (downgrade; disable outright if no read-dependent workflow surfaces in the next review cycle)
+- **Per-tool policy:** restrict integration sharing to specific workspaces/pages via Notion's native sharing model — this is the only real per-resource control available, since the `read` scope itself spans every shared page.
+
+**Redundancy check before finalizing:** confirm whether AWS access and GitHub `workflow` represent two paths to the same deploy capability. If so, designate one canonical path and remove the tool surface for the other rather than maintaining two live attack surfaces for one capability.
+
+---
+
+## 5. Review Cadence for Remaining Surface
+
+| Trigger | Action |
+|---|---|
+| **90 days with zero observed use** | Connector auto-disabled by the router. Re-enabling requires a new provisioning request, not a toggle — this re-applies §6 gates. |
+| **30-day scheduled review** | For all connectors with write or infra/payment scope (currently: slack, github, aws): confirm allowlists (channels/repos/buckets) still match active workflows; remove entries for repos/channels/buckets no longer in use. |
+| **90-day scheduled review** | For read-only, non-infra connectors (currently: notion): confirm shared pages/workspaces still match active use; downgrade or disable otherwise. |
+| **On any credential exposure event** (leaked log, env dump, incident) | Immediate rotation, independent of the scheduled cadence — do not wait for the review window. |
+| **On new connector request** | Must pass provisioning gate in §6 before routing is enabled. |
+
+---
+
+## 6. Provisioning Gate (prevents regrowth)
+
+No connector is added to the router without:
+
+1. **No static long-lived keys** for any connector touching infra or payments — OAuth or short-lived federated credentials only.
+2. **Per-tool allowlist defined at request time** — scoped to the specific resources (repos/channels/buckets/pages) the requesting workflow actually needs, not the coarsest available OAuth scope.
+3. **Scoring includes a write/exfil-channel factor** — a connector that can both read broadly and write/post externally is scored as active-abuse risk regardless of freshness. Freshness no longer counts as mitigating for this factor; it only mitigates credential-theft risk (stale + broad + weak-auth).
+4. **90-day auto-expiry enabled by default** at creation — must be explicitly justified and time-boxed to opt out.
+
+---
+
+## 7. Summary Routing Table
+
+| Connector | Route status | Scope | Next review |
+|---|---|---|---|
+| old-jira-connector | **Blocked** (deleted) | n/a | n/a |
+| stripe-sandbox | **Blocked** (deleted) | n/a | n/a |
+| aws | **Allowed**, rotated creds | `s3:GetObject`/`PutObject` on named ARNs only; bucket allowlist | 30 days |
+| slack | **Allowed**, reduced scope | `chat:write` + `channels:read`; channel allowlist, no DMs, approval gate on payload posts | 30 days |
+| github | **Allowed**, reduced scope | `repo` only (pending `workflow` audit); repo allowlist, CI-path write deny | 30 days |
+| notion | **Allowed**, reduced scope | `read` only; page/workspace sharing restricted | 90 days |
+[run_with_cli] 本次共呼叫 claude -p 3 次
+
+──── 呼叫紀錄 ────
+refusal analytics
+total 3   refused 0 (0.0%)   fallback served 0
+
+by category
+
+cost by model
+  claude-fable-5       $0.1815
+  claude-sonnet-5      $0.0520
+
+top refusal-triggering prompt prefixes
+
+──── 對照：第 6 步純 Python 規則排名 ────
+分數   連接器                命中規則
+  3/4  old-jira-connector   R1 scope 含 admin 或 *、R2 auth 為 none、R3 超過 90 天沒用
+  2/4  aws                  R1 scope 含 admin 或 *、R4 金鑰放環境變數
+  2/4  stripe-sandbox       R3 超過 90 天沒用、R4 金鑰放環境變數
+  1/4  github               R1 scope 含 admin 或 *
+  1/4  slack                R1 scope 含 admin 或 *
+  1/4  notion               R3 超過 90 天沒用
+
+👉 第 7 步完成
+
+===== 第 8 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch04.sh 8
+exit code：0　耗時：0.2 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 4 章｜昂貴規劃，廉價建置　第 8 / 8 步
+  總結：昂貴規劃，廉價建置
+╚══════════════════════════════════════════════════════╝
+
+💡 貴的模型只花在判斷最密的那段，其他交給便宜模型或純 Python；錢花在哪，要看呼叫紀錄。
+
+▶ 要執行的指令：
+  │ cat <<EOF
+  │   第 4 章總結
+  │     一個迴圈套十個專案：prep → plan_or_audit → execute → verify，換的只是資料
+  │     高階模型只出現在判斷最密的那段（plan_or_audit 用 Fable high、verify 用 Fable low），其餘交給 Sonnet
+  │     一句話測試：沒有分支、沒有判斷的任務交給最便宜的模型，甚至純 Python（成本儀表板的加總、MCP 的四條規則）
+  │     錢花在哪要看呼叫紀錄（K143_CLI_LOG＋monitor），不要相信模型報告裡自己算的金額
+  │     價目表也是程式碼：優惠價過期、兩處價格不一致，成本報表就會默默算錯
+  │     資安題目容易誤觸 cyber 分類器，plan_or_audit 會回報是否轉給備援；真實部署要先接好備援、處理拒答回 None
+  │ EOF
+▶ 執行結果：
+  第 4 章總結
+    一個迴圈套十個專案：prep → plan_or_audit → execute → verify，換的只是資料
+    高階模型只出現在判斷最密的那段（plan_or_audit 用 Fable high、verify 用 Fable low），其餘交給 Sonnet
+    一句話測試：沒有分支、沒有判斷的任務交給最便宜的模型，甚至純 Python（成本儀表板的加總、MCP 的四條規則）
+    錢花在哪要看呼叫紀錄（K143_CLI_LOG＋monitor），不要相信模型報告裡自己算的金額
+    價目表也是程式碼：優惠價過期、兩處價格不一致，成本報表就會默默算錯
+    資安題目容易誤觸 cyber 分類器，plan_or_audit 會回報是否轉給備援；真實部署要先接好備援、處理拒答回 None
+
+👉 第 8 步完成

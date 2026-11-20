@@ -1,23 +1,109 @@
 {
-  "round": 0,
+  "round": 1,
   "queue": [
     "ch04",
     "ch05"
   ],
   "chapters": {
     "ch04": {
-      "status": "pending",
+      "status": "done",
       "rewrites": 0,
-      "review_retries": 0,
-      "verdicts": [],
-      "calls": 0,
-      "started": null,
-      "finished": null,
-      "round": null,
-      "now_done": false,
+      "review_retries": 1,
+      "verdicts": [
+        {
+          "ts": "2026-11-20 11:31:29",
+          "station": "judge",
+          "verdict": "PASS",
+          "note": ""
+        },
+        {
+          "ts": "2026-11-20 11:33:03",
+          "station": "review",
+          "verdict": "REJECT",
+          "note": ""
+        },
+        {
+          "ts": "2026-11-20 11:36:55",
+          "station": "judge",
+          "verdict": "PASS",
+          "note": ""
+        },
+        {
+          "ts": "2026-11-20 11:38:12",
+          "station": "review",
+          "verdict": "REJECT",
+          "note": "找不到判定檔 ch04.md"
+        },
+        {
+          "ts": "2026-11-20 11:40:24",
+          "station": "review",
+          "verdict": "PASS",
+          "note": ""
+        }
+      ],
+      "calls": 9,
+      "started": "2026-11-20 11:23:38",
+      "finished": "2026-11-20 11:40:24",
+      "round": 1,
+      "now_done": true,
       "feedback": null,
-      "cost_usd": 0.0,
-      "sessions": []
+      "cost_usd": 8.863643,
+      "sessions": [
+        {
+          "role": "planner",
+          "session_id": "87996ca1-67a2-4df4-b73e-a98efd67574a",
+          "cost_usd": 1.5530594,
+          "turns": 17
+        },
+        {
+          "role": "writer",
+          "session_id": "055d022d-791e-494b-8413-28ddfb5a5bfc",
+          "cost_usd": 1.1310532,
+          "turns": 6
+        },
+        {
+          "role": "now-updater",
+          "session_id": "d0a0fee1-b77e-4c04-916c-6bec88ac81c2",
+          "cost_usd": 0.7409179999999999,
+          "turns": 5
+        },
+        {
+          "role": "tester",
+          "session_id": "2f70adda-e7ea-4931-a03b-ae9cdf4cfc4e",
+          "cost_usd": 0.9522354000000001,
+          "turns": 4
+        },
+        {
+          "role": "reviewer",
+          "session_id": "d0b73731-9b06-4b1d-a073-a970a756ba49",
+          "cost_usd": 1.199751,
+          "turns": 16
+        },
+        {
+          "role": "writer",
+          "session_id": "5c538ff4-fbff-409f-8782-1167618f4433",
+          "cost_usd": 0.9397432,
+          "turns": 12
+        },
+        {
+          "role": "tester",
+          "session_id": "0f0f0ec1-9646-417c-9f98-e8da78d06da5",
+          "cost_usd": 0.8722713999999999,
+          "turns": 4
+        },
+        {
+          "role": "reviewer",
+          "session_id": "addc2710-7d49-4e07-87de-8342671af774",
+          "cost_usd": 1.100866,
+          "turns": 17
+        },
+        {
+          "role": "reviewer",
+          "session_id": "f5e58a03-9fc4-4346-8ce5-ab92a9f79e1b",
+          "cost_usd": 0.3737472,
+          "turns": 16
+        }
+      ]
     },
     "ch05": {
       "status": "pending",
@@ -40,6 +126,90 @@
       "round": 0,
       "chapter": "-",
       "event": "建立 queue：ch04 ch05"
+    },
+    {
+      "ts": "2026-11-20 11:23:38",
+      "round": 1,
+      "chapter": "ch04",
+      "event": "第 1 輪開始"
+    },
+    {
+      "ts": "2026-11-20 11:27:13",
+      "round": 1,
+      "chapter": "ch04",
+      "event": "規劃完成 → ch04.md"
+    },
+    {
+      "ts": "2026-11-20 11:28:57",
+      "round": 1,
+      "chapter": "ch04",
+      "event": "寫手完成（writer、now-updater）"
+    },
+    {
+      "ts": "2026-11-20 11:30:53",
+      "round": 1,
+      "chapter": "ch04",
+      "event": "腳本執行完成 → ch04-raw.log"
+    },
+    {
+      "ts": "2026-11-20 11:31:29",
+      "round": 1,
+      "chapter": "ch04",
+      "event": "測試判定 PASS"
+    },
+    {
+      "ts": "2026-11-20 11:33:03",
+      "round": 1,
+      "chapter": "ch04",
+      "event": "審查 REJECT → 帶審查意見回寫手"
+    },
+    {
+      "ts": "2026-11-20 11:34:00",
+      "round": 1,
+      "chapter": "ch04",
+      "event": "寫手完成（writer）"
+    },
+    {
+      "ts": "2026-11-20 11:36:20",
+      "round": 1,
+      "chapter": "ch04",
+      "event": "腳本執行完成 → ch04-raw.log"
+    },
+    {
+      "ts": "2026-11-20 11:36:55",
+      "round": 1,
+      "chapter": "ch04",
+      "event": "測試判定 PASS"
+    },
+    {
+      "ts": "2026-11-20 11:38:12",
+      "round": 1,
+      "chapter": "ch04",
+      "event": "審查 REJECT，已退回重做 1 次仍不過 找不到判定檔 ch04.md"
+    },
+    {
+      "ts": "2026-11-20T11:42:00",
+      "round": 1,
+      "chapter": "ch04",
+      "event": "人工修正：審查員預算改為每次呼叫計算，只重跑審查站"
+    },
+    {
+      "ts": "2026-11-20 11:38:57",
+      "round": 1,
+      "chapter": "ch04",
+      "event": "接續第 1 輪（目前站：judged，已呼叫 8 次）"
+    },
+    {
+      "ts": "2026-11-20 11:40:24",
+      "round": 1,
+      "chapter": "ch04",
+      "event": "審查 PASS"
+    },
+    {
+      "ts": "2026-11-20 11:40:24",
+      "round": 1,
+      "chapter": "ch04",
+      "event": "完成並 commit：工廠：新增 K143 ch04 互動演練腳本（第 1 輪）"
     }
   ]
 }
