@@ -114,7 +114,7 @@ def test_verify_auto_fail_skips_qa_call(tmp_path, monkeypatch, capsys):
     rec = unit_of(cfg, "a")
     assert rec["status"] == "failed" and rec["calls"] == 3
     report = (cfg.run_dir / "qa" / "a.md").read_text(encoding="utf-8")
-    assert "VERDICT: FAIL" in report and "必失敗失敗" in report
+    assert "VERDICT: FAIL" in report and "必失敗（exit 3）" in report
 
 
 def test_feedback_reaches_producer_prompt(demo_dir, monkeypatch, capsys):

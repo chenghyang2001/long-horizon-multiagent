@@ -25,3 +25,6 @@ projects/*/run/.runtime/
 projects/*/run/.fake-*
 projects/*/run/*.tmp
 projects/*/run/approvals/*.tmp
+projects/*/run/commands.processing-*.jsonl
+projects/*/run/trace-*.jsonl
+projects/*/run/logs/

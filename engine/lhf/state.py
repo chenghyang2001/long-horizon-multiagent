@@ -1,22 +1,20 @@
 """state.json／history／heartbeat／trace／approvals／alerts 的讀寫，以及挑下一個工作單位。
 
-所有檔案都在 <project>/run/ 底下。state.json 每次都先寫 .tmp 再 os.replace（原子操作），
+所有檔案都在 <project>/run/ 底下。state.json 每次都先寫 .<pid>.tmp 再原子取代，
 中斷時不會留下寫一半的檔；這就是「每站做完立刻存檔、可中斷接續」的基礎。
+外部指令佇列 commands.jsonl：引擎執行中時 approve／reset／reset-calls 寫進佇列，引擎每站開始時套用，
+避免兩個程序各自讀改寫 state.json 而互相覆蓋。
 """
 
 import json
 import os
-from datetime import datetime
 
+from lhf.common import atomic_replace, now_iso, now_str, tmp_name
 from lhf.config import FINAL_STATUSES
 from lhf.errors import RoundError
 
 PENDING_APPROVAL = "pending_approval"
 IN_PROGRESS = "in_progress"
-
-
-def now_str():
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def run_path(cfg, name):
@@ -51,6 +49,7 @@ def new_unit(cfg):
         "sessions": [],
         "approved": [],
         "approval": None,
+        "engine_errors": 0,
     }
 
 
@@ -119,15 +118,16 @@ def unit_problem(cfg, rec):
 def save_state(cfg, state):
     ensure_run_dir(cfg)
     path = run_path(cfg, "state.json")
-    tmp_path = path.with_name(path.name + ".tmp")
+    tmp_path = tmp_name(path)
     tmp_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp_path, path)
+    atomic_replace(tmp_path, path)
 
 
 def log_event(cfg, state, unit, event):
-    """記一筆 history 並立刻存檔——這就是 checkpoint。"""
+    """記一筆 history 並立刻存檔——這就是 checkpoint。history 只留最近 history_max 筆，避免無限長大。"""
     round_no = state["units"].get(unit, {}).get("round") or state["round"]
     state["history"].append({"ts": now_str(), "round": round_no, "unit": unit, "event": event})
+    del state["history"][: -cfg.limits["history_max"]]
     save_state(cfg, state)
     print(f"    · {event}", flush=True)
 
@@ -223,9 +223,9 @@ def read_jsonl_since(path, offset):
 
 def write_jsonl(path, records):
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_name(path.name + ".tmp")
+    tmp_path = tmp_name(path)
     tmp_path.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records), encoding="utf-8")
-    os.replace(tmp_path, path)
+    atomic_replace(tmp_path, path)
 
 
 def trace_path(cfg):
@@ -240,8 +240,41 @@ def approved_path(cfg):
     return run_path(cfg, "approvals") / "approved.jsonl"
 
 
+def approvals_used_path(cfg):
+    return run_path(cfg, "approvals") / "used.jsonl"
+
+
 def alerts_path(cfg):
     return run_path(cfg, "alerts.jsonl")
+
+
+def commands_path(cfg):
+    return run_path(cfg, "commands.jsonl")
+
+
+def queue_command(cfg, command, unit):
+    """引擎執行中：把 approve／reset／reset-calls 排進佇列，由引擎下一站開始時套用。"""
+    append_jsonl(commands_path(cfg), {"ts": now_str(), "command": command, "unit": unit, "pid": os.getpid()})
+
+
+def take_commands(cfg):
+    """把佇列原子地改名再讀；改名之後別人新排的指令會進新的佇列檔，不會遺失。"""
+    path = commands_path(cfg)
+    if not path.exists():
+        return []
+    claimed = path.with_name(f"commands.processing-{os.getpid()}.jsonl")
+    try:
+        atomic_replace(path, claimed)
+    except (FileNotFoundError, PermissionError):
+        return []  # 別人正在寫入：這一站先不處理，下一站再拿
+    records = read_jsonl(claimed)
+    claimed.unlink(missing_ok=True)
+    return records
+
+
+def requeue_commands(cfg, records):
+    for record in records:
+        append_jsonl(commands_path(cfg), record)
 
 
 def write_engine_trace(cfg, rt, kind, decision, reason):
@@ -249,7 +282,7 @@ def write_engine_trace(cfg, rt, kind, decision, reason):
     append_jsonl(
         trace_path(cfg),
         {
-            "ts": datetime.now().isoformat(timespec="seconds"),
+            "ts": now_iso(),
             "round": str(rt["round"]),
             "unit": rt["unit"],
             "session": "",

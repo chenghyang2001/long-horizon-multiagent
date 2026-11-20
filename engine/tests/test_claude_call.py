@@ -23,9 +23,17 @@ def test_find_claude_prefers_native_exe(tmp_path, monkeypatch):
     assert claude_call.find_claude() == [str(exe)]
 
 
+NPM_SHIM = (
+    '@ECHO off\r\nSETLOCAL\r\nIF EXIST "%dp0%\\node.exe" (\r\n  SET "_prog=%dp0%\\node.exe"\r\n) ELSE (\r\n'
+    '  SET "_prog=node"\r\n)\r\n'
+    'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  '
+    '"%dp0%\\node_modules\\@anthropic-ai\\claude-code\\cli.js" %*\r\n'
+)
+
+
 def test_find_claude_cmd_switches_to_node(tmp_path, monkeypatch):
     cmd = tmp_path / "claude.CMD"
-    cmd.write_text("", encoding="utf-8")
+    cmd.write_text(NPM_SHIM, encoding="utf-8")
     cli = tmp_path / "node_modules" / "@anthropic-ai" / "claude-code" / "cli.js"
     cli.parent.mkdir(parents=True)
     cli.write_text("", encoding="utf-8")
@@ -33,7 +41,28 @@ def test_find_claude_cmd_switches_to_node(tmp_path, monkeypatch):
     monkeypatch.setattr(
         claude_call.shutil, "which", lambda name: {"claude": str(cmd), "node": "/usr/bin/node"}.get(name)
     )
-    assert claude_call.find_claude() == ["/usr/bin/node", str(cli)]
+    assert claude_call.find_claude() == ["/usr/bin/node", str(cli.resolve())]
+
+
+def test_find_claude_unparsable_shim_errors(tmp_path, monkeypatch):
+    """reviewer 的 npmsim：shim 只有 @echo off、看不出目標 → 清楚報錯，不退回去執行 .CMD。"""
+    cmd = tmp_path / "claude.cmd"
+    cmd.write_text("@echo off\r\n", encoding="utf-8")
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "no-home"))
+    monkeypatch.setattr(claude_call.shutil, "which", lambda name: {"claude": str(cmd)}.get(name))
+    with pytest.raises(RoundError, match="看不出它實際執行哪個檔"):
+        claude_call.find_claude()
+
+
+def test_shim_pointing_to_exe(tmp_path, monkeypatch):
+    exe = tmp_path / "node_modules" / "@anthropic-ai" / "claude-code" / "bin" / "claude.exe"
+    exe.parent.mkdir(parents=True)
+    exe.write_bytes(b"")
+    cmd = tmp_path / "claude.cmd"
+    cmd.write_text('"%dp0%\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe" %*', encoding="utf-8")
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "no-home"))
+    monkeypatch.setattr(claude_call.shutil, "which", lambda name: {"claude": str(cmd)}.get(name))
+    assert claude_call.find_claude() == [str(exe.resolve())]
 
 
 def test_find_claude_override(monkeypatch):
@@ -56,6 +85,7 @@ def test_build_cmd_variadic_tools(k143_dir):
     index = cmd.index("--tools")
     assert cmd[index + 1 : index + 6] == ["Read", "Glob", "Grep", "Write", "Edit"] and cmd[index + 6] == "--settings"
     assert "--append-system-prompt-file" in cmd and cmd[cmd.index("--setting-sources") + 1] == "project,local"
+    assert cmd[cmd.index("--permission-mode") + 1] == "default"
     assert all("~" not in arg for arg in cmd)
 
 
@@ -110,9 +140,9 @@ def real_mode_demo(demo_dir, tmp_path, monkeypatch):
 
 def test_gate_not_active_fails_closed(real_mode_demo, capsys):
     cfg, tmp_path = real_mode_demo
-    assert round_mod.cmd_run(cfg) == 1
+    assert round_mod.cmd_run(cfg) == 3  # 引擎錯誤
     rec = load_state(cfg)["units"]["a"]
-    assert rec["station"] == "make" and rec["calls"] == 1  # 結果不採用，停在原站
+    assert rec["station"] == "make" and rec["calls"] == 1 and rec["engine_errors"] == 1  # 結果不採用，停在原站
     assert "gate 沒有生效" in capsys.readouterr().err
     call = json.loads((tmp_path / "call.json").read_text(encoding="utf-8"))
     assert call["has_key"] is False and call["role"] == "maker" and call["prompt_len"] > 0
@@ -132,7 +162,7 @@ def test_non_json_output_saves_failure_log(real_mode_demo, tmp_path, monkeypatch
     script = tmp_path / "bad.py"
     script.write_text("print('plain text')\n", encoding="utf-8")
     monkeypatch.setattr(claude_call, "find_claude", lambda: [sys.executable, str(script)])
-    assert round_mod.cmd_run(cfg) == 1
+    assert round_mod.cmd_run(cfg) == 3
     logs = list((cfg.run_dir / "logs").glob("agent-fail-*-maker.txt"))
     assert logs and "plain text" in logs[0].read_text(encoding="utf-8")
 
@@ -142,4 +172,5 @@ def test_hook_settings_points_to_gate(k143_dir):
     settings = json.loads(claude_call.write_hook_settings(cfg).read_text(encoding="utf-8"))
     command = settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
     assert "lhf/gate.py" in command and "--project" in command
+    assert settings["hooks"]["PreToolUse"][0]["hooks"][0]["timeout"] == 30
     assert settings["hooks"]["PostToolUse"][0]["hooks"][0]["command"].endswith("--post")

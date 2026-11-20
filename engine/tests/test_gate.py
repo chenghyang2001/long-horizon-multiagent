@@ -117,12 +117,23 @@ def test_approval_command_then_approved(demo_dir, tmp_path, monkeypatch):
     data_roles = load_config(demo_dir).roles
     assert "^echo " in data_roles["maker"]["bash_allow"]
     cfg = load_config(demo_dir)
-    cfg.roles["maker"]["bash_allow"].append("^ssh ")
     decision, reason, approval = gate.decide(bash_event("ssh pi5 reboot"), cfg, ctx("maker", unit="a"))
     assert decision == "deny" and approval and "人工核准" in reason
-    append_jsonl(approved_path(cfg), {"unit": "a", "command": "ssh pi5 reboot"})
+    append_jsonl(approved_path(cfg), {"unit": "a", "round": "1", "command": "ssh pi5 reboot"})
     assert gate.decide(bash_event("ssh pi5 reboot"), cfg, ctx("maker", unit="a"))[0] == "allow"
     assert gate.decide(bash_event("ssh pi5 reboot"), cfg, ctx("maker", unit="b"))[2] is True  # 別的單位不共用
+    assert gate.decide(bash_event("ssh pi5 reboot"), cfg, ctx("maker", unit="a", round_no="2"))[2] is True  # 別輪不共用
+    gate.consume_approval(cfg, ctx("maker", unit="a"), "ssh pi5 reboot")
+    assert gate.decide(bash_event("ssh pi5 reboot"), cfg, ctx("maker", unit="a"))[2] is True  # 用一次就失效
+
+
+def test_approval_command_must_match_bash_allow_first(demo_dir, tmp_path, monkeypatch):
+    """需核准的指令若不在白名單，直接拒絕，不進入核准流程（不會產生 pending）。"""
+    monkeypatch.setenv("LH_WORK_OVERRIDE", str(tmp_path / "w"))
+    cfg = load_config(demo_dir)
+    cfg.data["approval_commands"] = ["^scp "]
+    decision, reason, approval = gate.decide(bash_event("scp a b"), cfg, ctx("maker", unit="a"))
+    assert decision == "deny" and not approval and "bash_allow" in reason
 
 
 def test_unit_with_traversal_is_ignored(monkeypatch):

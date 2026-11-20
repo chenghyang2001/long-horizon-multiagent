@@ -51,9 +51,9 @@ def test_bash_policy_rejected(tmp_path, mutate, fragment):
 def test_checker_write_tools_still_bound_by_write(tmp_path, monkeypatch):
     """QA 有 Edit 也只能寫自己的報告位置。"""
     monkeypatch.setenv("LH_WORK_OVERRIDE", str(tmp_path / "w"))
-    cfg = load_with(tmp_path, lambda d: d["roles"]["qa"].update(tools=["Read", "Write", "Edit", "MultiEdit"]))
+    cfg = load_with(tmp_path, lambda d: d["roles"]["qa"].update(tools=["Read", "Write", "Edit"]))
     ctx = {"role": "qa", "unit": "a", "round": "1", "station": "", "session": "s"}
-    for tool in ("Edit", "MultiEdit", "Write"):
+    for tool in ("Edit", "Write"):
         event = {"tool_name": tool, "tool_input": {"file_path": str(tmp_path / "w" / "a.txt")}}
         assert gate.decide(event, cfg, ctx)[0] == "deny"
     event = {"tool_name": "Edit", "tool_input": {"file_path": str(cfg.run_dir / "qa" / "a.md")}}
@@ -171,7 +171,7 @@ def test_hours_corrupt_state_alerts(demo_dir):
     path.parent.mkdir()
     path.write_text("{broken", encoding="utf-8")
     proc = run_cli([str(demo_dir), "hours", "--hours", "1", "--gap-seconds", "0"], {"LH_FAKE_MODEL": "1"})
-    assert proc.returncode == 1 and "state.json 讀不到" in proc.stdout
+    assert proc.returncode == 2 and "state.json 讀不到" in proc.stdout
     assert path.read_text(encoding="utf-8") == "{broken"
     assert "state.json 讀不到" in (demo_dir / "run" / "ALERT.txt").read_text(encoding="utf-8")
 

@@ -1,6 +1,7 @@
 # K143《Fable 5》演練備課工廠的專案設定（lhf 引擎讀這份）
 # 由 capstone/run_round.py＋policy.yaml 搬移而來，行為與 i5 實戰 8 輪的舊版一致。
 # 欄位說明見 templates/kindle-drill/factory.yaml。
+schema: 1
 name: k143
 type: kindle-drill
 description: 每一輪備好一章 8 步互動演練（規劃 → 腳本＋教練稿∥現況 → 實跑 → 測試判定 → 審查 → commit）
@@ -68,6 +69,8 @@ stations:
     require: ["{script}", "{coach}"]
     log: "{raw}"
     fail_report: "{testlog}"
+    # 任何一步結束碼非 0 都由引擎直接判 FAIL（舊版由 tester 依「exit code 非 0 → FAIL」判，結果相同；
+    # 已核對 i5 的 ch04～ch13 raw log，通過的章節每一步都是 0，所以不需要 allow_nonzero）
     cmds:
       - {title: "bash -n 語法檢查", cmd: "bash -n {unit}.sh", fail_on_error: true}
       - {title: "第 {step} 步", cmd: "bash {unit}.sh {step}", steps: [1, 8]}
@@ -135,7 +138,8 @@ limits:
   agent_timeout: 900
   feedback_max_chars: 6000
 
-feedback_template: "\n\n這是重寫。上一版沒有通過{feedback_label}，原因如下（來自 {feedback_path}）：\n-----\n{feedback_content}\n-----\n請針對以上問題修正兩個檔案（整檔覆寫），沒問題的步驟保持不變。"
+# 退回意見：失敗報告＋實跑 raw log（§9）＋審查退回時再附最近一次 QA 報告；比舊版多了 raw log 與 QA 段
+feedback_template: "\n\n這是重寫。上一版沒有通過{feedback_label}，原因如下（來自 {feedback_path}）：\n-----\n{feedback_content}\n-----\n實際執行紀錄（{feedback_log}，取檔尾）：\n-----\n{feedback_log_content}\n-----{feedback_qa_section}\n請針對以上問題修正兩個檔案（整檔覆寫），沒問題的步驟保持不變。"
 
 prompts:
   plan: |-

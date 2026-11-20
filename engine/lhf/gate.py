@@ -1,9 +1,13 @@
 """控制閘門：claude -p 每次工具呼叫前（PreToolUse）與呼叫後（PostToolUse）都執行本程式。
 
-PreToolUse 判斷順序：全域禁止 → 意圖合約（工具）→ 路徑合約（Write／Edit）→ 需核准指令
-                    → Bash 白名單 → 角色預算 → allow。結果寫一行 kind=decision 到 run/trace.jsonl。
-需核准指令（approval_commands 命中且尚未核准）：deny，並寫 run/approvals/pending.jsonl，
+PreToolUse 判斷順序：全域禁止 → 引擎內部檔保護 → 意圖合約（工具）→ 路徑合約（Write／Edit）
+                    → Bash 白名單（含控制字元檢查）→ 需核准指令 → 角色預算 → allow。
+                    結果寫一行 kind=decision 到 run/trace.jsonl。
+需核准指令（approval_commands 命中且本輪沒有可用的核准）：deny，並寫 run/approvals/pending.jsonl，
 引擎本站結束後把單位標 pending_approval，人執行 approve 後重跑本站。
+核准綁定「單位＋輪次＋完全相同的指令」，放行一次就用掉（寫 approvals/used.jsonl）。
+設定一律讀 run/.runtime/factory.snapshot.json（本輪開始時的快照，含 sha256）；
+代理就算改了 factory.yaml 也影響不到本輪的 gate。
 PostToolUse（--post）只記錄工具實際結果（kind=result）。
 任何內部錯誤一律 fail closed（deny），且永遠 exit 0，避免 hook 失敗被當成放行。
 
@@ -24,15 +28,24 @@ import os
 import re
 import sys
 from collections import Counter
-from datetime import datetime
 from pathlib import Path
 
 if __package__ in (None, ""):  # 被 hook 以檔案路徑執行時，把 engine/ 加進 sys.path
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from lhf.common import now_iso  # noqa: E402
 from lhf.config import ID_RE, load_config, norm_text, render_path  # noqa: E402
 from lhf.errors import MissingVar  # noqa: E402
-from lhf.state import append_jsonl, approved_path, pending_approvals_path, read_jsonl, trace_path  # noqa: E402
+from lhf.snapshot import load_for_gate  # noqa: E402
+from lhf.state import (  # noqa: E402
+    append_jsonl,
+    approvals_used_path,
+    approved_path,
+    pending_approvals_path,
+    read_jsonl,
+    read_jsonl_since,
+    trace_path,
+)
 
 WRITE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 PREVIEW_LEN = 120
@@ -48,10 +61,6 @@ def setup_utf8_io():
             pass
 
 
-def now_iso():
-    return datetime.now().isoformat(timespec="seconds")
-
-
 def run_context(event):
     """單位 id 不合格（例如含 ../）就當成沒有單位：需要單位的路徑合約一律不放行。"""
     unit = os.environ.get("LH_UNIT", "")
@@ -61,7 +70,16 @@ def run_context(event):
         "unit": unit if ID_RE.match(unit) else "",
         "station": os.environ.get("LH_STATION", ""),
         "session": event.get("session_id", ""),
+        "trace_offset": trace_offset_env(),
     }  # 預算以每次 claude -p 計，重做時有新額度
+
+
+def trace_offset_env():
+    """引擎在每次 claude -p 前記下 trace 的位元組位置；預算只讀這之後的紀錄，trace 再大也不會變慢。"""
+    try:
+        return max(0, int(os.environ.get("LH_TRACE_OFFSET", "0")))
+    except ValueError:
+        return 0
 
 
 # ---------- 路徑 ----------
@@ -134,6 +152,16 @@ def check_global(cfg, target, command):
     return None
 
 
+def check_protected(cfg, target):
+    """引擎內部檔（state、trace、核准、設定、引擎程式）任何角色都不可寫，不看 roles 設定。"""
+    if target is None:
+        return None
+    for pattern in cfg.protected_patterns():
+        if fnmatch.fnmatchcase(target, pattern):
+            return f"引擎內部檔不可寫入：{target}"
+    return None
+
+
 def check_contract(cfg, event, role_policy, ctx, target):
     tool = event.get("tool_name")
     if tool not in (role_policy.get("tools") or []):
@@ -143,14 +171,35 @@ def check_contract(cfg, event, role_policy, ctx, target):
     return None
 
 
+def approval_key(record):
+    return (record.get("unit"), str(record.get("round")), record.get("command"))
+
+
+def available_approval(cfg, command, ctx):
+    """同單位、同輪次、完全相同的指令，核准次數多於已使用次數才算還有一次可用。"""
+    key = (ctx["unit"], str(ctx["round"]), command)
+    granted = sum(1 for r in read_jsonl(approved_path(cfg)) if approval_key(r) == key)
+    used = sum(1 for r in read_jsonl(approvals_used_path(cfg)) if approval_key(r) == key)
+    return granted > used
+
+
 def needs_approval(cfg, command, ctx):
-    """命中 approval_commands 且這個單位還沒核准過完全相同的指令 → 需要人工核准。"""
+    """命中 approval_commands 且本輪沒有可用的核准 → 需要人工核准。"""
     if command is None:
         return False
     if not any(re.search(pattern, command) for pattern in cfg.data.get("approval_commands") or []):
         return False
-    approved = read_jsonl(approved_path(cfg))
-    return not any(r.get("unit") == ctx["unit"] and r.get("command") == command for r in approved)
+    return not available_approval(cfg, command, ctx)
+
+
+def is_approval_command(cfg, command):
+    return command is not None and any(re.search(p, command) for p in cfg.data.get("approval_commands") or [])
+
+
+def consume_approval(cfg, ctx, command):
+    append_jsonl(
+        approvals_used_path(cfg), {"ts": now_iso(), "unit": ctx["unit"], "round": str(ctx["round"]), "command": command}
+    )
 
 
 def check_bash(role_policy, role, command):
@@ -170,7 +219,7 @@ def count_allowed(cfg, ctx):
     """預算只算同一輪、同一單位、同一角色、同一 session 真的放行過的工具呼叫。"""
     return sum(
         1
-        for rec in read_jsonl(trace_path(cfg))
+        for rec in read_jsonl_since(trace_path(cfg), ctx.get("trace_offset", 0))
         if rec.get("kind") == "decision"
         and rec.get("decision") == "allow"
         and rec.get("role") == ctx["role"]
@@ -192,21 +241,23 @@ def decide(event, cfg, ctx):
     if not event.get("tool_name"):
         raise ValueError("hook 輸入缺少 tool_name")
     target, command = write_target(cfg, event), bash_command(event)
-    reason = check_global(cfg, target, command)
+    reason = check_global(cfg, target, command) or check_protected(cfg, target)
     if reason:
         return "deny", reason, False
     role_policy = cfg.roles.get(ctx["role"])
     if not isinstance(role_policy, dict):
         return "deny", f"未知角色 {ctx['role']}（沒有 LH_ROLE 也沒有 agent_type，或 roles 沒定義）", False
     reason = check_contract(cfg, event, role_policy, ctx, target)
+    if not reason and command is not None:
+        reason = check_bash(role_policy, ctx["role"], command)  # 需核准的指令也必須先符合白名單
     if reason:
         return "deny", reason, False
     if needs_approval(cfg, command, ctx):
         return "deny", "此指令需要人工核准（已寫入 approvals/pending.jsonl，核准後重跑本站）", True
-    reason = (check_bash(role_policy, ctx["role"], command) if command is not None else None) or check_budget(cfg, ctx)
+    reason = check_budget(cfg, ctx)
     if reason:
         return "deny", reason, False
-    return "allow", "通過全域禁止、合約、路徑、核准與預算檢查", False
+    return "allow", "通過全域禁止、內部檔保護、合約、路徑、白名單、核准與預算檢查", False
 
 
 # ---------- 紀錄與輸出 ----------
@@ -295,10 +346,12 @@ def run_hook(project_dir):
         ctx = run_context(event)
         if not project_dir:
             raise ValueError("沒有 --project 也沒有 LH_PROJECT_DIR")
-        cfg = load_config(project_dir)
+        cfg = load_for_gate(project_dir)
         decision, reason, approval = decide(event, cfg, ctx)
         if approval:
             record_pending(cfg, ctx, bash_command(event))
+        elif decision == "allow" and is_approval_command(cfg, bash_command(event)):
+            consume_approval(cfg, ctx, bash_command(event))
         append_jsonl(
             trace_path(cfg),
             trace_record(ctx, event.get("tool_name"), "decision", decision, reason, event.get("tool_input")),
@@ -320,7 +373,7 @@ def judge_response(response):
 def run_post(project_dir):
     try:
         event = read_event()
-        cfg = load_config(project_dir)
+        cfg = load_for_gate(project_dir)
         outcome, output = judge_response(event.get("tool_response"))
         append_jsonl(
             trace_path(cfg),

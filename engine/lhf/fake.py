@@ -5,9 +5,11 @@
   LH_FAKE_VERDICT=FAIL_ONCE[:<站>]    該 verdict 站（預設第一個 verdict 站＝qa）每單位第一次判失敗
   LH_FAKE_VERDICT=FAIL_ALWAYS[:<站>]  該 verdict 站永遠判失敗（測退回上限）
   LH_FAKE_APPROVAL_REQUEST=<角色>     模擬 gate 擋下需核准的指令（寫一筆 pending）
+  LH_FAKE_DELAY_SEC=<秒>             每次假呼叫先等幾秒（測併行：引擎跑一半時從外面下指令）
 """
 
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -76,6 +78,9 @@ def fake_approval_request(cfg, rt, station, role):
 
 
 def fake_agent(cfg, rt, station, job):
+    delay = float(os.environ.get("LH_FAKE_DELAY_SEC") or 0)
+    if delay > 0:
+        time.sleep(delay)
     mapping = cfg.vars(unit=rt["unit"], round_no=rt["round"])
     for path_text, content in fake_files(cfg, rt, station, job, mapping).items():
         write_file(path_text, content)

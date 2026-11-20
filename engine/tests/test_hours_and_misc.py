@@ -41,14 +41,16 @@ def test_hours_runs_until_queue_empty(demo_dir):
     assert "沒有可執行的工作單位" in text and "完成單位：3/3" in text and "## 退回紀錄" in text
 
 
-def test_hours_alert_after_two_failures(demo_dir):
+def test_hours_unit_failures_do_not_stop(demo_dir):
+    """單位被判 failed 不會讓 hours 停下：3 個單位都做過，結束碼 1、ALERT 列出全部。"""
     env = {"LH_FAKE_MODEL": "1", "LH_FAKE_VERDICT": "FAIL_ALWAYS:qa"}
     run_cli([str(demo_dir), "init"], env)
     proc = run_cli([str(demo_dir), "hours", "--hours", "1", "--gap-seconds", "0"], env)
     assert proc.returncode == 1
-    assert (demo_dir / "run" / "ALERT.txt").exists()
+    alert = (demo_dir / "run" / "ALERT.txt").read_text(encoding="utf-8")
+    assert all(f"{unit}：failed" in alert for unit in "abc")
     summary = next((demo_dir / "run" / "logs").glob("hours-summary-*.md")).read_text(encoding="utf-8")
-    assert "qa FAIL" in summary and "ALERT 清單（本次單位）：2 筆" in summary
+    assert "qa FAIL" in summary and "ALERT 清單（本次單位）：3 筆" in summary
 
 
 def test_cli_config_error_exit_2(tmp_path):
@@ -98,16 +100,26 @@ def test_k143_prompts_match_legacy(k143_dir, unit, tmp_path):
     assert stations.prompt_text(rt, "now") == legacy.prompt_now(unit, paths)
     assert stations.prompt_text(rt, "judge") == legacy.prompt_judge(unit, paths)
     assert stations.prompt_text(rt, "review") == legacy.prompt_review(unit, paths)
-    rec["feedback"] = {"label": "測試", "path": str(feedback), "for": "write"}
-    assert stations.prompt_text(rt, "write") == legacy.prompt_write(
-        unit, paths, {"feedback": {"kind": "test", "path": str(feedback)}}
-    )
+    # §9 起退回意見多帶 raw log 與（審查退回時）QA 報告，所以帶退回意見的 write prompt 不再與舊版逐字相同：
+    # 改成確認「舊版的退回段落」仍完整在新 prompt 裡，另外多了 raw log 段
+    raw = tmp_path / "raw.log"
+    raw.write_text("第 3 步 exit code：1", encoding="utf-8")
+    rec["feedback"] = {"label": "測試", "path": str(feedback), "log": str(raw), "qa": str(feedback), "for": "write"}
+    new_prompt = stations.prompt_text(rt, "write")
+    old_prompt = legacy.prompt_write(unit, paths, {"feedback": {"kind": "test", "path": str(feedback)}})
+    old_feedback = old_prompt[len(legacy.prompt_write(unit, paths, {"feedback": None})) - len(legacy.COMMON_RULES) :]
+    old_head = old_feedback.split("-----" + chr(10) + "請針對")[0]
+    assert old_head in new_prompt and "第 3 步 exit code：1" in new_prompt
+    assert new_prompt.endswith(legacy.COMMON_RULES)
+    assert "最近一次 QA 報告" not in new_prompt  # QA 失敗退回時不重複附 QA 報告
 
 
 def test_engine_has_no_project_specific_words():
     banned = re.compile(r"K143|fable|Fable|教練|\bch\d{2}\b|chapter|章|8 步", re.IGNORECASE)
     hits = []
     for path in (ENGINE_DIR / "lhf").glob("*.py"):
+        if path.name == "legacy.py":
+            continue  # 舊版格式轉移必須認得舊欄位名（chapters），是唯一的例外
         for no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             if banned.search(line):
                 hits.append(f"{path.name}:{no}: {line.strip()}")

@@ -21,12 +21,14 @@
 #     超過 → failed／rejected，寫進 run/alerts.jsonl，下一輪不自動重做（人看過後 reset <id>）
 #   - 判定檔最後一行必須是 `VERDICT: <值>`，讀不到＝失敗
 # =====================================================================
+schema: 1                      # 設定格式版本（必填；引擎不認得的版本會拒絕啟動）
 name: my-book                  # ★ 專案 id（英數字、底線、連字號）
 type: kindle-drill
 description: 每一輪備好一章互動演練
 workdir: ~/workspace/<書的 repo>   # ★ 模型要改的 git worktree（commit 也在這裡）
 branch: factory/drills         # ★ commit 前會確認 workdir 在這個分支，不同就拒絕
 agent_cwd: "{PRACTICE}"        # claude -p 的工作目錄
+# bash: "C:/Program Files/Git/bin/bash.exe"   # 可選：command 站用哪個 bash（不可指 System32 的 WSL bash）
 read_dirs:                     # 額外給代理讀的資料夾（--add-dir）；run/ 永遠會加
   - "{WORK}/prompts"
 
@@ -88,7 +90,9 @@ stations:
     cmds:
       - {title: "bash -n 語法檢查", cmd: "bash -n {unit}.sh", fail_on_error: true}
       - {title: "第 {step} 步", cmd: "bash {unit}.sh {step}", steps: [1, 8]}
-    on_fail: {goto: write, max: 2, label: 測試}
+      # 預設任何指令結束碼非 0 → 引擎直接判 FAIL 並退回；確定某指令本來就會非 0 才標 allow_nonzero: true
+      # 佔位符的值會先 shlex.quote，路徑含空白也安全
+    on_fail: {goto: write, max: 2, label: 測試}   # verify 與 qa 的 max 必須相同（共用 rewrites）
   - id: judge
     kind: agent
     chain: qa
@@ -116,8 +120,15 @@ stations:
       - "practice/interactive/coach-{unit}.txt"
       - "practice/interactive/now-{unit}.txt"
     message: "工廠：新增 {unit} 互動演練（第 {round} 輪）"
+  # finish 鏈也可以放 command 站（例：approve → push／部署），但不可有 on_fail：失敗直接標 failed＋ALERT
 
-roles:                         # 意圖合約：tools 白名單、write 可寫路徑（glob，** 任意層）、budget 每次呼叫工具次數上限
+# 意圖合約：tools 白名單、write 可寫路徑（glob，** 任意層）、budget 每次呼叫工具次數上限
+#   - tools 只能用 Read Glob Grep Write Edit MultiEdit NotebookEdit Bash WebFetch WebSearch TodoWrite（大小寫相符）；
+#     不支援 MCP 工具（gate 看不懂它的參數，無法把關）
+#   - QA（qa 站）與審查（review 站）角色只能用 Read Glob Grep Write Edit
+#   - 任何角色的 write 都不可碰引擎內部檔：factory.yaml、agents/、run/state.json、run/approvals/、
+#     run/trace*.jsonl、run/alerts.jsonl、run/commands*.jsonl、run/.runtime/、run/logs/、engine/
+roles:
   planner: {tools: [Read, Glob, Grep, Write], write: ["{RUN}/plans/**"], budget: 40}
   writer: {tools: [Read, Glob, Grep, Write, Edit], write: ["{script}", "{coach}"], budget: 40}
   now-updater: {tools: [Read, Grep, Write], write: ["{now}"], budget: 15}
@@ -128,19 +139,26 @@ roles:                         # 意圖合約：tools 白名單、write 可寫�
   #   - 不可用 .*、^.*$、.+ 這類萬用 pattern（啟動時會被拒）
   #   - 指令含 ; & | < > ` $ 或換行一律拒絕（防止在白名單指令後面串接其他指令）
   #   - QA（qa 站）與審查（review 站）角色不可有 Bash、不可有 bash_allow
+  #   - 命中 approval_commands 的指令也必須先符合 bash_allow，否則直接拒絕、不會進入核准流程
 
 forbidden:                     # 任何角色都不行（路徑比對不分大小寫、\ 與 / 視同）
   paths: ["practice/<書附原始碼>"]   # ★
   commands: ["rm -rf", "git push", ".claude/", "ANTHROPIC_API_KEY"]
 approval_commands: []          # regex；命中的 Bash 指令先擋下、寫 run/approvals/pending.jsonl，approve 後才放行
+                               # 核准綁「單位＋輪次＋完全相同的指令」，放行一次就失效
 
 limits:                        # 都可省略
   calls_per_unit: 10           # 每單位 claude -p 次數上限（超過＝failed）
   agent_timeout: 900           # 每次 claude -p 逾時秒數
   feedback_max_chars: 6000     # 退回意見最多取檔尾幾字
+  max_engine_errors: 3         # 同一單位連續引擎錯誤幾次就標 failed、換下一個
+  history_max: 2000            # state.json 只保留最近幾筆 history
+  fail_logs_max: 50            # logs/agent-fail-*.txt 保留幾個
+  trace_archive_mb: 20         # hours 開跑時 trace.jsonl 超過就歸檔
 
-# 退回意見範本（可省略）：{feedback_label} {feedback_path} {feedback_content}
-feedback_template: "\n\n這是重寫。上一版沒有通過{feedback_label}，原因如下（來自 {feedback_path}）：\n-----\n{feedback_content}\n-----\n請只修正以上問題。"
+# 退回意見範本（可省略）：{feedback_label} {feedback_path} {feedback_content}（失敗報告）
+#   {feedback_log} {feedback_log_content}（verify 站 raw log）{feedback_qa_section}（審查退回時的最近一次 QA 報告）
+feedback_template: "\n\n這是重寫。上一版沒有通過{feedback_label}，原因如下（來自 {feedback_path}）：\n-----\n{feedback_content}\n-----\n實際執行紀錄（{feedback_log}）：\n-----\n{feedback_log_content}\n-----{feedback_qa_section}\n請只修正以上問題。"
 
 prompts:                       # ★ 每站給代理的工作指示（經 stdin 傳入，可多行）
   plan: "規劃第 {num} 章（{unit}），讀 {prompt_md}，寫到 {plan}。{common_rules}"
@@ -150,4 +168,4 @@ prompts:                       # ★ 每站給代理的工作指示（經 stdin 
   review: "審查 {script}、{coach}、{now}，寫到 {review}，最後一行 `VERDICT: PASS` 或 `VERDICT: REJECT`。{common_rules}"
 
 fake: {}                       # 假模式（LH_FAKE_MODEL=1）各角色要寫的假檔：{角色: {"{檔案}": "內容"}}
-notify: {}                     # 預留（B 階段）：{on_alert: [...], on_finish: [...]}
+notify: {}                     # 預留（B 階段）：{on_alert: [...], on_finish: [...]}；尚未實作，有填會在啟動時警告

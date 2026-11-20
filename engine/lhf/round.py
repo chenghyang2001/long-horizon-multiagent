@@ -1,7 +1,12 @@
 """一輪＝一個工作單位：依 factory.yaml 的站序執行，每站做完立刻存檔，可中斷接續。
 
 也包含其他子指令：init／status／dry-run／reset-calls／reset／approve。
-結束碼：0＝單位完成或停在等待核准；1＝失敗或錯誤；130＝使用者中斷。
+run 結束碼：0＝單位完成或停在等待核准；1＝單位被判 failed／rejected；3＝引擎錯誤（停在原站，下次重試）；
+            4＝已有另一個 run／hours 在跑；130＝使用者中斷。
+同一單位連續引擎錯誤達 limits.max_engine_errors（預設 3）次 → 標 failed＋ALERT，換下一個單位。
+
+併行安全：run 全程持有執行鎖；approve／reset／reset-calls 遇到鎖被別人持有時改寫進 commands.jsonl，
+由正在跑的引擎在每站開始時套用，不會兩邊各自讀改寫 state.json 而互相覆蓋。
 """
 
 import os
@@ -9,31 +14,118 @@ import shlex
 import sys
 import time
 
-from lhf import claude_call, stations
+from lhf import claude_call, lock, stations
+from lhf.common import EXIT_ENGINE_ERROR, EXIT_INTERRUPTED, EXIT_OK, EXIT_UNIT_FAILED, USD_TO_TWD, now_str
 from lhf.config import FINAL_STATUSES, posix, render, render_path
 from lhf.errors import CallBudgetExceeded, RoundError
+from lhf.snapshot import write_snapshot
 from lhf.state import (
     IN_PROGRESS,
     PENDING_APPROVAL,
-    approved_path,
     alerts_path,
     append_jsonl,
+    approved_path,
     blocked_reason,
     load_state,
     log_event,
     new_state,
     new_unit,
-    now_str,
     pending_approvals_path,
+    queue_command,
     read_jsonl,
+    requeue_commands,
     run_path,
     runnable_units,
+    take_commands,
     write_heartbeat,
     write_jsonl,
 )
 
-EXIT_INTERRUPTED = 130
-USD_TO_TWD = 32.0  # 只為了讓摘要好讀的概略匯率；走 Max 訂閱不實扣，這是「等值成本」
+# ---------- 會改 state 的指令（直接執行與佇列套用共用同一份邏輯） ----------
+
+
+def apply_reset_calls(cfg, state, unit):
+    """hook 沒掛上等環境問題白白用掉次數時，修好後歸零重跑，並留 history 方便追查。"""
+    rec = state["units"][unit]
+    old_calls, rec["calls"] = rec.get("calls", 0), 0
+    log_event(cfg, state, unit, f"手動歸零 claude -p 次數（{old_calls} → 0，reset-calls）")
+    return f"{unit} 的 claude -p 次數已從 {old_calls} 歸零（狀態維持 {rec['status']}）"
+
+
+def apply_reset(cfg, state, unit):
+    """人看過 ALERT 後，把單位整個重設回起點（failed／rejected 不會自動重做）。"""
+    old_status = state["units"][unit]["status"]
+    state["units"][unit] = new_unit(cfg)
+    log_event(cfg, state, unit, f"手動重設（原狀態 {old_status} → pending，reset）")
+    return f"{unit} 已重設為 pending"
+
+
+def apply_approve(cfg, state, unit):
+    """把該單位的 pending 移到 approved；站型核准記在 rec，指令核准給 gate 比對（綁輪次、用一次）。"""
+    rec = state["units"][unit]
+    if rec["status"] != PENDING_APPROVAL:
+        raise RoundError(f"{unit} 目前是 {rec['status']}，沒有在等待核准")
+    pending = read_jsonl(pending_approvals_path(cfg))
+    mine = [item for item in pending if item.get("unit") == unit]
+    for item in mine:
+        append_jsonl(approved_path(cfg), {**item, "approved_at": now_str()})
+    write_jsonl(pending_approvals_path(cfg), [item for item in pending if item.get("unit") != unit])
+    station_id = (rec.get("approval") or {}).get("station") or rec["station"]
+    if cfg.station(station_id)["kind"] == "approve" and station_id not in rec["approved"]:
+        rec["approved"].append(station_id)
+    rec["status"], rec["approval"] = IN_PROGRESS, None
+    log_event(cfg, state, unit, f"人工核准 {len(mine)} 筆（站 {station_id}），下次執行重跑該站")
+    return f"{unit} 已核准，下次 run 會從站 {station_id} 繼續"
+
+
+MUTATIONS = {"approve": apply_approve, "reset": apply_reset, "reset-calls": apply_reset_calls}
+
+
+def require_unit(cfg, unit):
+    state = load_state(cfg)
+    if state is None:
+        raise RoundError("沒有 state.json，先執行 init")
+    if unit not in state["units"]:
+        raise RoundError(f"{unit} 不在 state.json")
+    return state
+
+
+def precheck(cfg, command, unit):
+    """排進佇列前先做唯讀檢查，明顯錯誤（單位不存在、沒在等核准）立刻告訴使用者。"""
+    state = require_unit(cfg, unit)
+    if command == "approve" and state["units"][unit]["status"] != PENDING_APPROVAL:
+        raise RoundError(f"{unit} 目前是 {state['units'][unit]['status']}，沒有在等待核准")
+
+
+def cmd_mutate(cfg, command, unit):
+    """引擎在跑 → 排進 commands.jsonl；沒在跑 → 拿鎖後直接讀改寫。"""
+    owner = lock.held_by_other(cfg)
+    if owner:
+        precheck(cfg, command, unit)
+        queue_command(cfg, command, unit)
+        print(f"引擎正在執行（PID {owner.get('pid')}），{command} {unit} 已排入 commands.jsonl，下一站開始時套用")
+        return EXIT_OK
+    with lock.holding(cfg, command):
+        print(MUTATIONS[command](cfg, require_unit(cfg, unit), unit))
+    return EXIT_OK
+
+
+def apply_queued(rt):
+    """每站開始時套用外部指令；正在跑的單位不能 reset（會打斷本站），先放回佇列等下一輪。"""
+    cfg, state = rt["cfg"], rt["state"]
+    deferred = []
+    for record in take_commands(cfg):
+        command, unit = record.get("command"), record.get("unit")
+        if unit == rt["unit"] and command in ("reset", "reset-calls"):
+            deferred.append(record)
+            continue
+        try:
+            if command not in MUTATIONS or unit not in state["units"]:
+                raise RoundError(f"無法套用 {command} {unit}")
+            print(f"    （套用佇列指令）{MUTATIONS[command](cfg, state, unit)}", flush=True)
+        except RoundError as exc:
+            log_event(cfg, state, unit or "-", f"佇列指令未套用：{exc}")
+    requeue_commands(cfg, deferred)
 
 
 # ---------- 執行一輪 ----------
@@ -49,11 +141,13 @@ def maybe_fake_interrupt(station_id):
 def run_stations(rt, summary):
     """依 rec["station"] 一站一站走；退回會把 station 改回 producer，迴圈自然回頭。"""
     while True:
+        apply_queued(rt)
         rec = stations.unit_rec(rt)
         if rec["status"] in FINAL_STATUSES or rec["status"] == PENDING_APPROVAL:
             return
         station = rt["cfg"].station(rec["station"])
         print(f"[站 {stations.label_of(station)}]", flush=True)
+        heartbeat(rt, f"站 {station['id']} 開始", 0)
         start = time.monotonic()
         result = stations.STATION_FUNCS[station["kind"]](rt, station)
         summary.append((stations.label_of(station), result, time.monotonic() - start))
@@ -102,9 +196,10 @@ def heartbeat(rt, outcome, elapsed):
 
 
 def print_summary(rt, summary, elapsed):
-    rec, cost = stations.unit_rec(rt), stations.unit_rec(rt)["cost_usd"]
+    rec = stations.unit_rec(rt)
+    cost = rec["cost_usd"]
     retries = "　".join(f"{name} {count} 次" for name, count in rec["retries"].items()) or "無退回"
-    print("\n" + "=" * 56)
+    print(chr(10) + "=" * 56)
     print(f"本輪摘要：第 {rec['round']} 輪｜{rt['unit']}｜狀態 {rec['status']}（站 {rec['station']}）")
     for label, result, seconds in summary:
         print(f"  站 {label:<14} {result}（{seconds:.1f} 秒）")
@@ -116,22 +211,29 @@ def print_summary(rt, summary, elapsed):
 
 def outcome_of(status):
     if status == "done":
-        return "成功", 0
+        return "成功", EXIT_OK
     if status == PENDING_APPROVAL:
-        return "等待核准", 0
-    return "失敗", 1
+        return "等待核准", EXIT_OK
+    return "失敗", EXIT_UNIT_FAILED
 
 
 def cmd_run(cfg, unit_arg=None):
-    state = load_state(cfg)
-    if state is None:
-        raise RoundError("沒有 state.json，先執行 init")
-    unit = pick_unit(cfg, state, unit_arg)
-    if unit is None:
-        if not unit_arg:
-            print_nothing_runnable(cfg, state)
-        return 0
-    rt, start, summary = begin_round(cfg, state, unit), time.monotonic(), []
+    with lock.holding(cfg, "run"):
+        state = load_state(cfg)
+        if state is None:
+            raise RoundError("沒有 state.json，先執行 init")
+        unit = pick_unit(cfg, state, unit_arg)
+        if unit is None:
+            if not unit_arg:
+                print_nothing_runnable(cfg, state)
+            return EXIT_OK
+        write_snapshot(cfg)  # gate 本輪只讀這份快照
+        rt = begin_round(cfg, state, unit)
+        return run_unit(rt)
+
+
+def run_unit(rt):
+    start, summary = time.monotonic(), []
     try:
         run_stations(rt, summary)
     except KeyboardInterrupt:
@@ -148,12 +250,23 @@ def cmd_run(cfg, unit_arg=None):
 
 
 def handle_error(rt, summary, exc, elapsed):
-    station = stations.unit_rec(rt)["station"]
-    log_event(rt["cfg"], rt["state"], rt["unit"], f"錯誤（停在站 {station}，下次重試）：{exc}")
-    heartbeat(rt, "失敗", elapsed)
+    """引擎錯誤：單位停在原站下次重試；連續太多次就標 failed，避免卡在同一個單位燒時間。"""
+    rec, cfg = stations.unit_rec(rt), rt["cfg"]
+    rec["engine_errors"] = rec.get("engine_errors", 0) + 1
+    log_event(
+        cfg,
+        rt["state"],
+        rt["unit"],
+        f"錯誤（停在站 {rec['station']}，第 {rec['engine_errors']} 次連續引擎錯誤）：{exc}",
+    )
+    if rec["engine_errors"] >= cfg.limits["max_engine_errors"]:
+        stations.finish(
+            rt, "failed", f"連續 {rec['engine_errors']} 次引擎錯誤，標 failed（最後一次：{exc}）", alert=True
+        )
+    heartbeat(rt, "引擎錯誤", elapsed)
     print_summary(rt, summary, elapsed)
     print(f"錯誤：{exc}", file=sys.stderr, flush=True)
-    return 1
+    return EXIT_ENGINE_ERROR
 
 
 def handle_interrupt(rt, summary, elapsed):
@@ -165,7 +278,7 @@ def handle_interrupt(rt, summary, elapsed):
     except OSError as exc:
         print(f"（中斷時寫紀錄失敗：{exc}）", file=sys.stderr)
     print_summary(rt, summary, elapsed)
-    print(f"\n⛔ 中斷！進度已存在 state.json（{rt['unit']} 停在站 {station}），再執行一次會從這一站接著做")
+    print(f"{chr(10)}⛔ 中斷！進度已存在 state.json（{rt['unit']} 停在站 {station}），再執行一次會從這一站接著做")
     return EXIT_INTERRUPTED
 
 
@@ -178,33 +291,25 @@ def cmd_init(cfg, unit_ids, force):
     unknown = [unit for unit in unit_ids if unit not in cfg.unit_ids]
     if unknown:
         raise RoundError(f"這些單位不在 factory.yaml 的 units.ids：{unknown}")
-    state = load_state(cfg) or new_state()
-    state["queue"] = unit_ids
-    for unit in unit_ids:
-        if force or unit not in state["units"]:
-            state["units"][unit] = new_unit(cfg)
-    log_event(cfg, state, "-", f"建立 queue：{' '.join(unit_ids)}{'（--force 重設）' if force else ''}")
+    with lock.holding(cfg, "init"):
+        state = load_state(cfg) or new_state()
+        state["queue"] = unit_ids
+        for unit in unit_ids:
+            if force or unit not in state["units"]:
+                state["units"][unit] = new_unit(cfg)
+        log_event(cfg, state, "-", f"建立 queue：{' '.join(unit_ids)}{'（--force 重設）' if force else ''}")
     print(f"queue：{' '.join(unit_ids)}")
-    return 0
-
-
-def require_unit(cfg, unit):
-    state = load_state(cfg)
-    if state is None:
-        raise RoundError("沒有 state.json，先執行 init")
-    if unit not in state["units"]:
-        raise RoundError(f"{unit} 不在 state.json")
-    return state
+    return EXIT_OK
 
 
 def cmd_status(cfg):
     state = load_state(cfg)
     if state is None:
         print("沒有 state.json（尚未 init）")
-        return 0
+        return EXIT_OK
     print(f"專案 {cfg.name}｜目前輪次：{state['round']}｜queue：{' '.join(state['queue']) or '（空）'}")
     for unit in state["queue"]:
-        rec = state["units"].get(unit) or new_unit(cfg)
+        rec = state["units"][unit]
         retries = ",".join(f"{k}={v}" for k, v in rec["retries"].items()) or "-"
         note = blocked_reason(cfg, state, unit) if rec["status"] not in FINAL_STATUSES else ""
         print(
@@ -212,7 +317,7 @@ def cmd_status(cfg):
             f"呼叫 {rec['calls']:>2}  退回 {retries:<24} US$ {rec['cost_usd']:.4f}  {note or ''}"
         )
     print_status_tail(cfg, state)
-    return 0
+    return EXIT_OK
 
 
 def print_status_tail(cfg, state):
@@ -224,49 +329,24 @@ def print_status_tail(cfg, state):
         print(f"等待核准：{len(pending)} 筆（{', '.join(sorted({p.get('unit', '?') for p in pending}))}）")
     for alert in alerts[-5:]:
         print(f"⚠ ALERT {alert['ts']} {alert['unit']} {alert['status']}：{alert['reason']}")
+    owner = lock.held_by_other(cfg)
+    if owner:
+        print(f"執行中：PID {owner.get('pid')}（{owner.get('purpose')}，自 {owner.get('since')}）")
     heartbeat_path = run_path(cfg, "heartbeat.txt")
     if heartbeat_path.exists():
         print("heartbeat：" + heartbeat_path.read_text(encoding="utf-8").strip())
 
 
 def cmd_reset_calls(cfg, unit):
-    """hook 沒掛上等環境問題白白用掉次數時，修好後歸零重跑，並留 history 方便追查。"""
-    state = require_unit(cfg, unit)
-    rec = state["units"][unit]
-    old_calls, rec["calls"] = rec.get("calls", 0), 0
-    log_event(cfg, state, unit, f"手動歸零 claude -p 次數（{old_calls} → 0，reset-calls）")
-    print(f"{unit} 的 claude -p 次數已從 {old_calls} 歸零（狀態維持 {rec['status']}）")
-    return 0
+    return cmd_mutate(cfg, "reset-calls", unit)
 
 
 def cmd_reset(cfg, unit):
-    """人看過 ALERT 後，把單位整個重設回起點（failed／rejected 不會自動重做）。"""
-    state = require_unit(cfg, unit)
-    old_status = state["units"][unit]["status"]
-    state["units"][unit] = new_unit(cfg)
-    log_event(cfg, state, unit, f"手動重設（原狀態 {old_status} → pending，reset）")
-    print(f"{unit} 已重設為 pending")
-    return 0
+    return cmd_mutate(cfg, "reset", unit)
 
 
 def cmd_approve(cfg, unit):
-    """把該單位的 pending 移到 approved；站型核准記在 rec，指令核准給 gate 比對。"""
-    state = require_unit(cfg, unit)
-    rec = state["units"][unit]
-    if rec["status"] != PENDING_APPROVAL:
-        raise RoundError(f"{unit} 目前是 {rec['status']}，沒有在等待核准")
-    pending = read_jsonl(pending_approvals_path(cfg))
-    mine = [item for item in pending if item.get("unit") == unit]
-    for item in mine:
-        append_jsonl(approved_path(cfg), {**item, "approved_at": now_str()})
-    write_jsonl(pending_approvals_path(cfg), [item for item in pending if item.get("unit") != unit])
-    station_id = (rec.get("approval") or {}).get("station") or rec["station"]
-    if cfg.station(station_id)["kind"] == "approve" and station_id not in rec["approved"]:
-        rec["approved"].append(station_id)
-    rec["status"], rec["approval"] = IN_PROGRESS, None
-    log_event(cfg, state, unit, f"人工核准 {len(mine)} 筆（站 {station_id}），下次執行重跑該站")
-    print(f"{unit} 已核准，下次 run 會從站 {station_id} 繼續")
-    return 0
+    return cmd_mutate(cfg, "approve", unit)
 
 
 # ---------- dry-run ----------
@@ -306,4 +386,4 @@ def cmd_dry_run(cfg, unit_arg=None):
     for station in cfg.stations:
         print(f"[站 {stations.label_of(station)}]（{station['kind']}／{station['chain']}）")
         dry_run_station(rt, station)
-    return 0
+    return EXIT_OK

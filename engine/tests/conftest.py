@@ -53,6 +53,7 @@ def k143_dir(tmp_path):
 def demo_config():
     """最小的合規專案：producer → verify → qa → review → finish。"""
     return {
+        "schema": 1,
         "name": "demo",
         "workdir": "~/lhf-demo-does-not-exist",
         "units": {"ids": ["a", "b", "c"]},
@@ -105,7 +106,7 @@ def demo_config():
             {"id": "done", "kind": "commit", "chain": "finish", "paths": ["{unit}.txt"]},
         ],
         "roles": {
-            "maker": {"tools": ["Write", "Bash"], "write": ["{out}"], "bash_allow": ["^echo "]},
+            "maker": {"tools": ["Write", "Bash"], "write": ["{out}"], "bash_allow": ["^echo ", "^ssh "]},
             "qa": {"tools": ["Read", "Write"], "write": ["{RUN}/qa/**"]},
             "rv": {"tools": ["Read", "Write"], "write": ["{RUN}/rv/**"], "budget": 2},
         },

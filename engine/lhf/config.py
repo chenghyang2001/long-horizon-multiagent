@@ -1,13 +1,15 @@
 """讀取並驗證專案的 factory.yaml，並提供佔位符展開與路徑比對工具。
 
 驗證分兩段：
-1. 結構驗證（欄位型別、未知欄位、id 格式、站之間的參照）
+1. 結構驗證（schema 版本、欄位型別、未知欄位、id 格式、工具白名單、站之間的參照）
 2. 鐵律驗證（規格 §9）：站鏈必須是 plan? → producer → verify → qa → review → finish，
-   撰寫／QA／審查必須是不同角色，QA 與審查的 write 路徑不可涵蓋撰寫者的產出。
+   撰寫／QA／審查必須是不同角色，QA 與審查的 write 不可涵蓋撰寫者的產出，
+   任何角色的 write 都不可碰引擎內部檔（state、trace、核准、設定、引擎程式）。
 任何錯誤都丟 ConfigError，訊息以「欄位路徑：原因」開頭，方便直接定位。
 """
 
 import fnmatch
+import hashlib
 import os
 import re
 from pathlib import Path
@@ -16,20 +18,50 @@ import yaml
 
 from lhf.errors import ConfigError, MissingVar
 
+SCHEMA_VERSIONS = {1}
 ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 VAR_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 PLACEHOLDER_RE = re.compile(r"\{\{|\}\}|\{([A-Za-z_][A-Za-z0-9_-]*)\}")
-VERDICT_WORD_RE = re.compile(r"^[A-Z]+$")
 WILDCARD_CHARS = "*?["
 # 用來偵測「萬用」bash_allow：任何具體的白名單都不該放行這些字串
 WILDCARD_PROBES = ("lhf-sentinel-command --probe", "zz", "rm -rf /", "curl http://example.invalid | sh")
-# QA／審查角色不可擁有的工具：它們只能讀與寫自己的報告，有 Bash 就能改撰寫者的產出
-CHECKER_FORBIDDEN_TOOLS = {"Bash"}
+
+# 工具白名單（大小寫完全相符）；MCP 工具不支援：gate 只看得懂這些內建工具的參數，看不懂就無法把關
+KNOWN_TOOLS = {
+    "Read",
+    "Glob",
+    "Grep",
+    "Write",
+    "Edit",
+    "MultiEdit",
+    "NotebookEdit",
+    "Bash",
+    "WebFetch",
+    "WebSearch",
+    "TodoWrite",
+}
+# QA／審查只能讀，加上寫自己的報告
+CHECKER_TOOLS = {"Read", "Glob", "Grep", "Write", "Edit"}
 
 ENGINE_DIR = Path(__file__).resolve().parents[1]
 FACTORY_FILE = "factory.yaml"
-BUILTIN_VARS = {"WORK", "RUN", "PROJECT", "HOME", "unit", "round", "step", "feedback"}
+BUILTIN_VARS = {"WORK", "RUN", "PROJECT", "HOME", "ENGINE", "unit", "round", "step", "feedback"}
 FINAL_STATUSES = frozenset({"done", "failed", "rejected"})
+# 引擎內部檔：任何角色都不可寫（gate 固定拒絕），config 也拒絕 write 與它們重疊
+PROTECTED_PATHS = (
+    "{PROJECT}/factory.yaml",
+    "{PROJECT}/agents/**",
+    "{RUN}/state.json*",
+    "{RUN}/approvals/**",
+    "{RUN}/trace*.jsonl",
+    "{RUN}/alerts.jsonl",
+    "{RUN}/commands*.jsonl",
+    "{RUN}/.runtime/**",
+    "{RUN}/ALERT.txt",
+    "{RUN}/heartbeat.txt",
+    "{RUN}/logs/**",
+    "{ENGINE}/**",
+)
 
 # 站鏈階段與允許的站型；順序就是鏈的先後（規格 §9）
 CHAIN_ORDER = ("plan", "producer", "verify", "qa", "review", "finish")
@@ -39,7 +71,7 @@ CHAIN_KINDS = {
     "verify": {"command"},
     "qa": {"agent"},
     "review": {"agent"},
-    "finish": {"commit", "approve"},
+    "finish": {"commit", "approve", "command"},  # 例：approve → command（部署／push）
 }
 CHAIN_VERDICTS = {"qa": ("PASS", "FAIL"), "review": ("PASS", "REJECT")}
 # 退回規則固定由引擎決定（不可在 yaml 改計數器或最終狀態，避免繞過鐵律）
@@ -55,13 +87,28 @@ DEFAULT_LIMITS = {
     "feedback_max_chars": 6000,
     "launch_retry_wait": 5,
     "command_timeout": 180,
+    "max_engine_errors": 3,  # 同一單位連續引擎錯誤幾次就標 failed，換下一個單位
+    "history_max": 2000,  # state.json 只保留最近幾筆 history
+    "fail_logs_max": 50,  # logs/agent-fail-*.txt 只保留最近幾個
+    "trace_archive_mb": 20,  # hours 開跑時 trace.jsonl 超過就歸檔
 }
+FEEDBACK_KEYS = (
+    "feedback_label",
+    "feedback_path",
+    "feedback_content",
+    "feedback_log",
+    "feedback_log_content",
+    "feedback_qa_section",
+)
 DEFAULT_FEEDBACK = (
     "\n\n這是重做。上一版沒有通過{feedback_label}，原因如下（來自 {feedback_path}）：\n"
-    "-----\n{feedback_content}\n-----\n請只修正以上問題，其他部分保持不變。"
+    "-----\n{feedback_content}\n-----\n"
+    "客觀驗證的原始紀錄（{feedback_log}，取檔尾）：\n-----\n{feedback_log_content}\n-----"
+    "{feedback_qa_section}\n請只修正以上問題，其他部分保持不變。"
 )
 
 TOP_KEYS = {
+    "schema",
     "name",
     "type",
     "description",
@@ -83,6 +130,7 @@ TOP_KEYS = {
     "feedback_template",
     "fake",
     "notify",
+    "bash",
 }
 STATION_KEYS = {
     "common": {"id", "kind", "chain", "label"},
@@ -93,7 +141,7 @@ STATION_KEYS = {
     "approve": {"message"},
 }
 JOB_KEYS = {"role", "prompt", "outputs", "once"}
-CMD_KEYS = {"title", "cmd", "steps", "fail_on_error"}
+CMD_KEYS = {"title", "cmd", "steps", "fail_on_error", "allow_nonzero"}
 ROLE_KEYS = {"tools", "write", "budget", "bash_allow"}
 
 
@@ -135,7 +183,7 @@ def render_path(template, mapping):
 
 
 def norm_text(text):
-    """比對前統一：\\ 轉 /、轉小寫，讓 C:\\USERS 與 c:/users 視為同一路徑。"""
+    """比對前統一：反斜線轉 /、轉小寫，讓大小寫與分隔符號不同的同一路徑視為相同。"""
     return str(text).replace("\\", "/").lower()
 
 
@@ -156,6 +204,11 @@ def patterns_overlap(first, second):
     return second_wild and literal_prefix(first).startswith(literal_prefix(second))
 
 
+def is_wsl_bash(path):
+    """C:\\Windows\\System32\\bash.exe 是 WSL 的入口，不是 Git Bash；路徑、編碼都不同，一律拒絕。"""
+    return "system32/bash" in norm_text(path) or "sysnative/bash" in norm_text(path)
+
+
 # ---------- Config ----------
 
 
@@ -166,9 +219,11 @@ def is_fake():
 class Config:
     """factory.yaml 的唯讀包裝；所有路徑都由這裡推算，引擎其他地方不自己拼路徑。"""
 
-    def __init__(self, project_dir, data):
+    def __init__(self, project_dir, data, raw_text):
         self.project_dir = Path(project_dir).resolve()
         self.data = data
+        self.raw_text = raw_text
+        self.sha256 = hashlib.sha256(raw_text.encode("utf-8")).hexdigest()
         self.run_dir = self.project_dir / "run"
         self.agents_dir = self.project_dir / "agents"
         self.stations = data["stations"]
@@ -217,6 +272,7 @@ class Config:
             "RUN": posix(self.run_dir),
             "PROJECT": posix(self.project_dir),
             "HOME": posix(Path.home()),
+            "ENGINE": posix(ENGINE_DIR),
         }
         mapping.update(overrides or {})
         if round_no is not None:
@@ -243,6 +299,28 @@ class Config:
     def verdict_words(self, station):
         return CHAIN_VERDICTS[station["chain"]]
 
+    def protected_patterns(self):
+        """引擎內部檔（已展開、正規化）；gate 與 config 驗證共用。"""
+        mapping = self.vars()
+        return [norm_text(render_path(pattern, mapping)) for pattern in PROTECTED_PATHS]
+
+    def round_time_limit(self):
+        """hours 每輪總時限：所有 claude -p 都跑滿＋所有指令站在最多退回次數下都跑滿＋10 分鐘餘裕。"""
+        agent_sec = self.limits["calls_per_unit"] * self.limits["agent_timeout"]
+        attempts = 1 + max(rule["max"] for rule in (self.on_fail(self.chain_station(s)) for s in ("qa", "review")))
+        command_sec = 0
+        for station in self.stations:
+            if station["kind"] == "command":
+                count = sum(c["steps"][1] - c["steps"][0] + 1 if c.get("steps") else 1 for c in station["cmds"])
+                command_sec += count * (station.get("timeout") or self.limits["command_timeout"])
+        return agent_sec + command_sec * (attempts + 1) + 600
+
+    def startup_warnings(self):
+        warnings = []
+        if self.data.get("notify"):
+            warnings.append("notify 尚未實作，不會發通知（設定只做格式檢查）")
+        return warnings
+
 
 def add_rendered(mapping, items):
     for key, value in items.items():
@@ -261,19 +339,25 @@ def unit_vars(patterns, unit):
     return result
 
 
-def load_config(project_dir):
-    """讀 <project_dir>/factory.yaml 並完整驗證；任何問題都丟 ConfigError。"""
+def read_factory(project_dir):
     path = Path(project_dir) / FACTORY_FILE
     try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        return path.read_text(encoding="utf-8")
     except FileNotFoundError as exc:
         raise ConfigError(f"{FACTORY_FILE}：找不到 {path}") from exc
     except (OSError, UnicodeDecodeError) as exc:
         raise ConfigError(f"{FACTORY_FILE}：讀取失敗：{exc}") from exc
+
+
+def load_config(project_dir, text=None):
+    """讀 <project_dir>/factory.yaml（或給定的快照內容）並完整驗證；任何問題都丟 ConfigError。"""
+    raw = read_factory(project_dir) if text is None else text
+    try:
+        data = yaml.safe_load(raw)
     except yaml.YAMLError as exc:
         raise ConfigError(f"{FACTORY_FILE}：YAML 語法錯誤：{exc}") from exc
     validate_structure(data)
-    cfg = Config(project_dir, data)
+    cfg = Config(project_dir, data, raw)
     validate_semantics(cfg)
     return cfg
 
@@ -336,6 +420,14 @@ def need_positive_int(value, field, allow_zero=False):
 def validate_structure(data):
     need(isinstance(data, dict), "（根）", f"{FACTORY_FILE} 必須是 YAML 物件")
     check_keys(data, TOP_KEYS, "（根）")
+    need(
+        data.get("schema") in SCHEMA_VERSIONS,
+        "schema",
+        f"必須是支援的版本 {sorted(SCHEMA_VERSIONS)}（收到 {data.get('schema')!r}）；新版設定請升級引擎",
+    )
+    if data.get("bash") is not None:
+        need_str(data, "bash", "")
+        need(not is_wsl_bash(data["bash"]), "bash", "指到 System32 的 bash.exe 是 WSL，請改指 Git Bash 的 bash.exe")
     need_str(data, "name", "")
     need(ID_RE.match(data["name"]), "name", "只能用英數字、底線、連字號")
     need_str(data, "workdir", "")
@@ -438,12 +530,25 @@ def validate_roles(roles):
         need(isinstance(spec, dict), field, "必須是物件 {tools, write, budget}")
         check_keys(spec, ROLE_KEYS, field)
         need_str_list(spec.get("tools"), f"{field}.tools", allow_empty=False)
+        validate_tool_names(spec["tools"], f"{field}.tools")
         need_str_list(spec.get("write") or [], f"{field}.write")
         if spec.get("budget") is not None:
             need_positive_int(spec["budget"], f"{field}.budget")
         if spec.get("bash_allow") is not None:
             need_regex_list(spec["bash_allow"], f"{field}.bash_allow")
         validate_bash_policy(spec, field)
+
+
+def validate_tool_names(tools, field):
+    for index, tool in enumerate(tools):
+        if tool.startswith("mcp__"):
+            fail(f"{field}[{index}]", f"不支援 MCP 工具 {tool}：gate 看不懂它的參數，無法檢查寫入路徑與指令，等於放行")
+        need(
+            tool in KNOWN_TOOLS,
+            f"{field}[{index}]",
+            f"未知工具 {tool!r}（大小寫要完全相符，可用：{sorted(KNOWN_TOOLS)}）",
+        )
+    need(len(set(tools)) == len(tools), field, "工具重複")
 
 
 def validate_bash_policy(spec, field):
@@ -553,15 +658,21 @@ def validate_command(station, field, roles, prompts):
         check_keys(item, CMD_KEYS, cmd_field)
         need_str(item, "cmd", cmd_field)
         need_str(item, "title", cmd_field, required=False)
-        need(isinstance(item.get("fail_on_error", False), bool), f"{cmd_field}.fail_on_error", "必須是 true／false")
+        for flag in ("fail_on_error", "allow_nonzero"):
+            need(isinstance(item.get(flag, False), bool), f"{cmd_field}.{flag}", "必須是 true／false")
         if item.get("steps") is not None:
             validate_steps(item["steps"], f"{cmd_field}.steps")
     if station.get("timeout") is not None:
         need_positive_int(station["timeout"], f"{field}.timeout")
     need_str(station, "log", field)
-    need_str(station, "fail_report", field)
     need_str(station, "cwd", field, required=False)
     validate_path_lists(station, field, ("require",))
+    if station["chain"] == "finish":
+        # 收尾站（部署／push）失敗不退回撰寫者：直接標 failed 並寫 ALERT，要人處理
+        need("on_fail" not in station, f"{field}.on_fail", "finish 鏈的 command 站不可有 on_fail")
+        need_str(station, "fail_report", field, required=False)
+        return
+    need_str(station, "fail_report", field)
     validate_on_fail(station, field, required=True)
 
 
@@ -645,6 +756,33 @@ def validate_semantics(cfg):
     validate_agents_files(cfg)
     validate_templates(cfg)  # 先確認範本都展得開，後面的路徑重疊檢查才有意義
     validate_separation(cfg)
+    validate_protected(cfg)
+    validate_rewrite_limits(cfg)
+
+
+def validate_protected(cfg):
+    """任何角色的 write 都不可涵蓋引擎內部檔，否則代理能改 state、核准紀錄或設定來繞過鐵律。"""
+    mapping = cfg.vars(unit=cfg.unit_ids[0], round_no=1)
+    protected = cfg.protected_patterns()
+    for role in cfg.roles:
+        for pattern in rendered_patterns(cfg, role, mapping):
+            for guarded in protected:
+                need(
+                    not patterns_overlap(pattern, guarded),
+                    f"roles.{role}.write",
+                    f"與引擎內部檔重疊（{pattern} ↔ {guarded}）：代理不可寫 state、trace、核准、設定或引擎程式",
+                )
+
+
+def validate_rewrite_limits(cfg):
+    """verify 與 qa 共用 rewrites 計數器，上限不同會讓「誰先用完」變得難以預期。"""
+    verify_max = cfg.on_fail(cfg.chain_station("verify"))["max"]
+    qa_max = cfg.on_fail(cfg.chain_station("qa"))["max"]
+    need(
+        verify_max == qa_max,
+        "stations(verify).on_fail.max",
+        f"verify（{verify_max}）與 qa（{qa_max}）的 on_fail.max 必須相同（共用 rewrites 計數器）",
+    )
 
 
 def validate_chain(stations):
@@ -684,8 +822,12 @@ def validate_separation(cfg):
     need(qa_role != review_role, "stations(review).role", f"QA 與審查不可是同一角色（{qa_role}）")
     for checker in (qa_role, review_role):
         spec = cfg.roles[checker]
-        banned = sorted(CHECKER_FORBIDDEN_TOOLS & set(spec["tools"]))
-        need(not banned, f"roles.{checker}.tools", f"QA／審查角色不可有 {banned}（只能讀與寫自己的報告）")
+        banned = sorted(set(spec["tools"]) - CHECKER_TOOLS)
+        need(
+            not banned,
+            f"roles.{checker}.tools",
+            f"QA／審查角色只能用 {sorted(CHECKER_TOOLS)}，不可有 {banned}（只能讀與寫自己的報告）",
+        )
         need(not spec.get("bash_allow"), f"roles.{checker}.bash_allow", "QA／審查角色不可有 bash_allow")
     mapping = cfg.vars(unit=cfg.unit_ids[0], round_no=1)
     producer_patterns = [(role, pattern) for role in producers for pattern in rendered_patterns(cfg, role, mapping)]
@@ -765,9 +907,7 @@ def validate_templates(cfg):
         validate_station_templates(station, sample, f"stations[{index}]({station['id']})")
     for key in ("agent_cwd", "feedback_template"):
         if cfg.data.get(key):
-            render_field(
-                cfg.data[key], {**sample, "feedback_label": "", "feedback_path": "", "feedback_content": ""}, key
-            )
+            render_field(cfg.data[key], {**sample, **{name: "" for name in FEEDBACK_KEYS}}, key)
     for index, item in enumerate(cfg.data.get("read_dirs") or []):
         render_field(item, sample, f"read_dirs[{index}]")
 

@@ -3,6 +3,7 @@
 rt（runtime）＝{"cfg", "state", "unit", "round"}。每站做完都經 advance()／apply_fail() 存檔，
 所以任何時候中斷，下一次執行都會從 rec["station"] 那一站接著做。
 退回一律回到 producer 站（config 已驗證），之後必然重新經過 verify＋qa 才能再進 review。
+退回時帶給撰寫者的意見＝失敗報告＋客觀驗證的 raw log（＋審查退回時再附最近一次 QA 報告）。
 """
 
 import re
@@ -13,8 +14,9 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from lhf import claude_call
-from lhf.config import DEFAULT_FEEDBACK, is_fake, posix, render, render_path
+from lhf import claude_call, proc
+from lhf.common import now_str
+from lhf.config import DEFAULT_FEEDBACK, is_fake, is_wsl_bash, posix, render, render_path
 from lhf.errors import CallBudgetExceeded, RoundError
 from lhf.state import (
     IN_PROGRESS,
@@ -23,7 +25,6 @@ from lhf.state import (
     append_jsonl,
     file_offset,
     log_event,
-    now_str,
     pending_approvals_path,
     read_jsonl_since,
     save_state,
@@ -62,6 +63,7 @@ def label_of(station):
 def advance(rt, station, text):
     """本站成功：清掉以本站為目標的退回意見，前進到下一站；沒有下一站就是 done。"""
     rec = unit_rec(rt)
+    rec["engine_errors"] = 0
     if rec.get("feedback") and rec["feedback"].get("for") == station["id"]:
         rec["feedback"] = None
     next_id = rt["cfg"].next_station_id(station["id"])
@@ -101,20 +103,42 @@ def record_call(rt, role, info):
 # ---------- prompt ----------
 
 
+def read_tail(path_text, limit):
+    """只取檔尾：失敗原因通常在最後面，而且 prompt 不能無限長。"""
+    if not path_text:
+        return "（無）"
+    try:
+        return Path(path_text).read_text(encoding="utf-8", errors="replace")[-limit:]
+    except OSError as exc:
+        return f"（讀不到 {posix(path_text)}：{exc}）"
+
+
+def qa_section(feedback, limit):
+    """審查退回時再附最近一次 QA 報告，撰寫者改完不會又把測試弄壞。"""
+    qa_path = feedback.get("qa")
+    if not qa_path or qa_path == feedback.get("path"):
+        return ""
+    lines = [f"最近一次 QA 報告（{posix(qa_path)}）：", "-----", read_tail(qa_path, limit), "-----"]
+    return chr(10) + chr(10).join(lines)
+
+
 def feedback_text(rt):
-    """退回時把上一版沒過的原因整段附上（只取檔尾），撰寫者才知道要修什麼。"""
+    """退回時把上一版沒過的原因附上，撰寫者才知道要修什麼。"""
     feedback = unit_rec(rt).get("feedback")
     if not feedback:
         return ""
-    path, limit = Path(feedback["path"]), rt["cfg"].limits["feedback_max_chars"]
-    try:
-        content = path.read_text(encoding="utf-8", errors="replace")[-limit:]
-    except OSError as exc:
-        content = f"（讀不到 {posix(path)}：{exc}）"
+    limit = rt["cfg"].limits["feedback_max_chars"]
+    log_path = feedback.get("log") or ""
+    values = {
+        "feedback_label": feedback["label"],
+        "feedback_path": posix(feedback["path"]),
+        "feedback_content": read_tail(feedback["path"], limit),
+        "feedback_log": posix(log_path) if log_path else "（無）",
+        "feedback_log_content": read_tail(log_path, limit),
+        "feedback_qa_section": qa_section(feedback, limit),
+    }
     template = rt["cfg"].data.get("feedback_template") or DEFAULT_FEEDBACK
-    return render(
-        template, mapping_of(rt, feedback_label=feedback["label"], feedback_path=posix(path), feedback_content=content)
-    )
+    return render(template, mapping_of(rt, **values))
 
 
 def extract_values(rt, mapping):
@@ -175,6 +199,8 @@ def apply_fail(rt, station, verdict, note, feedback_path):
         "station": station["id"],
         "label": rule["label"],
         "path": str(feedback_path),
+        "log": chain_file(rt, "verify", "log"),
+        "qa": chain_file(rt, "qa", "verdict"),
         "for": rule["goto"],
     }
     rec["status"], rec["station"] = IN_PROGRESS, rule["goto"]
@@ -186,6 +212,13 @@ def apply_fail(rt, station, verdict, note, feedback_path):
         ),
     )
     return verdict
+
+
+def chain_file(rt, stage, key):
+    """取鏈上某站的檔案路徑（verify 的 raw log、qa 的判定檔），給退回意見用。"""
+    station = rt["cfg"].chain_station(stage)
+    template = station["verdict"]["file"] if key == "verdict" else station[key]
+    return render_path(template, mapping_of(rt))
 
 
 def apply_verdict(rt, station, verdict, note, report_path):
@@ -332,24 +365,12 @@ def station_parallel(rt, station):
 
 
 def run_one(argv, cwd, env, timeout):
-    """回傳 (exit code 或「逾時」／「無法執行」, 秒數, 去掉 ANSI 色碼的輸出)。"""
+    """回傳 (exit code 或「逾時」／「無法執行」, 秒數, 去掉 ANSI 色碼的輸出)。逾時殺整棵程序樹。"""
     start = time.monotonic()
     try:
-        proc = subprocess.run(
-            argv,
-            cwd=cwd,
-            env=env,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
-            stdin=subprocess.DEVNULL,
-            check=False,
-        )
-        code, output = proc.returncode, (proc.stdout or "") + (proc.stderr or "")
-    except subprocess.TimeoutExpired as exc:
-        code, output = "逾時", claude_call.as_text(exc.stdout) + claude_call.as_text(exc.stderr)
+        result = proc.run_tree(argv, cwd=cwd, env=env, timeout=timeout)
+        code = "逾時" if result.timed_out else result.returncode
+        output = result.stdout + result.stderr
     except OSError as exc:
         code, output = "無法執行", str(exc)
     return code, time.monotonic() - start, ANSI_RE.sub("", output)
@@ -363,24 +384,36 @@ def format_block(title, argv, code, elapsed, output):
 
 
 def expand_cmds(station, mapping):
-    """把 cmds 展開成 (標題, argv, fail_on_error)；steps 是閉區間 [起, 迄]。"""
+    """把 cmds 展開成 (標題, argv, 指令設定)；steps 是閉區間 [起, 迄]。
+    佔位符的值先 shlex.quote：路徑含空白或特殊字元時不會被拆成多個參數、也不會變成額外指令。"""
     expanded = []
     for item in station["cmds"]:
         first, last = item.get("steps") or [None, None]
         steps = [None] if first is None else range(first, last + 1)
         for step in steps:
             values = {**mapping, "step": "" if step is None else str(step)}
-            argv = shlex.split(render(item["cmd"], values))
+            quoted = {key: shlex.quote(str(value)) for key, value in values.items()}
+            argv = shlex.split(render(item["cmd"], quoted))
             if not argv:
                 raise RoundError(f"站 {station['id']} 有空的指令")
-            expanded.append((render(item.get("title") or item["cmd"], values), argv, item.get("fail_on_error", False)))
+            expanded.append((render(item.get("title") or item["cmd"], values), argv, item))
     return expanded
 
 
-def resolve_exe(argv):
-    exe = shutil.which(argv[0])
+def resolve_exe(cfg, argv):
+    """bash 可在 factory.yaml 指定；偵測到 System32 的 bash.exe（WSL）一律拒絕。"""
+    if argv[0] == "bash" and cfg.data.get("bash"):
+        exe = render_path(cfg.data["bash"], cfg.vars())
+        if not Path(exe).is_file():
+            raise RoundError(f"factory.yaml 的 bash 指到不存在的檔案：{exe}")
+    else:
+        exe = shutil.which(argv[0])
     if exe is None:
         raise RoundError(f"找不到執行檔 {argv[0]}")
+    if Path(exe).stem.lower() == "bash" and is_wsl_bash(exe):
+        raise RoundError(
+            f"找到的 bash 是 WSL（{exe}），不是 Git Bash；請在 factory.yaml 設 bash: 指向 Git Bash 的 bash.exe"
+        )
     return [exe, *argv[1:]]
 
 
@@ -389,28 +422,37 @@ def run_checks(rt, station, mapping):
     cwd = render_path(station.get("cwd") or "{WORK}", mapping)
     timeout = station.get("timeout") or rt["cfg"].limits["command_timeout"]
     env = claude_call.build_env(rt["cfg"], rt, station_id=station["id"])
-    blocks = []
-    for title, argv, fail_on_error in expand_cmds(station, mapping):
+    blocks, failures = [], []
+    for title, argv, item in expand_cmds(station, mapping):
         print(f"    執行：{title}", flush=True)
-        code, elapsed, output = run_one(resolve_exe(argv), cwd, env, timeout)
+        code, elapsed, output = run_one(resolve_exe(rt["cfg"], argv), cwd, env, timeout)
         blocks.append(format_block(title, argv, code, elapsed, output))
-        if fail_on_error and code != 0:
-            return "\n".join(blocks), f"{title}失敗：{output.strip()[:300]}"
-    return "\n".join(blocks), ""
+        if code == 0 or item.get("allow_nonzero"):
+            continue
+        failures.append(f"{title}（exit {code}）：{output.strip()[:300]}")
+        if item.get("fail_on_error"):
+            break  # fail_on_error：失敗就不跑後面的指令（例如語法錯誤時逐步執行沒有意義）
+    reason = ("結束碼非 0：" + "；".join(failures)) if failures else ""
+    return chr(10).join(blocks), reason
 
 
 def station_command(rt, station):
-    """客觀驗證：程式自己跑，不靠模型說；必要檔缺漏或 fail_on_error 失敗直接退回，省一次 QA 呼叫。"""
+    """客觀驗證：程式自己跑，不靠模型說。必要檔缺漏或任何指令結束碼非 0（未標 allow_nonzero）→
+    引擎直接判 FAIL 退回，不呼叫 QA。finish 鏈的 command 站（部署／push）失敗則標 failed＋ALERT。"""
     mapping = mapping_of(rt)
     missing = missing_outputs(station.get("require"), mapping)
     if missing:
         raw_text, auto_fail = f"缺檔：{'、'.join(missing)}\n", f"缺少必要檔案 {'、'.join(missing)}"
     else:
         raw_text, auto_fail = run_checks(rt, station, mapping)
-    log_path, report = Path(render_path(station["log"], mapping)), Path(render_path(station["fail_report"], mapping))
+    log_path = Path(render_path(station["log"], mapping))
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    log_path.write_text(f"# {rt['unit']} 執行紀錄　{now_str()}\n\n{raw_text}", encoding="utf-8")
+    log_path.write_text(f"# {rt['unit']} 執行紀錄　{now_str()}" + chr(10) * 2 + raw_text, encoding="utf-8")
+    if auto_fail and station["chain"] == "finish":
+        finish(rt, "failed", f"{label_of(station)} 失敗（收尾站不退回）：{auto_fail[:300]}", alert=True)
+        return "FAIL（收尾）"
     if auto_fail:
+        report = Path(render_path(station["fail_report"], mapping))
         report.parent.mkdir(parents=True, exist_ok=True)
         report.write_text(
             f"# {rt['unit']} 自動判定（站 {station['id']}）\n\n{auto_fail}\n\n原始紀錄：{posix(log_path)}\n\n"
