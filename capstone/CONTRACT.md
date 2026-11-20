@@ -30,7 +30,7 @@
 
 ```
 claude -p <prompt>
-  --append-system-prompt <CAPSTONE/agents/<role>.md 的內容>
+  --append-system-prompt-file <CAPSTONE/agents/<role>.md 的絕對路徑>   # 不可把多行內容放命令列：npm 版 claude.cmd 會在換行處截斷後面所有參數（2026-11-20 i5 踩到，gate 因此沒掛上）
   --tools <該角色工具，見 policy.yaml roles.<role>.tools>
   --settings <CAPSTONE/.runtime/hook-settings.json>   # run_round.py 執行時產生，內含 gate.py 的絕對路徑
   --setting-sources project,local                      # 不載入使用者層級的 hook／CLAUDE.md 設定

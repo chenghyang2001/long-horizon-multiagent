@@ -11,6 +11,7 @@
   python run_round.py --init ch04 ch05     建立／重設 queue（加 --force 才重設已有章節狀態）
   python run_round.py --status             印出狀態，不呼叫模型
   python run_round.py --dry-run            印出每站要執行的指令與 prompt 摘要，不執行
+  python run_round.py --reset-calls ch06   把該章 claude -p 次數歸零（記 history），修好環境後重跑用
 
 測試鉤子（只給冒煙測試用）：
   LH_FAKE_MODEL=1                 不呼叫 claude，假函式依角色產生檔案；站 6 不 commit
@@ -36,7 +37,7 @@ try:
 except ImportError:  # 沒裝 pyyaml 時退回內建工具清單，不讓整個工廠停擺
     yaml = None
 
-CAPSTONE =Path(__file__).resolve().parent
+CAPSTONE = Path(__file__).resolve().parent
 WORKTREE = Path.home() / "workspace" / "kindle-143-fable5-agentic-ai-factory"
 NOW_TABLE = Path.home() / "workspace" / "console" / "drills" / "k143-interactive" / "fable-5-to-5.2.md"
 STATE_PATH = CAPSTONE / "state.json"
@@ -44,6 +45,8 @@ HEARTBEAT_PATH = CAPSTONE / "heartbeat.txt"
 POLICY_PATH = CAPSTONE / "policy.yaml"
 AGENTS_DIR = CAPSTONE / "agents"
 RUNTIME_DIR = CAPSTONE / ".runtime"
+LOGS_DIR = CAPSTONE / "logs"
+TRACE_PATH = CAPSTONE / "trace.jsonl"  # 與 gate.py 的 TRACE_PATH 是同一個檔
 FAKE_PRACTICE = CAPSTONE / ".fake-practice"
 
 FINAL_STATUSES = {"done", "failed", "rejected"}
@@ -186,11 +189,12 @@ def load_role_tools(role):
     return DEFAULT_TOOLS[role]
 
 
-def read_agent_prompt(role):
+def agent_prompt_path(role):
+    """只回傳路徑、不讀內容：內容交給 claude 自己讀檔，命令列上只放單行路徑。"""
     path = AGENTS_DIR / f"{role}.md"
     if not path.exists():
         raise RoundError(f"找不到角色說明 {path}（主控者要先寫好 agents/{role}.md）")
-    return path.read_text(encoding="utf-8")
+    return path
 
 
 def write_hook_settings():
@@ -236,18 +240,29 @@ def build_env(ctx, role=None):
     return env
 
 
-def build_claude_cmd(role, claude_path, hook_path, system_prompt):
-    """參數照 CONTRACT；prompt 改走 stdin，避免 Windows 命令列 32K 字元上限。"""
-    return [claude_path, "-p",
-            "--append-system-prompt", system_prompt,
-            "--tools", ",".join(load_role_tools(role)),
-            "--settings", posix(hook_path),
-            "--setting-sources", "project,local",
-            "--add-dir", posix(CAPSTONE),
-            "--add-dir", posix(NOW_TABLE.parent),
-            # prompts/ 在 WORKTREE 根目錄、不在 cwd(PRACTICE) 底下，planner／reviewer 要讀
-            "--add-dir", posix(WORKTREE / "prompts"),
-            "--output-format", "json"]
+def ensure_single_line_args(cmd):
+    """npm 版 claude 實際是 claude.cmd，cmd.exe 解析批次檔參數遇到換行就截斷，
+    後面的 --settings（gate hook）、--output-format 整段消失（i5 ch06 實際發生）。"""
+    for arg in cmd:
+        text = str(arg)
+        if "\n" in text or "\r" in text:
+            raise RoundError(f"claude 命令列參數含換行（會被 cmd.exe 截斷）：{text[:80]!r}")
+    return cmd
+
+
+def build_claude_cmd(role, claude_path, hook_path, system_prompt_file):
+    """參數照 CONTRACT；長內容一律不上命令列：prompt 走 stdin、角色說明走 -file。"""
+    cmd = [claude_path, "-p",
+           "--append-system-prompt-file", posix(system_prompt_file),
+           "--tools", ",".join(load_role_tools(role)),
+           "--settings", posix(hook_path),
+           "--setting-sources", "project,local",
+           "--add-dir", posix(CAPSTONE),
+           "--add-dir", posix(NOW_TABLE.parent),
+           # prompts/ 在 WORKTREE 根目錄、不在 cwd(PRACTICE) 底下，planner／reviewer 要讀
+           "--add-dir", posix(WORKTREE / "prompts"),
+           "--output-format", "json"]
+    return ensure_single_line_args(cmd)
 
 
 def is_launch_failure(proc):
@@ -277,24 +292,99 @@ def run_claude_with_retry(role, cmd, prompt, env):
     raise AssertionError("unreachable")
 
 
+def as_text(value):
+    """TimeoutExpired 的 stdout／stderr 可能是 bytes 或 None。"""
+    if value is None:
+        return ""
+    return value.decode("utf-8", "replace") if isinstance(value, bytes) else value
+
+
+def save_failure_log(role, cmd, prompt, stdout, stderr, reason):
+    """存完整 stdout／stderr：錯誤訊息只截 300 字，i5 那次就看不出 stdout 其實是純文字。"""
+    path = LOGS_DIR / f"agent-fail-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{role}.txt"
+    text = (f"時間：{now_str()}\n角色：{role}\n原因：{reason}\n"
+            f"指令：{shlex.join(str(arg) for arg in cmd)}\n"
+            f"prompt：經 stdin 傳入，{len(prompt)} 字（內容不記錄）\n\n"
+            f"===== stdout（{len(stdout)} 字）=====\n{stdout}\n\n"
+            f"===== stderr（{len(stderr)} 字）=====\n{stderr}\n")
+    try:
+        LOGS_DIR.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    except OSError as exc:
+        return f"（寫入失敗紀錄 {path.name} 失敗：{exc}）"
+    return posix(path)
+
+
+def invoke_claude(role, cmd, prompt, ctx):
+    """執行 claude -p；逾時也先存下已有的輸出再報錯。"""
+    try:
+        return run_claude_with_retry(role, cmd, prompt, build_env(ctx, role))
+    except subprocess.TimeoutExpired as exc:
+        log = save_failure_log(role, cmd, prompt, as_text(exc.stdout), as_text(exc.stderr), "逾時")
+        raise RoundError(f"{role} 的 claude -p 逾時（超過 {AGENT_TIMEOUT_SEC} 秒；完整輸出：{log}）") from exc
+    except OSError as exc:
+        raise RoundError(f"{role} 的 claude -p 無法啟動：{exc}") from exc
+
+
 def call_agent(role, prompt, ctx):
     """所有 claude -p 呼叫集中在這裡。回傳 dict：result、session_id、cost、turns。"""
     if is_fake():
-        return fake_agent(role, ctx)
+        return fake_agent(role, ctx)  # 假模式不跑 hook，所以也不做 gate 生效檢查
     claude_path = shutil.which("claude")
     if claude_path is None:
         raise RoundError("找不到 claude 執行檔（shutil.which('claude') 為 None）")
-    cmd = build_claude_cmd(role, claude_path, write_hook_settings(), read_agent_prompt(role))
+    cmd = build_claude_cmd(role, claude_path, write_hook_settings(), agent_prompt_path(role))
+    offset = trace_offset()  # 呼叫前記下位置，之後只看這次呼叫新增的 trace
+    proc = invoke_claude(role, cmd, prompt, ctx)
+    stdout, stderr = proc.stdout or "", proc.stderr or ""
     try:
-        proc = run_claude_with_retry(role, cmd, prompt, build_env(ctx, role))
-    except subprocess.TimeoutExpired as exc:
-        raise RoundError(f"{role} 的 claude -p 逾時（超過 {AGENT_TIMEOUT_SEC} 秒）") from exc
-    except OSError as exc:
-        raise RoundError(f"{role} 的 claude -p 無法啟動：{exc}") from exc
-    if proc.returncode != 0:
-        detail = (proc.stderr or proc.stdout or "").strip()[:500]
-        raise RoundError(f"{role} 的 claude -p 結束碼 {proc.returncode}：{detail}")
-    return parse_agent_json(role, proc.stdout)
+        if proc.returncode != 0:
+            raise RoundError(f"{role} 的 claude -p 結束碼 {proc.returncode}：{(stderr or stdout).strip()[:300]}")
+        info = parse_agent_json(role, stdout)
+    except RoundError as exc:
+        log = save_failure_log(role, cmd, prompt, stdout, stderr, str(exc))
+        raise RoundError(f"{exc}（完整輸出：{log}）") from exc
+    verify_gate_active(role, ctx["chapter"], offset)
+    return info
+
+
+def trace_offset():
+    try:
+        return TRACE_PATH.stat().st_size
+    except FileNotFoundError:
+        return 0
+
+
+def read_trace_since(offset):
+    """用位元組位置讀新增部分；檔案比 offset 小代表被 gate.py --reset-trace 清過，從頭讀。"""
+    try:
+        with open(TRACE_PATH, "rb") as trace_file:
+            if trace_file.seek(0, os.SEEK_END) < offset:
+                offset = 0
+            trace_file.seek(offset)
+            return trace_file.read().decode("utf-8", "replace")
+    except FileNotFoundError:
+        return ""
+
+
+def count_new_decisions(offset, role, chapter):
+    """2a∥2b 平行時另一個角色也在寫 trace，所以要比對角色與章節。"""
+    count = 0
+    for line in read_trace_since(offset).splitlines():
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue  # 另一個 hook 正在寫、還沒寫完的半行
+        if (isinstance(record, dict) and record.get("kind") == "decision"
+                and record.get("role") == role and record.get("chapter") == chapter):
+            count += 1
+    return count
+
+
+def verify_gate_active(role, chapter, offset):
+    """fail closed：每個角色都一定要用工具寫檔，trace 卻沒有決策紀錄＝hook 沒掛上、控制層被繞過。"""
+    if count_new_decisions(offset, role, chapter) == 0:
+        raise RoundError(f"gate 沒有生效（trace 無 {role} 的決策紀錄），本站結果不採用")
 
 
 def parse_agent_json(role, stdout):
@@ -856,8 +946,7 @@ def cmd_status():
 
 def dry_run_agent(role, prompt, ctx):
     tools = load_role_tools(role)
-    cmd = build_claude_cmd(role, "claude", RUNTIME_DIR / "hook-settings.json",
-                           f"<agents/{role}.md 的內容>")
+    cmd = build_claude_cmd(role, "claude", RUNTIME_DIR / "hook-settings.json", AGENTS_DIR / f"{role}.md")
     env_note = f"LH_ROLE={role} LH_CHAPTER={ctx['chapter']} LH_ROUND={ctx['round']}"
     print(f"  [{role}] 工具：{','.join(tools)}")
     print(f"    {env_note} {shlex.join(cmd)}  < prompt（stdin）")
@@ -885,17 +974,35 @@ def cmd_dry_run(chapter_arg):
     return 0
 
 
+def cmd_reset_calls(ch):
+    """i5 曾因 hook 沒掛上白白用掉次數；修好環境後歸零重跑，並留 history 方便事後追查。"""
+    state = load_state()
+    if state is None:
+        raise RoundError("沒有 state.json，無法歸零")
+    rec = state["chapters"].get(ch)
+    if rec is None:
+        raise RoundError(f"{ch} 不在 state.json")
+    old_calls = rec.get("calls", 0)
+    rec["calls"] = 0
+    log_event(state, ch, f"手動歸零 claude -p 次數（{old_calls} → 0，--reset-calls）")
+    print(f"{ch} 的 claude -p 次數已從 {old_calls} 歸零（狀態維持 {rec['status']}）")
+    return 0
+
+
 def parse_args(argv):
     parser = argparse.ArgumentParser(description="K143 演練備課工廠：一次執行＝一輪＝一章")
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--init", nargs="+", metavar="chNN", help="建立／重設 queue")
     group.add_argument("--status", action="store_true", help="印出狀態，不呼叫模型")
     group.add_argument("--dry-run", action="store_true", help="印出每站指令與 prompt 摘要，不執行")
+    group.add_argument("--reset-calls", metavar="chNN", help="把該章 claude -p 次數歸零並記 history")
     parser.add_argument("--chapter", metavar="chNN", help="指定要跑的章")
     parser.add_argument("--force", action="store_true", help="搭配 --init：重設已有章節狀態")
     args = parser.parse_args(argv)
     if args.chapter and not CHAPTER_RE.match(args.chapter):
         parser.error(f"--chapter 格式要是 chNN，收到：{args.chapter}")
+    if args.reset_calls and not CHAPTER_RE.match(args.reset_calls):
+        parser.error(f"--reset-calls 格式要是 chNN，收到：{args.reset_calls}")
     return args
 
 
@@ -913,6 +1020,8 @@ def main(argv=None):
             return cmd_status()
         if args.dry_run:
             return cmd_dry_run(args.chapter)
+        if args.reset_calls:
+            return cmd_reset_calls(args.reset_calls)
         return cmd_run(args.chapter)
     except RoundError as exc:
         print(f"錯誤：{exc}", file=sys.stderr)
