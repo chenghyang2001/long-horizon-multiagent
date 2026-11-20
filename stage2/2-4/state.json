@@ -1,0 +1,64 @@
+{
+  "task": "長時間（24 小時）跑多代理 AI 程式要注意的事",
+  "stage": "send",
+  "status": "done",
+  "subtopics": [
+    "狀態保存與中斷接續：檢查點、進度紀錄與當機後如何從斷點恢復",
+    "成本與資源控管：API 呼叫費用、速率限制、上下文長度與運算資源的監控",
+    "多代理協調與品質把關：任務分工、錯誤重試、結果驗證與避免代理間互相干擾"
+  ],
+  "done": [
+    1,
+    2,
+    3
+  ],
+  "history": [
+    {
+      "time": "2026-11-20 10:47:46",
+      "stage": "plan",
+      "message": "建立新任務"
+    },
+    {
+      "time": "2026-11-20 10:47:52",
+      "stage": "plan",
+      "message": "拆出 3 個子題"
+    },
+    {
+      "time": "2026-11-20 10:48:00",
+      "stage": "research",
+      "message": "完成子題 1，寫入 notes/sub-1.md"
+    },
+    {
+      "time": "2026-11-20 10:48:15",
+      "stage": "research",
+      "message": "完成子題 2，寫入 notes/sub-2.md"
+    },
+    {
+      "time": "2026-11-20 10:49:48",
+      "stage": "research",
+      "message": "完成子題 3，寫入 notes/sub-3.md"
+    },
+    {
+      "time": "2026-11-20 10:49:56",
+      "stage": "report",
+      "message": "合成 report.md"
+    },
+    {
+      "time": "2026-11-20 10:49:56",
+      "stage": "send",
+      "message": "等待人工核准寄出"
+    },
+    {
+      "time": "2026-11-20 10:51:08",
+      "stage": "send",
+      "message": "人工核准，已模擬寄出到 outbox/sent-report.md"
+    }
+  ],
+  "session_ids": [
+    "1b1a2848-8a6f-4e2c-a339-737dc917a065",
+    "3b832037-c20b-4b52-bff0-a64422ff73d6",
+    "2c6fd723-e210-4f0a-9650-708ba9c1048e",
+    "413b1d02-2536-4d46-a541-45beeb259e23",
+    "c7cd9f5f-375b-4ab2-9a49-aa94436be973"
+  ]
+}
