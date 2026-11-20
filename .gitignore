@@ -7,3 +7,8 @@ core
 *.dmp
 __pycache__/
 .pytest_cache/
+
+# Claude Code 執行時產生的狀態檔
+session-state.md
+# 代理執行紀錄（太大，留本機）
+run.jsonl
