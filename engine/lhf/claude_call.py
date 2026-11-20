@@ -18,10 +18,10 @@ import threading
 import time
 from pathlib import Path
 
-from lhf import fake, proc
-from lhf.common import IN_ENGINE_ENV, now_str, stamp
+from lhf import fake, integrity, proc
+from lhf.common import IN_ENGINE_ENV, atomic_write_text, now_str, stamp
 from lhf.config import ENGINE_DIR, is_fake, posix, render, render_path
-from lhf.errors import RoundError
+from lhf.errors import ConfigError, RoundError
 from lhf.state import file_offset, read_jsonl_since, run_path, trace_path
 
 # 只有「找不到指令」才重試：9009＝cmd.exe 找不到、127＝sh 找不到；其他失敗重試只會白燒額度
@@ -91,8 +91,15 @@ def to_msys(path):
     return f"/{match.group(1).lower()}/{match.group(2)}" if match else text
 
 
+# 通知金鑰只給引擎自己（notify.py）用；代理與指令站（撰寫者的腳本）拿到就能把 bot 拿去亂發或外流。
+# 整個 TELEGRAM_ 開頭都拿掉（使用者電腦上還有 TELEGRAM_CHAT_ID_<名字> 之類的變數）
+NOTIFY_SECRET_PREFIX = "TELEGRAM_"
+
+
 def strip_nested_env(env):
     env.pop("ANTHROPIC_API_KEY", None)  # 成本鐵律：一律走 Max 訂閱
+    for key in [k for k in env if k.upper().startswith(NOTIFY_SECRET_PREFIX)]:
+        env.pop(key)
     for key in list(env):
         if key in KEEP_CLAUDE_ENV:
             continue
@@ -384,3 +391,79 @@ def describe_cmd(cfg, rt, role):
     mapping = cfg.vars(unit=rt["unit"], round_no=rt["round"])
     hook = run_path(cfg, ".runtime") / "hook-settings.json"
     return build_claude_cmd(cfg, role, ["claude"], hook, mapping)
+
+
+# ---------- 啟動前檢查：claude 支援 --restricted ----------
+
+CAPABILITY_NAME = integrity.CAPABILITY_NAME
+HELP_TIMEOUT_SEC = 60
+UPGRADE_HINT = "請升級 claude（例：claude update，或重新安裝原生版 ~/.local/bin/claude.exe）"
+
+
+def binary_identity(prefix):
+    """命令前綴裡每個檔案的路徑＋大小＋修改時間；升級後一定不同，快取自然失效。"""
+    identity = []
+    for part in prefix:
+        path = Path(part)
+        try:
+            info = path.stat()
+        except OSError:
+            identity.append([str(part), None, None])
+            continue
+        identity.append([posix(path.resolve()), info.st_size, info.st_mtime_ns])
+    return identity
+
+
+def capability_path(cfg):
+    return run_path(cfg, ".runtime") / CAPABILITY_NAME
+
+
+def cached_ok(cfg, identity):
+    try:
+        record = json.loads(capability_path(cfg).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(record, dict) and record.get("identity") == identity and record.get("restricted") is True
+
+
+def help_env():
+    env = os.environ.copy()
+    strip_nested_env(env)
+    for key in [k for k in env if k.startswith("LH_")]:
+        env.pop(key)
+    env[IN_ENGINE_ENV] = "1"
+    return env
+
+
+def read_help(prefix):
+    try:
+        result = proc.run_tree([*prefix, "--help"], cwd=str(ENGINE_DIR), env=help_env(), timeout=HELP_TIMEOUT_SEC)
+    except OSError as exc:
+        raise ConfigError(f"無法執行 claude --help：{exc}；{UPGRADE_HINT}") from exc
+    if result.timed_out:
+        raise ConfigError(f"claude --help 超過 {HELP_TIMEOUT_SEC} 秒沒有回應；{UPGRADE_HINT}")
+    return result.stdout + result.stderr
+
+
+def ensure_restricted_support(cfg):
+    """run／hours 啟動時呼叫：claude 沒有 --restricted 就拒絕啟動（ConfigError → 結束碼 2）。
+    不支援時代理會載入使用者全域 CLAUDE.md（§11 實測），破壞角色分離，不能「先跑再說」。
+    結果快取在 run/.runtime/claude-capability.json（以執行檔路徑＋大小＋修改時間為鍵），每輪不重跑。
+    假模型模式不呼叫 claude，直接略過。"""
+    if is_fake():
+        return "fake"
+    try:
+        prefix = find_claude()
+    except RoundError as exc:
+        raise ConfigError(f"{exc}；{UPGRADE_HINT}") from exc
+    identity = binary_identity(prefix)
+    if cached_ok(cfg, identity):
+        return "cached"
+    if "--restricted" not in read_help(prefix):
+        raise ConfigError(f"claude（{' '.join(prefix)}）的 --help 沒有 --restricted；{UPGRADE_HINT}")
+    record = {"identity": identity, "restricted": True, "checked": now_str()}
+    try:
+        atomic_write_text(capability_path(cfg), json.dumps(record, ensure_ascii=False))
+    except OSError as exc:
+        print(f"（警告：寫不進 {CAPABILITY_NAME}：{exc}；下次會再檢查一次）", file=sys.stderr)
+    return "checked"

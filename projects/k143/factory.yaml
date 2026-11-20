@@ -213,3 +213,8 @@ fake:
     "{now}": |
       K143 第 {num} 章「🆕 現況」補充
       本章沒有 Fable 5.2 差異
+
+# 長時間無人值守時用 Telegram 通知（金鑰只在環境變數 TELEGRAM_BOT_TOKEN／TELEGRAM_CHAT_ID；B 階段）
+notify:
+  telegram:
+    on: [alert, finish]

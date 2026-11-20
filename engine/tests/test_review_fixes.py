@@ -456,6 +456,11 @@ def test_hours_stops_on_repeated_engine_errors(demo_dir, tmp_path):
     work.mkdir()
     env = {"LH_WORK_OVERRIDE": str(work), "LH_CLAUDE_BIN": sys.executable}  # python 不認得 -p → 每次都失敗
     run_cli([str(demo_dir), "init"], env)
+    # B 階段起 run／hours 開跑前檢查 claude --help 有 --restricted；這裡模擬「檢查通過、但 -p 呼叫失敗」的 claude
+    cache = demo_dir / "run" / ".runtime" / claude_call.CAPABILITY_NAME
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    identity = claude_call.binary_identity([sys.executable])
+    cache.write_text(json.dumps({"identity": identity, "restricted": True}), encoding="utf-8")
     proc_result = run_cli([str(demo_dir), "hours", "--hours", "1", "--gap-seconds", "0"], env)
     assert proc_result.returncode == 2, proc_result.stdout[-500:]
     assert "引擎錯誤" in (demo_dir / "run" / "ALERT.txt").read_text(encoding="utf-8")
@@ -481,9 +486,11 @@ def test_verify_and_qa_max_must_match(tmp_path):
         load_config(project_with(tmp_path, lambda d: d["stations"][1].update(on_fail={"goto": "make", "max": 1})))
 
 
-def test_notify_warning(tmp_path):
+def test_notify_old_format_rejected(tmp_path):
+    """B 階段起 notify 已實作：A 階段的預留格式 {on_alert: [...]} 會被明確拒絕（不再只是警告）。"""
     project = project_with(tmp_path, lambda d: d.update(notify={"on_alert": ["line"]}))
-    assert "notify 尚未實作" in run_cli([str(project), "status"]).stderr
+    proc = run_cli([str(project), "status"])
+    assert proc.returncode == 2 and "notify" in proc.stderr and "未知欄位" in proc.stderr
 
 
 def test_launch_failure_codes():

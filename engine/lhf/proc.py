@@ -289,13 +289,14 @@ class Streamer:
 
 
 def stream_tree(argv, *, cwd, env, timeout, on_output, on_tick=None):
-    """執行並即時轉印輸出。回傳 (結束碼或 None, 狀態)；狀態：ok／timeout／interrupted。"""
+    """執行並即時轉印輸出。回傳 (結束碼或 None, 狀態)；狀態：ok／timeout／interrupted／stopped。
+    on_tick：每次輪詢呼叫一次，回傳 True＝請子程序收尾停止（stop --now；送 CTRL_BREAK，與 Ctrl+C 同樣流程）。"""
     with tempfile.TemporaryFile() as out:
         tree = Tree(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT)
         streamer = Streamer(out)
         deadline = time.monotonic() + timeout
         try:
-            return _stream_loop(tree, streamer, deadline, on_output)
+            return _stream_loop(tree, streamer, deadline, on_output, on_tick)
         except KeyboardInterrupt:
             return _graceful_stop(tree, streamer, on_output)
         finally:
@@ -303,18 +304,20 @@ def stream_tree(argv, *, cwd, env, timeout, on_output, on_tick=None):
             tree.close()
 
 
-def _stream_loop(tree, streamer, deadline, on_output):
+def _stream_loop(tree, streamer, deadline, on_output, on_tick=None):
     while tree.proc.poll() is None:
         on_output(streamer.read_new())
         if time.monotonic() >= deadline:
             tree.kill()
             wait_for(tree.proc, 10)
             return None, "timeout"
+        if on_tick is not None and on_tick():
+            return _graceful_stop(tree, streamer, on_output, status="stopped")
         time.sleep(POLL_SEC)
     return tree.proc.returncode, "ok"
 
 
-def _graceful_stop(tree, streamer, on_output):
+def _graceful_stop(tree, streamer, on_output, status="interrupted"):
     """Ctrl+C：先請子程序存檔收尾，等不到才殺樹；收尾中再按一次 Ctrl+C 就直接殺。"""
     tree.interrupt()
     try:
@@ -325,4 +328,4 @@ def _graceful_stop(tree, streamer, on_output):
         tree.kill()
         wait_for(tree.proc, 10)
     on_output(streamer.read_new())
-    return tree.proc.returncode, "interrupted"
+    return tree.proc.returncode, status

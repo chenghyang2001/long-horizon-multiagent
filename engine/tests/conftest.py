@@ -2,6 +2,7 @@
 
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -27,7 +28,17 @@ LH_VARS = (
     "LH_ROUND",
     "LH_STATION",
     "LH_CLAUDE_BIN",
+    "LH_TELEGRAM_API_BASE",
+    "LH_LOCK_TOKEN",
+    # 使用者電腦上可能用 setx 設了真的 Telegram 金鑰：測試一律拿掉，絕不打真的 Telegram
+    "TELEGRAM_BOT_TOKEN",
+    "TELEGRAM_CHAT_ID",
 )
+
+
+# 安全網：測試預設找不到真的 claude（不存在的執行檔），忘了開假模型模式的測試只會啟動失敗、不會呼叫真模型燒額度。
+# 要測 find_claude 本身的測試自己 delenv（見 test_claude_call.py）
+NO_REAL_CLAUDE = str(Path(tempfile.gettempdir()) / "lhf-tests-no-real-claude" / "claude.exe")
 
 
 @pytest.fixture(autouse=True)
@@ -35,6 +46,7 @@ def clean_env(monkeypatch):
     for key in LH_VARS:
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("PYTHONUTF8", "1")
+    monkeypatch.setenv("LH_CLAUDE_BIN", NO_REAL_CLAUDE)
 
 
 @pytest.fixture

@@ -23,3 +23,7 @@ class EngineDescendant(RoundError):
 
 class CallBudgetExceeded(RoundError):
     """本單位 claude -p 次數超過上限；直接標 failed，避免無止境重試燒額度。"""
+
+
+class StopRequested(Exception):
+    """有人執行了 stop（run/.runtime/stop-request.json）：在站與站之間停下，進度已存。"""

@@ -11,6 +11,9 @@ EXIT_CONFIG = 2  # 設定錯誤拒絕啟動；hours 用它表示「引擎錯誤�
 EXIT_ENGINE_ERROR = 3  # run：本輪遇到引擎錯誤（模型呼叫失敗、檔案缺漏…），單位停在原站下次重試
 EXIT_LOCKED = 4  # 已有另一個 run／hours 在跑
 EXIT_REFUSED = 5  # 人工指令（approve／reset…）從引擎底下的程序發出，拒絕
+# 工作目錄控制檔（git hooks／危險 git 設定／.claude／CLAUDE.md…）被改動：run 與 hours 都停下等人看，
+# 不再做下一個單位（下一個 commit 站會執行被植入的 hook）
+EXIT_CONTROL_CHANGED = 6
 # 所有引擎啟動的子程序（指令站、claude -p）都帶這個旗標；不用 LH_ 開頭，維持「指令站沒有任何 LH_*」的約定
 IN_ENGINE_ENV = "LHF_IN_ENGINE"
 EXIT_INTERRUPTED = 130

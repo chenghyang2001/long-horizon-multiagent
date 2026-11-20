@@ -14,8 +14,9 @@ import shlex
 import sys
 import time
 
-from lhf import ancestry, claude_call, integrity, lock, proc, stations
+from lhf import ancestry, claude_call, integrity, lock, proc, stations, stop
 from lhf.common import (
+    EXIT_CONTROL_CHANGED,
     EXIT_ENGINE_ERROR,
     EXIT_INTERRUPTED,
     EXIT_OK,
@@ -25,7 +26,7 @@ from lhf.common import (
     now_str,
 )
 from lhf.config import FINAL_STATUSES, posix, render, render_path
-from lhf.errors import CallBudgetExceeded, EngineDescendant, RoundError
+from lhf.errors import CallBudgetExceeded, EngineDescendant, RoundError, StopRequested
 from lhf.snapshot import write_snapshot
 from lhf.state import (
     IN_PROGRESS,
@@ -35,13 +36,15 @@ from lhf.state import (
     append_jsonl,
     approved_path,
     blocked_reason,
+    claim_commands,
+    command_id,
+    command_known,
+    commands_path,
     load_state,
     log_event,
     new_state,
     new_unit,
     pending_approvals_path,
-    claim_commands,
-    command_id,
     queue_command,
     read_jsonl,
     requeue_commands,
@@ -127,11 +130,11 @@ STATION_WAIT_SEC = 3600  # 最多等一個指令站跑完；超過就放棄（�
 
 
 def wait_station_idle(cfg):
-    """指令站執行期間佇列檔被改會被當成竄改；所以人下的指令要等指令站跑完才排入。"""
-    marker = integrity.marker_path(cfg)
+    """指令站執行期間佇列檔被改會被當成竄改；所以人下的指令要等指令站跑完才排入。
+    只認「有效」標記（標記的程序與持鎖程序都還活著）：當掉留下的殘留標記不會讓人白等一小時。"""
     deadline = time.monotonic() + STATION_WAIT_SEC
     announced = False
-    while marker.exists() and lock.lock_alive(lock.read_lock(cfg)):
+    while integrity.active_marker(cfg) is not None:
         if time.monotonic() > deadline:
             raise RoundError(f"等了 {STATION_WAIT_SEC} 秒指令站還沒跑完，請稍後再下一次指令")
         if not announced:
@@ -140,14 +143,38 @@ def wait_station_idle(cfg):
         time.sleep(1)
 
 
+def queue_when_idle(cfg, command, unit, record=None):
+    """在佇列互斥檔內確認「沒有指令站在跑」才寫入（引擎也在同一個互斥檔內放標記，兩邊不會交錯）。
+    record 有值＝重排同一筆（同一個 id，引擎只會套用一次）。"""
+    deadline = time.monotonic() + STATION_WAIT_SEC
+    while True:
+        wait_station_idle(cfg)
+        with integrity.queue_mutex(cfg):
+            if integrity.active_marker(cfg) is None:
+                if record is None:
+                    return queue_command(cfg, command, unit)
+                append_jsonl(commands_path(cfg), record)
+                return record
+        if time.monotonic() > deadline:
+            raise RoundError(f"等了 {STATION_WAIT_SEC} 秒指令站還沒跑完，請稍後再下一次指令")
+
+
+def queue_verified(cfg, command, unit):
+    """排入後再確認一次：指令若已不在系統裡（被指令站的竄改還原掉），用同一個 id 重排一次。"""
+    record = queue_when_idle(cfg, command, unit)
+    if not command_known(cfg, record["id"]):
+        print("（排入的指令不見了，重新排入同一筆）", flush=True)
+        queue_when_idle(cfg, command, unit, record=record)
+    return record
+
+
 def cmd_mutate(cfg, command, unit):
     """引擎在跑 → 排進 commands.jsonl；沒在跑 → 拿鎖後直接讀改寫。兩種都先確認是人下的指令。"""
     guard_human(cfg, command)
     owner = lock.held_by_other(cfg)
     if owner:
         precheck(cfg, command, unit)
-        wait_station_idle(cfg)
-        queue_command(cfg, command, unit)
+        queue_verified(cfg, command, unit)
         print(f"引擎正在執行（PID {owner.get('pid')}），{command} {unit} 已排入 commands.jsonl，下一站開始時套用")
         return EXIT_OK
     with lock.holding(cfg, command):
@@ -210,6 +237,8 @@ def run_stations(rt, summary):
         rec = stations.unit_rec(rt)
         if rec["status"] in FINAL_STATUSES or rec["status"] == PENDING_APPROVAL:
             return
+        if stop.requested(rt["cfg"]):
+            raise StopRequested(f"收到停止要求（stop），停在站 {rec['station']} 之前")
         station = rt["cfg"].station(rec["station"])
         print(f"[站 {stations.label_of(station)}]", flush=True)
         heartbeat(rt, f"站 {station['id']} 開始", 0)
@@ -284,17 +313,29 @@ def outcome_of(status):
 
 def cmd_run(cfg, unit_arg=None):
     with lock.holding(cfg, "run"):
-        state = load_state(cfg)
-        if state is None:
-            raise RoundError("沒有 state.json，先執行 init")
-        unit = pick_unit(cfg, state, unit_arg)
-        if unit is None:
-            if not unit_arg:
-                print_nothing_runnable(cfg, state)
-            return EXIT_OK
-        write_snapshot(cfg)  # gate 本輪只讀這份快照
-        rt = begin_round(cfg, state, unit)
-        return run_unit(rt)
+        integrity.clear_foreign_marker(cfg)  # 持鎖且還沒開站：任何既有標記都是當掉留下的
+        standalone = not os.environ.get(lock.TOKEN_ENV)
+        if standalone:
+            stop.clear_request(cfg, "清除上次留下的停止要求")
+        try:
+            return run_round(cfg, unit_arg)
+        finally:
+            if standalone:
+                stop.clear_request(cfg)  # hours 底下的 run 不清：hours 要看到它才會停
+
+
+def run_round(cfg, unit_arg):
+    state = load_state(cfg)
+    if state is None:
+        raise RoundError("沒有 state.json，先執行 init")
+    unit = pick_unit(cfg, state, unit_arg)
+    if unit is None:
+        if not unit_arg:
+            print_nothing_runnable(cfg, state)
+        return EXIT_OK
+    write_snapshot(cfg)  # gate 本輪只讀這份快照
+    rt = begin_round(cfg, state, unit)
+    return run_unit(rt)
 
 
 def run_unit(rt):
@@ -303,6 +344,8 @@ def run_unit(rt):
         run_stations(rt, summary)
     except KeyboardInterrupt:
         return handle_interrupt(rt, summary, time.monotonic() - start)
+    except StopRequested as exc:
+        return handle_interrupt(rt, summary, time.monotonic() - start, reason=str(exc))
     except CallBudgetExceeded as exc:
         stations.finish(rt, "failed", f"停止本單位：{exc}", alert=True)
     except RoundError as exc:
@@ -311,6 +354,9 @@ def run_unit(rt):
     outcome, code = outcome_of(stations.unit_rec(rt)["status"])
     heartbeat(rt, outcome, elapsed)
     print_summary(rt, summary, elapsed)
+    if rt.get("control_changed"):
+        print(f"!! {rt['control_changed']}", file=sys.stderr, flush=True)
+        return EXIT_CONTROL_CHANGED
     return code
 
 
@@ -334,11 +380,11 @@ def handle_error(rt, summary, exc, elapsed):
     return EXIT_ENGINE_ERROR
 
 
-def handle_interrupt(rt, summary, elapsed):
-    """進度在每站結束時就存好了，這裡只補一筆紀錄與 heartbeat。"""
+def handle_interrupt(rt, summary, elapsed, reason=None):
+    """進度在每站結束時就存好了，這裡只補一筆紀錄與 heartbeat。reason 有值＝stop 指令要求停止。"""
     station = stations.unit_rec(rt)["station"]
     try:
-        log_event(rt["cfg"], rt["state"], rt["unit"], f"使用者中斷（停在站 {station}）")
+        log_event(rt["cfg"], rt["state"], rt["unit"], reason or f"使用者中斷（停在站 {station}）")
         heartbeat(rt, "中斷", elapsed)
     except OSError as exc:
         print(f"（中斷時寫紀錄失敗：{exc}）", file=sys.stderr)

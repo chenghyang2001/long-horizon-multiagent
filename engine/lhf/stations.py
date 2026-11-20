@@ -437,9 +437,12 @@ def run_checks(rt, station, mapping):
 
 
 def run_checks_guarded(rt, station, mapping):
-    """站前站後比對受保護檔；回傳 (raw log, 自動失敗原因, 變動檔清單, 站前快照, 執行時的錯誤或 None)。"""
+    """站前站後比對受保護檔；回傳 (raw log, 自動失敗原因, (變動檔清單, 站前快照, 站後快照), 執行時的錯誤或 None)。"""
     cfg = rt["cfg"]
-    integrity.set_marker(cfg, rt, station)  # 先放標記：人下的 approve／reset 會等它消失才排入
+    # 先在佇列互斥檔內放標記：人下的 approve／reset 也在同一個互斥檔內檢查標記，
+    # 所以它們不是在站前快照之前排入（快照收得到），就是等本站結束才排入，不會被誤判成竄改
+    with integrity.queue_mutex(cfg):
+        integrity.set_marker(cfg, rt, station)
     before = integrity.snapshot(cfg)
     raw_text, auto_fail, error = "", "", None
     try:
@@ -449,11 +452,13 @@ def run_checks_guarded(rt, station, mapping):
     finally:
         after = integrity.snapshot(cfg)
         integrity.clear_marker(cfg)
-    return raw_text, auto_fail, integrity.diff(before, after), before, error
+    return raw_text, auto_fail, (integrity.diff(before, after), before, after), error
 
 
-def tampered(rt, station, changed, before):
-    """指令站期間受保護檔被改：還原引擎檔（本站期間的佇列指令與核准因此作廢），單位標 failed＋ALERT。"""
+def tampered(rt, station, changed, before, after):
+    """指令站期間受保護檔被改：還原引擎檔（本站期間的佇列指令與核准因此作廢），單位標 failed＋ALERT。
+    工作目錄控制檔（hooks、危險 git 設定、.claude、CLAUDE.md…）也被改時記在 rt["control_changed"]：
+    run 以 EXIT_CONTROL_CHANGED 結束、hours 停止，不再做下一個單位（下一個 commit 站會執行被植入的 hook）。"""
     restored = integrity.restore(before, changed)
     listing = "、".join(Path(p).name if len(changed) > 10 else p for p in changed[:10])
     more = f" 等 {len(changed)} 個" if len(changed) > 10 else ""
@@ -461,6 +466,10 @@ def tampered(rt, station, changed, before):
         f"{label_of(station)}：指令站執行期間受保護檔被改動（{listing}{more}），已還原 {len(restored)} 個引擎檔；"
         "本站期間新增的佇列指令與核准不套用"
     )
+    control = integrity.describe_control(before, after, changed)
+    if control:
+        rt["control_changed"] = control
+        text += f"；{control}；引擎停止，不再做下一個單位"
     finish(rt, "failed", text, alert=True)
     return "FAIL（受保護檔被改動）"
 
@@ -473,9 +482,9 @@ def station_command(rt, station):
     if missing:
         raw_text, auto_fail = f"缺檔：{'、'.join(missing)}\n", f"缺少必要檔案 {'、'.join(missing)}"
     else:
-        raw_text, auto_fail, changed, before, error = run_checks_guarded(rt, station, mapping)
+        raw_text, auto_fail, (changed, before, after), error = run_checks_guarded(rt, station, mapping)
         if changed:
-            return tampered(rt, station, changed, before)
+            return tampered(rt, station, changed, before, after)
         if error:
             raise error
     log_path = Path(render_path(station["log"], mapping))
@@ -549,6 +558,10 @@ def station_commit(rt, station):
     committed = git(work, ["commit", "-m", message, "--", *files])
     if committed.returncode != 0:
         raise RoundError(f"git commit 失敗：{(committed.stderr or committed.stdout).strip()[:300]}")
+    head = git(work, ["rev-parse", "HEAD"])
+    if head.returncode == 0:
+        # 記下本單位的 commit：核准前 pending-info 要列出「推上去會被執行」的檔（沒有上游分支時靠它）
+        unit_rec(rt).setdefault("commits", []).append(head.stdout.strip())
     advance(rt, station, f"完成並 commit：{message}")
     return "已 commit"
 

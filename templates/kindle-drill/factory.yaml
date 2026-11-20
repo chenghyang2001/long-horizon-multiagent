@@ -175,4 +175,10 @@ prompts:                       # ★ 每站給代理的工作指示（經 stdin 
   review: "審查 {script}、{coach}、{now}，寫到 {review}，最後一行 `VERDICT: PASS` 或 `VERDICT: REJECT`。{common_rules}"
 
 fake: {}                       # 假模式（LH_FAKE_MODEL=1）各角色要寫的假檔：{角色: {"{檔案}": "內容"}}
-notify: {}                     # 預留（B 階段）：{on_alert: [...], on_finish: [...]}；尚未實作，有填會在啟動時警告
+# 通知（可省略或 {}＝不發）：只有 Telegram；金鑰只放環境變數 TELEGRAM_BOT_TOKEN、TELEGRAM_CHAT_ID，
+#   不要寫進這個檔。缺環境變數時啟動會警告、照常執行。失敗只警告，不會中斷引擎。
+#   alert ＝單位被判 failed／rejected（寫進 ALERT 清單）時、hours 寫 ALERT.txt 時發
+#   finish＝hours 寫結束摘要時發（含停止原因、完成單位數、需要人看的單位）
+notify:
+  telegram:
+    on: [alert, finish]

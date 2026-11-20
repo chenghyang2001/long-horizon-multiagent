@@ -12,10 +12,16 @@ python -m lhf ../projects/k143 dry-run --unit ch14     # 只印每站要做什�
 python -m lhf ../projects/k143 status
 python -m lhf ../projects/k143 run                     # 跑一輪（一個單位）
 python -m lhf ../projects/k143 hours --hours 5 --gap-seconds 30
+python -m lhf ../projects/k143 pending-info ch14       # 核准前看待核准內容（JSON）
 python -m lhf ../projects/k143 approve ch14            # 核准等待中的單位
 python -m lhf ../projects/k143 reset ch14              # 看過 ALERT 後重來
+python -m lhf ../projects/k143 stop                    # 請執行中的 run／hours 做完這站後停下
 python -m pytest tests -q                              # 假模型模式回歸測試
 ```
+
+日常操作建議用 skill **`lh-factory`**（`~/.claude/skills/lh-factory/SKILL.md`）：在控制台說
+「開工廠：k143」「工廠狀態」「工廠核准 ch15」「工廠停止」「新工廠專案：<名稱> <類型>」「工廠接續」，
+skill 會照步驟呼叫這些子指令（核准一定先在前景用選單問過人才執行 approve）。
 
 | 子指令 | 說明 |
 | --- | --- |
@@ -24,6 +30,8 @@ python -m pytest tests -q                              # 假模型模式回歸�
 | `status`／`dry-run [--unit X]` | 唯讀 |
 | `init [ids...] [--force]` | 建立 queue（沒給 id＝全部單位） |
 | `approve <id>`／`reset <id>`／`reset-calls <id>` | 引擎執行中會排進 `run/commands.jsonl`，下一站開始時套用 |
+| `pending-info <id>` | 唯讀，輸出 JSON：單位狀態、停在哪站、站型或指令核准、待核准紀錄、本單位改到的檔裡「推上去會被執行」的檔 |
+| `stop [--now] [--wait 秒]` | 請執行中的 run／hours 收尾停下（見下方「停止」）；預設等 300 秒，逾時才強制結束 |
 | `migrate --from <舊 state.json> [--force]` | 第一代 capstone 進度轉移 |
 
 `--allow-project-permissions`：工作目錄的 `.claude/settings*.json` 有 `permissions.allow`、
@@ -35,11 +43,53 @@ python -m pytest tests -q                              # 假模型模式回歸�
 | --- | --- | --- |
 | 0 | 單位完成，或停在等待核准 | 正常停止，且沒有 failed／rejected 單位 |
 | 1 | 單位被判 failed／rejected | 有單位被判 failed／rejected（照樣做完其他單位），寫 ALERT.txt |
-| 2 | 設定錯誤，拒絕啟動 | 引擎錯誤連發（連續 `max_engine_errors`＋1 輪），或 state.json 損毀；寫 ALERT.txt |
+| 2 | 設定錯誤，拒絕啟動（含 claude 不支援 `--restricted`） | 同左；或引擎錯誤連發（連續 `max_engine_errors`＋1 輪）、state.json 損毀；寫 ALERT.txt |
 | 3 | 引擎錯誤（模型呼叫失敗、gate 沒生效…），停在原站下次重試 | — |
 | 4 | 已有另一個 run／hours 在跑 | 同左 |
-| 5 | approve／reset／reset-calls／init／migrate 從引擎底下的程序發出，拒絕 | — |
-| 130 | Ctrl+C（進度已存） | Ctrl+C |
+| 5 | approve／reset／reset-calls／init／migrate／stop 從引擎底下的程序發出，拒絕 | — |
+| 6 | 指令站期間工作目錄控制檔被改動（單位標 failed） | 工作目錄控制檔被改動（指令站期間，或輪與輪之間與開跑基準不同）：停止、寫 ALERT.txt，不做下一個單位 |
+| 130 | Ctrl+C 或 stop（進度已存） | Ctrl+C 或 stop |
+
+其他子指令：`pending-info` 0＝正在等核准、1＝沒有在等核准（照樣輸出 JSON）；
+`stop` 0＝已停止（或本來就沒在跑、或 `--wait 0` 只送出要求）、1＝收尾逾時已強制結束、3＝強制結束失敗、5＝從引擎底下發出被拒。
+
+## 啟動檢查（B 階段）
+
+`run`／`hours` 開跑前執行一次 `claude --help`，沒有 `--restricted` 就印「請升級 claude」並以結束碼 2 拒絕啟動
+（沒有它代理會載入使用者全域 CLAUDE.md，見下方「代理不載入任何 CLAUDE.md」）。
+結果快取在 `run/.runtime/claude-capability.json`，以執行檔路徑＋大小＋修改時間為鍵：升級後自動重新檢查，平常每輪不重跑。
+假模型模式（`LH_FAKE_MODEL=1`）略過。
+
+## 停止（`stop`）
+
+hours 跑在另一個 Windows Terminal 視窗（另一個主控台），從別的終端送 CTRL_BREAK 送不到
+（`GenerateConsoleCtrlEvent` 只能送給同一個主控台；AttachConsole 換主控台會連 claude 一起打斷、也會讓呼叫端失去主控台）。
+所以改用檔案 `run/.runtime/stop-request.json`：
+
+| 指令 | 行為 |
+| --- | --- |
+| `stop` | run 每站開始前看到就停；hours 本輪結束或輪間等待時看到就停。目前這站一定做完、存檔 |
+| `stop --now` | hours 對**自己的**子程序送 CTRL_BREAK（同一個主控台，送得到）：目前這站中斷、下次重做這站 |
+| `--wait 秒`（預設 300） | 等持鎖程序結束；逾時才 `taskkill /T /F` 整棵樹（Job Object 帶走所有子孫），殘留的鎖與標記下次啟動自動清除 |
+| `--wait 0` | 只送出要求就回來（之後用 `status` 看） |
+
+hours 以 130 結束、摘要的停止原因是「收到停止要求（stop）」。停止要求檔不列入指令站前後比對（人可能在指令站執行中下 stop）。
+
+## 通知（`notify`）
+
+```yaml
+notify:
+  telegram:
+    on: [alert, finish]   # alert：單位寫進 ALERT 清單時、hours 寫 ALERT.txt 時；finish：hours 寫結束摘要時
+```
+
+- 金鑰只走環境變數 `TELEGRAM_BOT_TOKEN`、`TELEGRAM_CHAT_ID`；缺了啟動時警告、照常執行，不發通知。
+- 只用標準庫 urllib；逾時 10 秒、失敗重試 1 次，最後仍失敗只印警告，絕不中斷引擎。
+- token 與 chat id 不會出現在任何輸出、log、trace、例外訊息或 ALERT（對外文字一律遮蔽）；代理與指令站的子程序環境
+  也拿不到這兩個變數。
+- 訊息含專案名、標題、單位、原因、簡短摘要，超過 3900 字截斷（Telegram 上限 4096）。
+- Gmail／LINE 由 skill 在前景結束時發（skill 有 MCP），引擎不碰。
+- 測試：`LH_TELEGRAM_API_BASE` 可指到本機假伺服器；假模型模式沒設它時一律不發真通知。
 
 同一單位連續 3 次引擎錯誤（`limits.max_engine_errors`）會標 failed＋ALERT，換下一個單位。
 
@@ -57,6 +107,20 @@ python -m pytest tests -q                              # 假模型模式回歸�
   commit／push、破壞 §9 角色分離）；`--restricted` 下全域與專案 CLAUDE.md 都不載入，`--settings` 的 gate hook
   照樣觸發、deny 生效，`--tools` 指名的 Bash／WebFetch 仍可用，Max 訂閱登入正常。不可改用 `--bare`
   （只吃 API key）或 `--safe-mode`（停用 hook）。
+- **控制檔被改就停（B 階段）**：指令站前後比對到工作目錄控制檔變動 → run 結束碼 6；hours 開跑時拍一份控制檔基準、
+  每輪開始前比對，有變動或 run 回 6 都停止並寫 ALERT.txt，不再做下一個單位（下一個 commit 站會執行被植入的 hook）。
+  git 設定（`.git/config`、worktree 的共用 config、`config.worktree`，含 include 的檔）**只比對危險鍵**：`core.hooksPath`、
+  `core.fsmonitor`、`core.sshCommand`、`core.editor`／`pager`、`*.helper`、`include*`／`includeIf*`、`filter.*`、`alias.*`、
+  `credential.*`、`http.*`、`url.*`、`remote.*.url`、`diff.*.textconv`、`merge.*.driver` 等（清單見 `integrity.DANGEROUS_KEY_RES`），
+  由 git 自己解析（解析失敗改整檔比對）；`hooks/` 仍整個比對。worktree 的共用 config 與 hooks 跟主 repo 共用，人在主 repo
+  fetch、建分支、設上游不會誤判；真的改到危險鍵或 hook 時訊息會註明「可能是人在主 repo 操作」。
+- **CLAUDE.md 掃描**略過 `build`／`install`／`log`／`logs`／`dist`／`target`／`node_modules`／`.venv`／`venv`／`__pycache__`／
+  `.next`／`.cache` 等大目錄（`integrity.SKIP_DIRS`），最多走訪 20,000 個資料夾，超過就警告並停止掃描。
+- **殘留的指令站標記**：標記記下自己的 PID＋啟動時間與當時的持鎖 PID；人工指令只認「標記程序與持鎖程序都還活著、且持鎖者
+  相符」的有效標記，當掉留下的不會讓人白等。run 與 hours 每輪開始時清掉不是自己放的標記。
+- **佇列互斥檔** `run/.runtime/queue.mutex`：引擎在互斥檔內放指令站標記，人工指令在互斥檔內確認沒有有效標記才排入，
+  所以排入的指令不會落在站前快照與站後快照之間（不會被誤判竄改、也不會被還原掉）。排入後再確認一次指令還在
+  （佇列 → 認領檔 → state 的 applied_commands），不見了就用**同一個 id** 重排；引擎依 id 只套用一次，不會重複套用。
 - **工作目錄控制檔**：workdir 與 agent_cwd 之下，路徑任何一段是 `.git`（worktree 的 gitdir 檔也算）、`.gitmodules`、
   `.gitattributes`、`.claude`、`.mcp.json`，或檔名是 `CLAUDE.md`／`CLAUDE.local.md`（任何子目錄、不分大小寫），
   gate 一律拒絕寫入。比對前照 Windows 語意去掉每段結尾的「.」與空白、`::$DATA` 串流。CLAUDE.md 只能由人更新。
@@ -76,7 +140,7 @@ python -m pytest tests -q                              # 假模型模式回歸�
 
 | 進版控（跨電腦接手需要） | 不進版控（.gitignore） |
 | --- | --- |
-| `state.json`（進度）、`trace.jsonl`（gate 紀錄）、`alerts.jsonl`（ALERT 清單） | `.runtime/`（鎖、hook 設定、設定快照、假模式標記） |
+| `state.json`（進度）、`trace.jsonl`（gate 紀錄）、`alerts.jsonl`（ALERT 清單） | `.runtime/`（鎖、hook 設定、設定快照、假模式標記、停止要求、佇列互斥檔、claude 能力快取） |
 | `plans/`、`reviews/`、`test-logs/`、`logs/hours-*`（各站產物與連續執行摘要） | `heartbeat.txt`、`commands*.jsonl`（只在本機執行中有意義） |
 | `approvals/`（核准紀錄） | `logs/agent-fail-*`（完整 stdout／stderr，可能很大）、`trace-*.jsonl`（歸檔） |
 
@@ -97,6 +161,19 @@ python -m pytest tests -q                              # 假模型模式回歸�
 | run 結束碼 | 0／1／130 | 0／1／2／3／4／130（見上表） |
 | hours 停止 | 連續 2 輪非 0 | 只有引擎錯誤連發才停；單位失敗會繼續下一個 |
 | commit 前 | 不檢查分支 | 檢查 `branch`，不同就拒絕 |
+| 通知 | 無 | Telegram（`notify.telegram.on`，B 階段） |
+| 停止 | 只能 Ctrl+C | `stop`（檔案要求，逾時才強制結束）；B 階段 |
+
+## B 階段與 A 階段刻意不同的行為
+
+| 項目 | A 階段 | B 階段 |
+| --- | --- | --- |
+| 指令站期間工作目錄控制檔被改 | 單位 failed，run 結束碼 1，hours 繼續下一個單位 | run 結束碼 6，hours 停止＋ALERT |
+| git config 比對 | 整檔雜湊 | 只比對危險鍵（含 include 的檔）；解析失敗才整檔 |
+| `notify` 欄位 | 只檢查是物件，啟動時警告「尚未實作」 | 驗證 `{telegram: {on: [...]}}`，舊的 `{on_alert: ...}` 會被拒絕（結束碼 2） |
+| run／hours 啟動 | 不檢查 claude 版本 | `claude --help` 沒有 `--restricted` 就拒絕（結束碼 2） |
+| 人工指令遇到指令站標記 | 標記檔存在＋鎖活著就等 | 只等有效標記；排入與開站用互斥檔序列化 |
+| state 單位欄位 | — | 多 `commits`（commit 站記下的 commit；舊 state 沒有也能讀） |
 
 ## 從第一代接手（k143）
 

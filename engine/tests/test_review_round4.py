@@ -153,7 +153,8 @@ def tamper_project(tmp_path, monkeypatch, action):
 @pytest.mark.parametrize("action", sorted(TAMPER))
 def test_command_station_tampering_fails_unit(tmp_path, monkeypatch, action):
     cfg = tamper_project(tmp_path, monkeypatch, action)
-    assert round_mod.cmd_run(cfg, "a") == 1
+    # B 階段：工作目錄控制檔（CLAUDE.md）被改 → 結束碼 6（hours 會停下）；只有引擎檔被改 → 1（已還原，繼續下一單位）
+    assert round_mod.cmd_run(cfg, "a") == (6 if action == "claude_md" else 1)
     state = load_state(cfg)
     assert state["units"]["a"]["status"] == "failed"
     alert = read_jsonl(alerts_path(cfg))[-1]
@@ -192,7 +193,10 @@ def test_human_command_waits_for_station(demo_dir, monkeypatch):
             json.dumps({"pid": holder.pid, "started": lock.process_start_time(holder.pid), "token": "t"}),
             encoding="utf-8",
         )
-        integrity.marker_path(cfg).write_text("{}", encoding="utf-8")
+        integrity.marker_path(cfg).write_text(
+            json.dumps({"pid": holder.pid, "started": lock.process_start_time(holder.pid), "lock_pid": holder.pid}),
+            encoding="utf-8",
+        )
         monkeypatch.setattr(round_mod, "STATION_WAIT_SEC", 1)
         start = time.monotonic()
         with pytest.raises(RoundError, match="指令站還沒跑完"):

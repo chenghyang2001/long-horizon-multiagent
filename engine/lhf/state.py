@@ -52,6 +52,7 @@ def new_unit(cfg):
         "approved": [],
         "approval": None,
         "engine_errors": 0,
+        "commits": [],
     }
 
 
@@ -257,17 +258,34 @@ def commands_path(cfg):
 def queue_command(cfg, command, unit):
     """引擎執行中：把 approve／reset／reset-calls 排進佇列，由引擎下一站開始時套用。每筆帶唯一 id。
     ancestry_checked＝排入前已確認提交者不是引擎的子孫（呼叫端 round.guard_human 負責檢查）。"""
-    append_jsonl(
-        commands_path(cfg),
-        {
-            "id": secrets.token_hex(8),
-            "ts": now_str(),
-            "command": command,
-            "unit": unit,
-            "pid": os.getpid(),
-            "ancestry_checked": True,
-        },
-    )
+    record = {
+        "id": secrets.token_hex(8),
+        "ts": now_str(),
+        "command": command,
+        "unit": unit,
+        "pid": os.getpid(),
+        "ancestry_checked": True,
+    }
+    append_jsonl(commands_path(cfg), record)
+    return record
+
+
+def command_known(cfg, record_id):
+    """排入後確認指令還在系統裡。依指令在引擎裡的流向讀：佇列 → 認領檔 → state 的 applied_commands。
+    引擎是「改名認領 → 套用並存 state → 刪認領檔」，照同樣順序讀，同一筆指令至少會在其中一處被看到；
+    唯一的例外是被延後（正在跑的單位不能 reset）而放回佇列的指令，所以呼叫端重排時一律沿用同一個 id，
+    重複的 id 引擎只會套用一次，不會造成重複套用。"""
+    if any(r.get("id") == record_id for r in read_jsonl(commands_path(cfg))):
+        return True
+    for path in sorted(cfg.run_dir.glob("commands.processing-*.jsonl")):
+        if any(r.get("id") == record_id for r in read_jsonl(path)):
+            return True
+    try:
+        state = json.loads(run_path(cfg, "state.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    applied = state.get("applied_commands") if isinstance(state, dict) else None
+    return isinstance(applied, list) and record_id in applied
 
 
 def command_id(record):
@@ -314,5 +332,9 @@ def write_engine_trace(cfg, rt, kind, decision, reason):
 
 
 def add_alert(cfg, unit, status, reason):
-    """超過退回上限的單位進 ALERT 清單；下一輪不會自動重做，要人看過後 reset。"""
+    """超過退回上限的單位進 ALERT 清單；下一輪不會自動重做，要人看過後 reset。
+    factory.yaml 設了 notify.telegram.on 含 alert 時同步發 Telegram（失敗只警告，不影響引擎）。"""
     append_jsonl(alerts_path(cfg), {"ts": now_str(), "unit": unit, "status": status, "reason": reason})
+    from lhf import notify
+
+    notify.send(cfg, "alert", title=f"ALERT（{status}）", unit=unit, reason=reason)

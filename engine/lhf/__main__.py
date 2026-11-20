@@ -10,6 +10,8 @@
   approve <id>                            核准等待中的單位，下次 run 重跑該站
   migrate --from <舊 state.json> [--force]  把第一代主控程式的進度轉成本引擎格式
   hours --hours N [--max-rounds M] [--gap-seconds S] [--allow-project-permissions]   連續跑多輪
+  stop [--now] [--wait 秒]                 請執行中的 run／hours 收尾停止（--now：中斷目前這站）；逾時才強制結束
+  pending-info <id>                       輸出待核准內容（JSON）：站、指令、本單位改到「推上去會被執行」的檔
 引擎執行中時 approve／reset／reset-calls 會排進 run/commands.jsonl，由引擎下一站開始時套用。
 結束碼見 engine/README.md。執行前記得 PYTHONUTF8=1，並把 engine/ 加進 PYTHONPATH（或在 engine/ 底下執行）。
 """
@@ -19,7 +21,7 @@ import os
 import signal
 import sys
 
-from lhf import hours, legacy
+from lhf import claude_call, hours, legacy, pending, stop
 from lhf import round as round_mod
 from lhf.claude_call import ALLOW_PROJECT_PERMISSIONS_ENV
 from lhf.common import EXIT_CONFIG, EXIT_LOCKED, EXIT_REFUSED
@@ -54,8 +56,11 @@ def build_parser():
     init = subs.add_parser("init")
     init.add_argument("ids", nargs="*", type=unit_id)
     init.add_argument("--force", action="store_true", help="重設已有單位的狀態")
-    for name in ("reset-calls", "reset", "approve"):
+    for name in ("reset-calls", "reset", "approve", "pending-info"):
         subs.add_parser(name).add_argument("id", type=unit_id)
+    stop_parser = subs.add_parser("stop")
+    stop_parser.add_argument("--now", action="store_true", help="中斷目前這站（下次重做這站），不等它做完")
+    stop_parser.add_argument("--wait", type=float, default=300, help="最多等幾秒讓它收尾（預設 300；0＝只送出要求）")
     migrate = subs.add_parser("migrate")
     migrate.add_argument("--from", dest="source", required=True, help="舊版 state.json 路徑")
     migrate.add_argument("--force", action="store_true", help="覆蓋已存在的 run/state.json")
@@ -78,6 +83,11 @@ def check_hours_args(parser, args):
         parser.error("--gap-seconds 不可為負")
 
 
+def check_stop_args(parser, args):
+    if args.command == "stop" and args.wait < 0:
+        parser.error("--wait 不可為負")
+
+
 def dispatch(cfg, args):
     commands = {
         "run": lambda: round_mod.cmd_run(cfg, args.unit),
@@ -89,8 +99,22 @@ def dispatch(cfg, args):
         "approve": lambda: round_mod.cmd_approve(cfg, args.id),
         "migrate": lambda: legacy.cmd_migrate(cfg, args.source, args.force),
         "hours": lambda: hours.cmd_hours(cfg, args),
+        "stop": lambda: guarded_stop(cfg, args),
+        "pending-info": lambda: pending.cmd_pending_info(cfg, args.id),
     }
     return commands[args.command]()
+
+
+def guarded_stop(cfg, args):
+    """stop 也是人工指令：引擎底下的程序（撰寫者腳本、代理）不可叫停工廠。"""
+    round_mod.guard_human(cfg, "stop")
+    return stop.cmd_stop(cfg, now=args.now, wait=args.wait)
+
+
+def preflight(cfg, args):
+    """run／hours 開跑前：claude 必須支援 --restricted（假模型模式略過；結果有快取）。"""
+    if args.command in ("run", "hours"):
+        claude_call.ensure_restricted_support(cfg)
 
 
 def install_break_handler():
@@ -113,11 +137,13 @@ def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
     check_hours_args(parser, args)
+    check_stop_args(parser, args)
     install_break_handler()
     if getattr(args, "allow_project_permissions", False):
         os.environ[ALLOW_PROJECT_PERMISSIONS_ENV] = "1"  # hours 的每輪子程序也會繼承
     try:
         cfg = load_config(args.project_dir)
+        preflight(cfg, args)
     except ConfigError as exc:
         print(f"設定錯誤（拒絕啟動）：{exc}", file=sys.stderr)
         return EXIT_CONFIG

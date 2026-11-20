@@ -374,10 +374,10 @@ class Config:
         return agent_sec + command_sec * (attempts + 1) + 600
 
     def startup_warnings(self):
-        warnings = []
-        if self.data.get("notify"):
-            warnings.append("notify 尚未實作，不會發通知（設定只做格式檢查）")
-        return warnings
+        from lhf import notify
+
+        warning = notify.missing_env_warning(self)
+        return [warning] if warning else []
 
 
 def add_rendered(mapping, items):
@@ -514,8 +514,36 @@ def validate_maps(data):
         need(isinstance(data["fake"], dict), "fake", "必須是物件（角色: {檔案範本: 內容}）")
         for role, files in data["fake"].items():
             need_str_map(files, f"fake.{role}", key_re=re.compile(r".+"))
-    if data.get("notify") is not None:
-        need(isinstance(data["notify"], dict), "notify", "必須是物件")
+    validate_notify(data.get("notify"))
+
+
+NOTIFY_EVENTS = ("alert", "finish")
+
+
+def notify_events_raw(telegram):
+    """notify.telegram.on 的值；沒加引號的 on 會被 YAML 讀成 True 鍵。"""
+    return telegram["on"] if "on" in telegram else telegram.get(True)
+
+
+def validate_notify(notify):
+    """notify: {telegram: {on: [alert, finish]}}；空物件＝不發通知。金鑰只走環境變數，這裡不收任何金鑰欄位。"""
+    if notify is None:
+        return
+    need(isinstance(notify, dict), "notify", "必須是物件，例：{telegram: {on: [alert, finish]}}")
+    check_keys(notify, {"telegram"}, "notify")
+    telegram = notify.get("telegram")
+    if telegram is None:
+        return
+    need(isinstance(telegram, dict), "notify.telegram", "必須是物件 {on: [alert, finish]}")
+    # YAML 1.1（PyYAML）會把沒加引號的 on 鍵讀成布林 True；兩種寫法都接受，但不可同時出現
+    need(not ("on" in telegram and True in telegram), "notify.telegram", "on 重複出現")
+    check_keys({("on" if key is True else key) for key in telegram}, {"on"}, "notify.telegram")
+    events = need_str_list(notify_events_raw(telegram), "notify.telegram.on", allow_empty=False)
+    for index, event in enumerate(events):
+        need(
+            event in NOTIFY_EVENTS, f"notify.telegram.on[{index}]", f"只接受 {'／'.join(NOTIFY_EVENTS)}，收到 {event!r}"
+        )
+    need(len(set(events)) == len(events), "notify.telegram.on", "有重複的事件")
 
 
 def validate_extracts(extracts):

@@ -16,6 +16,7 @@ from lhf.state import load_state
 
 @pytest.mark.skipif(os.name != "nt", reason="claude.exe 優先順序只在 Windows 有意義")
 def test_find_claude_prefers_native_exe(tmp_path, monkeypatch):
+    monkeypatch.delenv("LH_CLAUDE_BIN", raising=False)  # 測 find_claude 本身：拿掉測試安全網
     exe = tmp_path / ".local" / "bin" / "claude.exe"
     exe.parent.mkdir(parents=True)
     exe.write_bytes(b"")
@@ -32,6 +33,7 @@ NPM_SHIM = (
 
 
 def test_find_claude_cmd_switches_to_node(tmp_path, monkeypatch):
+    monkeypatch.delenv("LH_CLAUDE_BIN", raising=False)  # 測 find_claude 本身：拿掉測試安全網
     cmd = tmp_path / "claude.CMD"
     cmd.write_text(NPM_SHIM, encoding="utf-8")
     cli = tmp_path / "node_modules" / "@anthropic-ai" / "claude-code" / "cli.js"
@@ -46,6 +48,7 @@ def test_find_claude_cmd_switches_to_node(tmp_path, monkeypatch):
 
 def test_find_claude_unparsable_shim_errors(tmp_path, monkeypatch):
     """reviewer 的 npmsim：shim 只有 @echo off、看不出目標 → 清楚報錯，不退回去執行 .CMD。"""
+    monkeypatch.delenv("LH_CLAUDE_BIN", raising=False)  # 測 find_claude 本身：拿掉測試安全網
     cmd = tmp_path / "claude.cmd"
     cmd.write_text("@echo off\r\n", encoding="utf-8")
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "no-home"))
@@ -55,6 +58,7 @@ def test_find_claude_unparsable_shim_errors(tmp_path, monkeypatch):
 
 
 def test_shim_pointing_to_exe(tmp_path, monkeypatch):
+    monkeypatch.delenv("LH_CLAUDE_BIN", raising=False)  # 測 find_claude 本身：拿掉測試安全網
     exe = tmp_path / "node_modules" / "@anthropic-ai" / "claude-code" / "bin" / "claude.exe"
     exe.parent.mkdir(parents=True)
     exe.write_bytes(b"")

@@ -8,12 +8,17 @@ hours 全程持有執行鎖，子程序憑 LH_LOCK_TOKEN 沿用；同一專案�
   (c) 引擎錯誤連發（連續 max_engine_errors＋1 輪結束碼不是 0／1，或本輪超過總時限被殺）
   (c2) state.json 讀不到（損毀）：停止、不覆寫
   (d) Ctrl+C：請子程序存檔收尾後停止
+  (d2) 有人執行 stop（run/.runtime/stop-request.json）：本輪（或 --now 時本站）收尾後停止
   (e) 達到 --max-rounds
+  (f) 工作目錄控制檔被改動（git hooks、危險 git 設定鍵、.claude、CLAUDE.md…）：開跑時拍一次基準，
+      每輪開始前比對；run 子程序在指令站期間發現（結束碼 6）也一樣。停止並寫 ALERT，不再做下一個單位，
+      因為下一個 commit 站會執行被植入的 hook
 單位被判 failed／rejected 不會讓 hours 停下，會繼續做下一個單位。
 每輪總時限＝calls_per_unit×agent_timeout＋指令站在最多退回次數下的時間＋10 分鐘；超過就殺整棵程序樹。
 結束碼：0＝正常停止且沒有 failed／rejected 單位；1＝有單位被判 failed／rejected；
-        2＝引擎錯誤連發或 state.json 讀不到而停止；130＝Ctrl+C。
+        2＝引擎錯誤連發或 state.json 讀不到而停止；6＝工作目錄控制檔被改動而停止；130＝Ctrl+C 或 stop。
         非 0（130 除外）時一定寫 run/ALERT.txt 並列出原因與單位，給無人值守的監看程式一眼判斷。
+通知：factory.yaml 的 notify.telegram.on 含 alert → 寫 ALERT.txt 時發；含 finish → 寫結束摘要時發。
 """
 
 import os
@@ -21,9 +26,10 @@ import sys
 import time
 from datetime import datetime
 
-from lhf import lock, proc
+from lhf import integrity, lock, notify, proc, stop
 from lhf.common import (
     EXIT_CONFIG,
+    EXIT_CONTROL_CHANGED,
     EXIT_INTERRUPTED,
     EXIT_OK,
     EXIT_UNIT_FAILED,
@@ -36,7 +42,10 @@ from lhf.errors import RoundError
 from lhf.state import alerts_path, file_offset, load_state, read_jsonl, run_path, runnable_units, trace_path
 
 STATE_UNREADABLE = "state.json 讀不到"
+STOP_REQUESTED = "收到停止要求（stop）"
+STOP_POLL_SEC = 1.0  # 本輪執行中多久看一次 stop --now
 # 這兩個結束碼代表「品質判定」而不是引擎壞掉；其他（含逾時被殺＝None）都算引擎錯誤
+# （EXIT_CONTROL_CHANGED 與停止要求在 after_round 先處理，不會走到連發計數）
 QUALITY_EXITS = {EXIT_OK, EXIT_UNIT_FAILED}
 
 
@@ -115,6 +124,7 @@ def stream_round(ctx):
             env=child_env(ctx["token"]),
             timeout=limit,
             on_output=lambda chunk: echo_raw(ctx, chunk) if chunk else None,
+            on_tick=lambda: stop_now_requested(ctx),
         )
     except OSError as exc:
         say(ctx, f"錯誤：無法啟動本輪子程序：{exc}")
@@ -124,6 +134,8 @@ def stream_round(ctx):
         ctx["alert_lines"].append(f"第 {len(ctx['rounds']) + 1} 輪超過總時限 {limit} 秒被強制結束")
     if status == "interrupted":
         say(ctx, f"{chr(10)}⛔ 收到 Ctrl+C，已請子程序存檔收尾")
+    elif status == "stopped":
+        say(ctx, f"{chr(10)}⛔ 收到 stop --now，已請子程序把目前這站中斷、存檔收尾")
     elif code == EXIT_INTERRUPTED:
         # 子程序自己收到中斷（例如被人從工作管理員送了 Ctrl+C），hours 本身沒收到：記下來，照引擎錯誤處理
         say(ctx, f"{chr(10)}!! 子程序被中斷（exit 130），hours 未收到中斷；本輪以引擎錯誤計")
@@ -131,6 +143,15 @@ def stream_round(ctx):
 
 
 # ---------- 一輪 ----------
+
+
+def stop_now_requested(ctx):
+    """本輪執行中每秒看一次停止要求；只有 mode=now 才中斷正在跑的站（一般 stop 等本輪的站做完）。"""
+    now = time.monotonic()
+    if now - ctx.get("last_stop_poll", 0.0) < STOP_POLL_SEC:
+        return False
+    ctx["last_stop_poll"] = now
+    return stop.wants_now(ctx["cfg"])
 
 
 def run_one_round(ctx):
@@ -155,6 +176,7 @@ def run_one_round(ctx):
         "status": rec.get("status", "?"),
         "calls": rec.get("calls", 0) - calls_before,
         "heartbeat": read_heartbeat(cfg, start_wall),
+        "stopped": status == "stopped",
     }
     ctx["rounds"].append(record)
     report_progress(ctx, no, code, after)
@@ -221,6 +243,14 @@ def finalize_alerts(ctx, code):
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     except OSError as exc:
         say(ctx, f"（寫 ALERT.txt 失敗：{exc}）")
+    notify.send(
+        ctx["cfg"],
+        "alert",
+        title="ALERT（連續執行）",
+        unit="、".join(unit for unit, _ in units) or "-",
+        reason="\n".join(ctx["alert_lines"]),
+        summary=f"詳見 {path}",
+    )
     bar = "!" * 60
     say(ctx, f"\n{bar}\n!! 警告：詳見 {path}\n{bar}")
     for line in lines:
@@ -232,6 +262,8 @@ def finalize_alerts(ctx, code):
 
 
 def stop_reason(args, ctx):
+    if stop.requested(ctx["cfg"]):
+        return STOP_REQUESTED
     if time.monotonic() - ctx["start"] >= ctx["limit_sec"]:
         return f"時間到（{args.hours} 小時）"
     if args.max_rounds is not None and len(ctx["rounds"]) >= args.max_rounds:
@@ -245,34 +277,78 @@ def stop_reason(args, ctx):
 
 
 def wait_gap(args, ctx):
-    """回傳 True＝等待中被 Ctrl+C。"""
+    """回傳 None＝等完；"ctrl-c"＝等待中被 Ctrl+C；"stop"＝等待中有人執行 stop。每秒看一次停止要求。"""
     if args.gap_seconds <= 0:
-        return False
+        return None
     say(ctx, f"（等 {args.gap_seconds} 秒再開下一輪）")
+    deadline = time.monotonic() + args.gap_seconds
     try:
-        time.sleep(args.gap_seconds)
+        while time.monotonic() < deadline:
+            if stop.requested(ctx["cfg"]):
+                say(ctx, "\n⛔ 等待中收到停止要求")
+                return "stop"
+            time.sleep(min(STOP_POLL_SEC, max(0.0, deadline - time.monotonic())))
     except KeyboardInterrupt:
         say(ctx, "\n⛔ 等待中收到 Ctrl+C")
-        return True
-    return False
+        return "ctrl-c"
+    return None
+
+
+def control_change(ctx):
+    """與開跑時的基準比對工作目錄控制檔；有變動回傳說明。"""
+    after = integrity.control_snapshot(ctx["cfg"])
+    changed = integrity.diff(ctx["control_base"], after)
+    return integrity.describe_control(ctx["control_base"], after, changed) if changed else ""
+
+
+def before_round(args, ctx):
+    """開新的一輪前的檢查；回傳 (停止原因, 結束碼) 或 None＝可以開跑。"""
+    reason = stop_reason(args, ctx)
+    if reason == STATE_UNREADABLE:
+        ctx["alert_lines"].append(f"{STATE_UNREADABLE}：引擎不會覆寫它，請人工檢查 run/state.json")
+        return reason, EXIT_CONFIG
+    if reason:
+        return reason, EXIT_INTERRUPTED if reason == STOP_REQUESTED else EXIT_OK
+    changed = control_change(ctx)
+    if changed:
+        ctx["alert_lines"].append(f"輪與輪之間{changed}；已停止連續執行")
+        return "工作目錄控制檔被改動", EXIT_CONTROL_CHANGED
+    integrity.clear_foreign_marker(ctx["cfg"])  # 上一輪的 run 子程序已結束：留下的標記都是殘留
+    return None
+
+
+def after_round(args, ctx, record, interrupted):
+    """一輪結束後的檢查；回傳 (停止原因, 結束碼) 或 None＝繼續。"""
+    if interrupted:
+        return "Ctrl+C 中斷", EXIT_INTERRUPTED
+    if record.get("stopped") or stop.requested(ctx["cfg"]):
+        return STOP_REQUESTED, EXIT_INTERRUPTED
+    if record["exit"] == EXIT_CONTROL_CHANGED:
+        ctx["alert_lines"].append(
+            f"第 {record['no']} 輪（{record['unit']}）指令站期間工作目錄控制檔被改動；已停止連續執行"
+        )
+        return "工作目錄控制檔被改動", EXIT_CONTROL_CHANGED
+    if consecutive_engine_errors(ctx) >= engine_error_limit(ctx):
+        raise_alert(ctx)
+        return f"連續 {engine_error_limit(ctx)} 輪引擎錯誤", EXIT_CONFIG
+    if stop_reason(args, ctx) is None:
+        waited = wait_gap(args, ctx)
+        if waited == "ctrl-c":
+            return "Ctrl+C 中斷（等待中）", EXIT_INTERRUPTED
+        if waited == "stop":
+            return STOP_REQUESTED, EXIT_INTERRUPTED
+    return None
 
 
 def run_loop(args, ctx):
     while True:
-        reason = stop_reason(args, ctx)
-        if reason == STATE_UNREADABLE:
-            ctx["alert_lines"].append(f"{STATE_UNREADABLE}：引擎不會覆寫它，請人工檢查 run/state.json")
-            return reason, EXIT_CONFIG
-        if reason:
-            return reason, 0
-        _, interrupted = run_one_round(ctx)
-        if interrupted:
-            return "Ctrl+C 中斷", EXIT_INTERRUPTED
-        if consecutive_engine_errors(ctx) >= engine_error_limit(ctx):
-            raise_alert(ctx)
-            return f"連續 {engine_error_limit(ctx)} 輪引擎錯誤", EXIT_CONFIG
-        if stop_reason(args, ctx) is None and wait_gap(args, ctx):
-            return "Ctrl+C 中斷（等待中）", EXIT_INTERRUPTED
+        result = before_round(args, ctx)
+        if result:
+            return result
+        record, interrupted = run_one_round(ctx)
+        result = after_round(args, ctx, record, interrupted)
+        if result:
+            return result
 
 
 # ---------- 摘要 ----------
@@ -344,14 +420,33 @@ def summary_markdown(ctx, reason, code):
     return "\n".join(lines) + "\n"
 
 
+def short_summary(ctx, reason, code):
+    """給 Telegram 的簡短摘要（完整版在 hours-summary-*.md）。"""
+    state = safe_state(ctx["cfg"]) or {}
+    done, total = done_counts(state)
+    units = touched_units(ctx)
+    cost = sum(float(unit_rec(state, unit).get("cost_usd") or 0.0) for unit in units)
+    lines = [
+        f"停止原因：{reason}（exit {code}）",
+        f"總時長：{fmt_hm(time.monotonic() - ctx['start'])}（HH:MM）｜輪數：{len(ctx['rounds'])}",
+        f"完成單位：{done}/{total}｜等值成本 US$ {cost:.2f}",
+    ]
+    lines += [f"  {r['no']}. {r['unit']} → {r['status']}（exit {r['exit']}）" for r in ctx["rounds"][-20:]]
+    failed = failed_units(state)
+    if failed:
+        lines.append("需要人看：" + "、".join(f"{unit} {status}" for unit, status in failed))
+    return "\n".join(lines)
+
+
 def write_summary(ctx, reason, code):
     path = run_path(ctx["cfg"], "logs") / f"hours-summary-{ctx['stamp']}.md"
     try:
         path.write_text(summary_markdown(ctx, reason, code), encoding="utf-8")
     except OSError as exc:
         say(ctx, f"（寫摘要失敗：{exc}）")
-        return
-    say(ctx, f"\n{'=' * 60}\n停止：{reason}｜共 {len(ctx['rounds'])} 輪｜摘要：{path}\n{'=' * 60}")
+    else:
+        say(ctx, f"\n{'=' * 60}\n停止：{reason}｜共 {len(ctx['rounds'])} 輪｜摘要：{path}\n{'=' * 60}")
+    notify.send(ctx["cfg"], "finish", title="連續執行結束", summary=short_summary(ctx, reason, code))
 
 
 # ---------- 進入點 ----------
@@ -369,10 +464,15 @@ def archive_trace(cfg):
 
 def cmd_hours(cfg, args):
     with lock.holding(cfg, "hours") as info:
+        stop.clear_request(cfg, "清除上次留下的停止要求")
+        integrity.clear_foreign_marker(cfg)
         archived = archive_trace(cfg)
         if archived:
             print(f"（trace.jsonl 已歸檔為 {archived.name}）")
-        return run_hours(cfg, args, info["token"])  # 每輪的 run 子程序憑這個 token 沿用同一把鎖
+        try:
+            return run_hours(cfg, args, info["token"])  # 每輪的 run 子程序憑這個 token 沿用同一把鎖
+        finally:
+            stop.clear_request(cfg)
 
 
 def run_hours(cfg, args, token):
@@ -392,6 +492,7 @@ def run_hours(cfg, args, token):
             "log_path": log_path,
             "alert_lines": [],
             "token": token,
+            "control_base": integrity.control_snapshot(cfg),  # 工作目錄控制檔基準：之後每輪開始前比對
         }
         say(
             ctx, f"連續執行開始：{cfg.name}｜{args.hours} 小時、max-rounds={args.max_rounds}、gap={args.gap_seconds} 秒"
