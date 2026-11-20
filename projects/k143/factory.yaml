@@ -120,7 +120,8 @@ roles:
     budget: 15
   tester:
     tools: [Read, Write]   # 只看 raw log 下判決，不需要搜尋整個 repo
-    write: ["{RUN}/test-logs/**"]
+    # 只能寫自己的判定檔：同資料夾的 {raw} 是客觀驗證紀錄，QA 不可改（舊版是 test-logs/**，tester 實際也只寫這一檔）
+    write: ["{testlog}"]
     budget: 15
   reviewer:
     tools: [Read, Glob, Grep, Write]   # 沒有 Edit：只能寫自己的審查報告，不能動被審的檔案

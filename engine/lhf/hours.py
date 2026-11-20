@@ -96,9 +96,10 @@ def read_heartbeat(cfg, since):
 # ---------- 子程序 ----------
 
 
-def child_env():
+def child_env(token):
+    """只有 hours 自己啟動的 lhf run 子程序拿得到鎖 token；token 不寫進 os.environ，免得其他子程序繼承。"""
     env = os.environ.copy()
-    env.update({"PYTHONUNBUFFERED": "1", "PYTHONUTF8": "1"})
+    env.update({"PYTHONUNBUFFERED": "1", "PYTHONUTF8": "1", lock.TOKEN_ENV: token})
     env["PYTHONPATH"] = str(ENGINE_DIR) + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
     return env
 
@@ -111,7 +112,7 @@ def stream_round(ctx):
         code, status = proc.stream_tree(
             cmd,
             cwd=ENGINE_DIR,
-            env=child_env(),
+            env=child_env(ctx["token"]),
             timeout=limit,
             on_output=lambda chunk: echo_raw(ctx, chunk) if chunk else None,
         )
@@ -123,6 +124,9 @@ def stream_round(ctx):
         ctx["alert_lines"].append(f"第 {len(ctx['rounds']) + 1} 輪超過總時限 {limit} 秒被強制結束")
     if status == "interrupted":
         say(ctx, f"{chr(10)}⛔ 收到 Ctrl+C，已請子程序存檔收尾")
+    elif code == EXIT_INTERRUPTED:
+        # 子程序自己收到中斷（例如被人從工作管理員送了 Ctrl+C），hours 本身沒收到：記下來，照引擎錯誤處理
+        say(ctx, f"{chr(10)}!! 子程序被中斷（exit 130），hours 未收到中斷；本輪以引擎錯誤計")
     return code, status
 
 
@@ -365,17 +369,13 @@ def archive_trace(cfg):
 
 def cmd_hours(cfg, args):
     with lock.holding(cfg, "hours") as info:
-        os.environ[lock.TOKEN_ENV] = info["token"]  # 每輪的 run 子程序憑這個 token 沿用同一把鎖
-        try:
-            archived = archive_trace(cfg)
-            if archived:
-                print(f"（trace.jsonl 已歸檔為 {archived.name}）")
-            return run_hours(cfg, args)
-        finally:
-            os.environ.pop(lock.TOKEN_ENV, None)
+        archived = archive_trace(cfg)
+        if archived:
+            print(f"（trace.jsonl 已歸檔為 {archived.name}）")
+        return run_hours(cfg, args, info["token"])  # 每輪的 run 子程序憑這個 token 沿用同一把鎖
 
 
-def run_hours(cfg, args):
+def run_hours(cfg, args, token):
     start_dt = datetime.now()
     logs_dir = run_path(cfg, "logs")
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -391,6 +391,7 @@ def run_hours(cfg, args):
             "log": log_fh,
             "log_path": log_path,
             "alert_lines": [],
+            "token": token,
         }
         say(
             ctx, f"連續執行開始：{cfg.name}｜{args.hours} 小時、max-rounds={args.max_rounds}、gap={args.gap_seconds} 秒"

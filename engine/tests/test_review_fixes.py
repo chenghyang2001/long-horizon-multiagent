@@ -339,8 +339,13 @@ def test_tool_whitelist(tmp_path, tools, fragment):
 
 @pytest.mark.parametrize("tool", ["WebFetch", "MultiEdit", "NotebookEdit", "TodoWrite"])
 def test_checker_only_readonly_plus_write(tmp_path, tool):
+    def mutate(data):
+        data["roles"]["rv"]["tools"].append(tool)
+        if tool == "WebFetch":
+            data["roles"]["rv"]["fetch_allow"] = ["^https://docs[.]example[.]com/"]  # 白名單合格也不行
+
     with pytest.raises(ConfigError, match="QA／審查角色只能用"):
-        load_config(project_with(tmp_path, lambda d: d["roles"]["rv"]["tools"].append(tool)))
+        load_config(project_with(tmp_path, mutate))
 
 
 # ---------- MUST 7：退回帶 raw log ----------
@@ -532,6 +537,7 @@ def test_finish_command_failure_marks_failed(tmp_path, fake_mode):
                 "chain": "finish",
                 "log": "{RUN}/deploy.log",
                 "cmds": [{"cmd": f'"{PY}" -c "import sys; sys.exit(1)"'}],
+                "unattended": True,  # 測試不經 approve 直接跑收尾指令
             }
         )
 

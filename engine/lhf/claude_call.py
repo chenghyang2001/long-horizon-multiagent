@@ -100,32 +100,45 @@ def strip_nested_env(env):
             env.pop(key)
 
 
-def build_env(cfg, rt, role=None, station_id=None):
-    """移除 API key 與巢狀 session 變數，補上專案 env、引擎位置、角色與 python 路徑。"""
+def base_env(cfg, rt):
+    """所有子程序共用：移除 API key、巢狀 session 變數、所有 LH_*（含執行鎖 token），補上專案 env 與 python 路徑。
+    LH_LOCK_TOKEN 絕不外流：拿到它就能沿用 hours 的鎖直接改 state.json，被正在跑的輪覆蓋。"""
     env = os.environ.copy()
     strip_nested_env(env)
+    for key in [k for k in env if k.startswith("LH_")]:
+        env.pop(key)
     py_dir = Path(sys.executable).parent
     env["PATH"] = str(py_dir) + os.pathsep + env.get("PATH", "")
     if env.get("ORIGINAL_PATH"):
         # Claude 的 Bash 工具用登入 shell 依 ORIGINAL_PATH 重組 PATH，不補就找不到 python
         env["ORIGINAL_PATH"] = to_msys(py_dir) + ":" + env["ORIGINAL_PATH"]
-    env["PYTHONPATH"] = str(ENGINE_DIR) + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
     mapping = cfg.vars(unit=rt["unit"], round_no=rt["round"])
     env.update({key: render(value, mapping) for key, value in (cfg.data.get("env") or {}).items()})
+    env["PYTHONUTF8"] = "1"
+    return env
+
+
+def command_env(cfg, rt):
+    """command 站（跑撰寫者寫的腳本）：不給任何 LH_* 變數，腳本不需要也不該知道引擎的狀態。"""
+    return base_env(cfg, rt)
+
+
+def build_env(cfg, rt, role=None, station_id=None):
+    """claude -p 用：只加 gate（claude 的 hook 子程序）判斷所需的 LH_* 變數。"""
+    env = base_env(cfg, rt)
     env.update(
         {
             "LH_PROJECT_DIR": str(cfg.project_dir),
             "LH_UNIT": rt["unit"],
             "LH_ROUND": str(rt["round"]),
-            "PYTHONUTF8": "1",
             "LH_TRACE_OFFSET": str(file_offset(trace_path(cfg))),
         }
     )
+    if os.environ.get("LH_WORK_OVERRIDE"):
+        env["LH_WORK_OVERRIDE"] = os.environ["LH_WORK_OVERRIDE"]  # gate 要用同一個工作目錄展開 write 路徑
     for key, value in (("LH_ROLE", role), ("LH_STATION", station_id)):
         if value:
             env[key] = value
-        else:
-            env.pop(key, None)
     return env
 
 

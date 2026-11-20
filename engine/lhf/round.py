@@ -31,12 +31,14 @@ from lhf.state import (
     new_state,
     new_unit,
     pending_approvals_path,
+    claim_commands,
+    command_id,
     queue_command,
     read_jsonl,
     requeue_commands,
     run_path,
     runnable_units,
-    take_commands,
+    save_state,
     write_heartbeat,
     write_jsonl,
 )
@@ -79,6 +81,7 @@ def apply_approve(cfg, state, unit):
 
 
 MUTATIONS = {"approve": apply_approve, "reset": apply_reset, "reset-calls": apply_reset_calls}
+APPLIED_KEEP = 500  # state 只記最近幾筆已套用的佇列指令 id
 
 
 def require_unit(cfg, unit):
@@ -111,21 +114,35 @@ def cmd_mutate(cfg, command, unit):
 
 
 def apply_queued(rt):
-    """每站開始時套用外部指令；正在跑的單位不能 reset（會打斷本站），先放回佇列等下一輪。"""
+    """每站開始時套用外部指令（含上次當機沒處理完的認領檔）。
+    冪等：每筆的 id 先記進 state 再套用，同一個 state.json 存檔一起落地；重讀到已套用的 id 直接略過。
+    正在跑的單位不能 reset（會打斷本站），先放回佇列等它不在跑的時候。"""
     cfg, state = rt["cfg"], rt["state"]
-    deferred = []
-    for record in take_commands(cfg):
-        command, unit = record.get("command"), record.get("unit")
-        if unit == rt["unit"] and command in ("reset", "reset-calls"):
-            deferred.append(record)
-            continue
-        try:
-            if command not in MUTATIONS or unit not in state["units"]:
-                raise RoundError(f"無法套用 {command} {unit}")
-            print(f"    （套用佇列指令）{MUTATIONS[command](cfg, state, unit)}", flush=True)
-        except RoundError as exc:
-            log_event(cfg, state, unit or "-", f"佇列指令未套用：{exc}")
-    requeue_commands(cfg, deferred)
+    applied = state.setdefault("applied_commands", [])
+    for path in claim_commands(cfg):
+        deferred = []
+        for record in read_jsonl(path):
+            if command_id(record) in applied:
+                continue
+            if record.get("unit") == rt["unit"] and record.get("command") in ("reset", "reset-calls"):
+                deferred.append(record)
+                continue
+            applied.append(command_id(record))
+            del applied[:-APPLIED_KEEP]
+            apply_one(cfg, state, record)
+        save_state(cfg, state)
+        requeue_commands(cfg, deferred)
+        path.unlink(missing_ok=True)  # 套用結果已存檔，才刪認領檔
+
+
+def apply_one(cfg, state, record):
+    command, unit = record.get("command"), record.get("unit")
+    try:
+        if command not in MUTATIONS or unit not in state["units"]:
+            raise RoundError(f"無法套用 {command} {unit}")
+        print(f"    （套用佇列指令）{MUTATIONS[command](cfg, state, unit)}", flush=True)
+    except RoundError as exc:
+        log_event(cfg, state, unit or "-", f"佇列指令未套用：{exc}")
 
 
 # ---------- 執行一輪 ----------

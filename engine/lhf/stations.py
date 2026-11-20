@@ -421,7 +421,7 @@ def run_checks(rt, station, mapping):
     """依序執行；fail_on_error 的指令失敗就停並自動判失敗。回傳 (raw log, 自動失敗原因或空字串)。"""
     cwd = render_path(station.get("cwd") or "{WORK}", mapping)
     timeout = station.get("timeout") or rt["cfg"].limits["command_timeout"]
-    env = claude_call.build_env(rt["cfg"], rt, station_id=station["id"])
+    env = claude_call.command_env(rt["cfg"], rt)
     blocks, failures = [], []
     for title, argv, item in expand_cmds(station, mapping):
         print(f"    執行：{title}", flush=True)

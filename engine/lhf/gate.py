@@ -34,7 +34,7 @@ if __package__ in (None, ""):  # 被 hook 以檔案路徑執行時，把 engine/
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from lhf.common import now_iso  # noqa: E402
-from lhf.config import ID_RE, load_config, norm_text, render_path  # noqa: E402
+from lhf.config import ENGINE_DIR, ID_RE, load_config, norm_text, render_path  # noqa: E402
 from lhf.errors import MissingVar  # noqa: E402
 from lhf.snapshot import load_for_gate  # noqa: E402
 from lhf.state import (  # noqa: E402
@@ -137,10 +137,23 @@ def norm_command(command):
     return " ".join(text.split())
 
 
+# 代理不可呼叫引擎本身（例如自己執行 approve 來核准自己）；路徑以正規化後的子字串比對
+ENGINE_COMMAND_MARKERS = ("-m lhf", "lhf/", norm_text(ENGINE_DIR.as_posix()))
+
+
+def check_engine_command(normalized):
+    for marker in ENGINE_COMMAND_MARKERS:
+        if marker in normalized:
+            return f"不可在代理中呼叫引擎（指令含「{marker}」）：核准、重設等只能由人執行"
+    return None
+
+
 def check_global(cfg, target, command):
     """forbidden.paths 同時套用到寫入目標與 Bash 指令字串（額外一層，不取代白名單）。"""
     forbidden = cfg.data.get("forbidden") or {}
     normalized = norm_command(command) if command is not None else None
+    if normalized is not None and (reason := check_engine_command(normalized)):
+        return reason
     for item in forbidden.get("paths") or []:
         if target and norm_text(item) in target:
             return f"全域禁止寫入 {item}"
@@ -168,7 +181,18 @@ def check_contract(cfg, event, role_policy, ctx, target):
         return f"{ctx['role']} 的合約不允許 {tool}"
     if target is not None and not path_allowed(cfg, target, role_policy.get("write"), ctx):
         return f"{ctx['role']} 不可寫入 {target}（不在 write，或單位不符）"
+    if tool == "WebFetch":
+        return check_fetch(role_policy, ctx["role"], (event.get("tool_input") or {}).get("url"))
     return None
+
+
+def check_fetch(role_policy, role, url):
+    """WebFetch 只放行 fetch_allow 白名單裡的網址；沒有網址或不符合一律拒絕。"""
+    if not isinstance(url, str) or not url:
+        return "WebFetch 缺少 url"
+    if any(re.search(pattern, url) for pattern in role_policy.get("fetch_allow") or []):
+        return None
+    return f"{role} 的 fetch_allow 不允許這個網址：{url[:120]}"
 
 
 def approval_key(record):

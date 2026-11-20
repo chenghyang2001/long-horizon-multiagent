@@ -9,6 +9,7 @@ import json
 import os
 import secrets
 import sys
+import time
 from contextlib import contextmanager
 
 from lhf.common import now_str
@@ -16,6 +17,9 @@ from lhf.errors import RoundError
 
 LOCK_NAME = "run.lock"
 TOKEN_ENV = "LH_LOCK_TOKEN"
+CLEANUP_STALE_SEC = 30  # 清舊鎖的互斥檔超過這麼久還在＝清理者當掉了
+YOUNG_LOCK_SEC = 10  # 讀不懂但剛建立的鎖檔＝別人正在寫，不可當成舊鎖
+ATTEMPTS = 5
 
 
 class LockBusy(RoundError):
@@ -95,6 +99,7 @@ def held_by_other(cfg):
 
 
 def _create(cfg, purpose):
+    """先把完整內容寫進暫存檔，再用 os.link 原子地「建立且不覆蓋」：別人永遠讀不到寫一半的鎖。"""
     path = lock_path(cfg)
     path.parent.mkdir(parents=True, exist_ok=True)
     info = {
@@ -105,32 +110,70 @@ def _create(cfg, purpose):
         "since": now_str(),
         "argv": " ".join(sys.argv[:3]),
     }
-    fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)  # 原子建立：兩個程序同時搶只有一個成功
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        handle.write(json.dumps(info, ensure_ascii=False))
+    tmp = path.with_name(f"{LOCK_NAME}.{os.getpid()}.{info['token']}.tmp")
+    tmp.write_text(json.dumps(info, ensure_ascii=False), encoding="utf-8")
+    try:
+        os.link(tmp, path)  # 目標已存在就丟 FileExistsError
+    finally:
+        tmp.unlink(missing_ok=True)
     return info
 
 
+def busy(info):
+    owner = info or {}
+    return LockBusy(
+        f"已有另一個程序在執行（PID {owner.get('pid', '?')}，{owner.get('purpose', '?')}，"
+        f"自 {owner.get('since', '?')}）；同一專案一次只能跑一個 run／hours"
+    )
+
+
+def file_age(path):
+    try:
+        return time.time() - path.stat().st_mtime
+    except OSError:
+        return None
+
+
+def young_unreadable(cfg, info):
+    age = file_age(lock_path(cfg))
+    return info is None and age is not None and age < YOUNG_LOCK_SEC
+
+
+def clear_stale(cfg, stale):
+    """用互斥檔包住「再確認一次→刪除」：兩個程序同時發現舊鎖時，只有一個會刪，
+    而且刪之前再讀一次，確定還是同一把舊鎖（不會誤刪別人剛建立的新鎖）。"""
+    mutex = lock_path(cfg).with_name(LOCK_NAME + ".cleanup")
+    try:
+        os.close(os.open(mutex, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+    except FileExistsError:
+        if (file_age(mutex) or 0) > CLEANUP_STALE_SEC:
+            mutex.unlink(missing_ok=True)
+        time.sleep(0.1)
+        return
+    try:
+        current = read_lock(cfg)
+        if current == stale and not lock_alive(current):
+            print(f"    （清除殘留的舊鎖：PID {(stale or {}).get('pid', '?')} 已不存在）")
+            lock_path(cfg).unlink(missing_ok=True)
+    finally:
+        mutex.unlink(missing_ok=True)
+
+
 def acquire(cfg, purpose):
-    """拿鎖；回傳 (info, 是否新建)。沿用 hours 的 token 時不新建。殘留舊鎖自動清除後重試一次。"""
+    """拿鎖；回傳 (info, 是否新建)。沿用 hours 的 token 時不新建。殘留舊鎖安全清除後重試。"""
     info = read_lock(cfg)
     token = os.environ.get(TOKEN_ENV)
     if info and token and info.get("token") == token and lock_alive(info):
         return info, False
-    for attempt in (1, 2):
+    for _ in range(ATTEMPTS):
         try:
             return _create(cfg, purpose), True
         except FileExistsError:
             current = read_lock(cfg)
-            if lock_alive(current) or attempt == 2:
-                owner = current or {}
-                raise LockBusy(
-                    f"已有另一個程序在執行（PID {owner.get('pid', '?')}，{owner.get('purpose', '?')}，"
-                    f"自 {owner.get('since', '?')}）；同一專案一次只能跑一個 run／hours"
-                ) from None
-            print(f"    （清除殘留的舊鎖：PID {(current or {}).get('pid', '?')} 已不存在）")
-            lock_path(cfg).unlink(missing_ok=True)
-    raise AssertionError("unreachable")
+        if lock_alive(current) or young_unreadable(cfg, current):
+            raise busy(current)
+        clear_stale(cfg, current)
+    raise busy(read_lock(cfg))
 
 
 def release(cfg, info):

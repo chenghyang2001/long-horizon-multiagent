@@ -8,12 +8,15 @@
      POSIX 用 start_new_session＋killpg。
 2. 孫程序繼承了輸出管線，主程序 communicate() 會一直等到孫程序結束。
    → 輸出一律寫暫存檔，不用管線；殺完樹直接讀檔即可返回。
+3. 輸入（prompt）用管線同步寫入時，子程序不讀就會卡在寫入、逾時根本還沒開始計算。
+   → 輸入也先寫暫存檔，以檔案 handle 當 stdin；逾時從程序啟動那一刻算。
 """
 
 import codecs
 import os
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 from dataclasses import dataclass
@@ -36,7 +39,6 @@ if os.name == "nt":
     _K32.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
     _K32.CloseHandle.argtypes = [wintypes.HANDLE]
     _NTDLL.NtResumeProcess.argtypes = [wintypes.HANDLE]
-    PROCESS_ALL_ACCESS = 0x1F0FFF
     CREATE_SUSPENDED = 0x00000004
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
     JOB_EXTENDED_LIMIT_INFO = 9
@@ -91,21 +93,21 @@ class Tree:
             self._attach_job_and_resume()
 
     def _attach_job_and_resume(self):
-        handle = _K32.OpenProcess(PROCESS_ALL_ACCESS, False, self.proc.pid)
+        """用 Popen 自己的 process handle（不另外 OpenProcess，免得權限不足拿不到 handle、子程序永遠停在暫停）。
+        job 掛不上時印警告並改用 taskkill /T 後備；恢復失敗就直接殺掉並報錯，絕不留下停住的程序。"""
+        handle = int(self.proc._handle)  # noqa: SLF001 — Popen 在 Windows 上一定有這個 handle
         try:
-            job = _K32.CreateJobObjectW(None, None)
-            info = _ExtendedLimit()
-            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-            ok = job and _K32.SetInformationJobObject(
-                job, JOB_EXTENDED_LIMIT_INFO, ctypes.byref(info), ctypes.sizeof(info)
+            self.job = _create_job(handle)
+        except OSError as exc:
+            print(
+                f"（警告：Job Object 無法使用（{exc}），逾時改用 taskkill /T；Git Bash 的背景程序可能殺不乾淨）",
+                file=sys.stderr,
+                flush=True,
             )
-            if ok and _K32.AssignProcessToJobObject(job, handle):
-                self.job = job
-            elif job:
-                _K32.CloseHandle(job)
-        finally:
-            _NTDLL.NtResumeProcess(handle)  # 不論 job 成功與否都一定要恢復，否則子程序永遠停住
-            _K32.CloseHandle(handle)
+        status = _NTDLL.NtResumeProcess(handle)
+        if status != 0:
+            self.kill()
+            raise OSError(f"子程序以暫停狀態建立後無法恢復執行（NTSTATUS 0x{status & 0xFFFFFFFF:08X}），已終止")
 
     def kill(self):
         """殺整棵樹；已結束的錯誤一律忽略。"""
@@ -145,19 +147,35 @@ class Tree:
             self.job = None
 
 
+def _create_job(handle):
+    """建立「關掉 handle 就殺光所有成員」的 job 並把程序放進去；任何一步失敗都丟 OSError。"""
+    job = _K32.CreateJobObjectW(None, None)
+    if not job:
+        raise OSError(f"CreateJobObject 失敗（錯誤碼 {ctypes.get_last_error()}）")
+    info = _ExtendedLimit()
+    info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    ok = _K32.SetInformationJobObject(job, JOB_EXTENDED_LIMIT_INFO, ctypes.byref(info), ctypes.sizeof(info))
+    if not (ok and _K32.AssignProcessToJobObject(job, handle)):
+        error = ctypes.get_last_error()
+        _K32.CloseHandle(job)
+        raise OSError(f"無法把程序放進 Job Object（錯誤碼 {error}）")
+    return job
+
+
 def read_back(handle):
     handle.seek(0)
     return handle.read().decode("utf-8", "replace")
 
 
-def write_stdin(proc, input_text):
+def stdin_file(input_text):
+    """把輸入寫進暫存檔再倒回開頭；子程序讀不讀都不會卡住主程序。沒有輸入就回 None（用 DEVNULL）。"""
     if input_text is None:
-        return
-    try:
-        proc.stdin.write(input_text.encode("utf-8"))
-        proc.stdin.close()
-    except (BrokenPipeError, OSError):
-        pass  # 子程序沒讀完就結束；結果以結束碼與輸出為準
+        return None
+    handle = tempfile.TemporaryFile()
+    handle.write(input_text.encode("utf-8"))
+    handle.flush()
+    handle.seek(0)
+    return handle
 
 
 def wait_for(proc, timeout):
@@ -172,11 +190,14 @@ def wait_for(proc, timeout):
 
 def run_tree(argv, *, cwd, env, timeout, input_text=None):
     """執行並收集輸出；逾時殺整棵樹。KeyboardInterrupt 時也先殺樹再往上丟。"""
+    source = stdin_file(input_text)
     with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
-        stdin = subprocess.PIPE if input_text is not None else subprocess.DEVNULL
-        tree = Tree(argv, cwd=cwd, env=env, stdin=stdin, stdout=out, stderr=err)
         try:
-            write_stdin(tree.proc, input_text)
+            tree = Tree(argv, cwd=cwd, env=env, stdin=source or subprocess.DEVNULL, stdout=out, stderr=err)
+        finally:
+            if source:
+                source.close()  # 子程序已繼承自己的 handle，這邊關掉不影響它讀
+        try:
             finished = wait_for(tree.proc, timeout)
             if not finished:
                 tree.kill()

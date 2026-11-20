@@ -121,18 +121,23 @@ stations:
       - "practice/interactive/now-{unit}.txt"
     message: "工廠：新增 {unit} 互動演練（第 {round} 輪）"
   # finish 鏈也可以放 command 站（例：approve → push／部署），但不可有 on_fail：失敗直接標 failed＋ALERT
+  # 這種站前面必須先有 approve 站（人核准後才 push／部署）；確定要無人值守才在該站標 unattended: true
 
 # 意圖合約：tools 白名單、write 可寫路徑（glob，** 任意層）、budget 每次呼叫工具次數上限
 #   - tools 只能用 Read Glob Grep Write Edit MultiEdit NotebookEdit Bash WebFetch WebSearch TodoWrite（大小寫相符）；
 #     不支援 MCP 工具（gate 看不懂它的參數，無法把關）
-#   - QA（qa 站）與審查（review 站）角色只能用 Read Glob Grep Write Edit
+#   - QA（qa 站）與審查（review 站）角色只能用 Read Glob Grep Write Edit，write 也不可涵蓋 command 站的 log
+#   - 有 WebFetch 的角色必須設 fetch_allow: ["^https://docs[.]example[.]com/"]（網址 regex，^ 開頭、不可萬用），
+#     gate 逐筆比對 url；WebSearch 不受此限
+#   - 工作目錄（workdir 與 agent_cwd）底下的 .claude/、.mcp.json、.git/ 任何角色都不可寫：
+#     write 明確指向它們會被拒絕啟動；{WORK}/** 這種寬寫法可以用，但 gate 會逐筆擋掉這些位置
 #   - 任何角色的 write 都不可碰引擎內部檔：factory.yaml、agents/、run/state.json、run/approvals/、
 #     run/trace*.jsonl、run/alerts.jsonl、run/commands*.jsonl、run/.runtime/、run/logs/、engine/
 roles:
   planner: {tools: [Read, Glob, Grep, Write], write: ["{RUN}/plans/**"], budget: 40}
   writer: {tools: [Read, Glob, Grep, Write, Edit], write: ["{script}", "{coach}"], budget: 40}
   now-updater: {tools: [Read, Grep, Write], write: ["{now}"], budget: 15}
-  tester: {tools: [Read, Write], write: ["{RUN}/test-logs/**"], budget: 15}
+  tester: {tools: [Read, Write], write: ["{testlog}"], budget: 15}   # QA 不可寫 command 站的 raw log，只寫自己的判定檔
   reviewer: {tools: [Read, Glob, Grep, Write], write: ["{RUN}/reviews/**"], budget: 30}
   # 🔴 Bash 安全只靠 bash_allow 白名單（forbidden 的字串比對只是額外一層，擋不住所有變形）：
   #   - 要給某角色 Bash：tools 加 Bash，並加 bash_allow: ["^pytest( |$)"]（regex，必須以 ^ 開頭）

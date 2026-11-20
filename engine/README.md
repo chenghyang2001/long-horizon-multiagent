@@ -49,8 +49,24 @@ python -m pytest tests -q                              # 假模型模式回歸�
 - **gate**（每次工具呼叫）：全域禁止 → 引擎內部檔保護 → 工具合約 → 寫入路徑 → Bash 白名單（含 `; & | < > `` ` `` $` 與換行）
   → 需核准指令（綁單位＋輪次、用一次失效）→ 預算。內部錯誤一律拒絕。gate 讀本輪開始時的設定快照（含 sha256）。
 - **逾時殺整棵程序樹**：Windows 用 Job Object（Git Bash 的背景孫程序 taskkill /T 殺不到），輸出寫暫存檔不用管線。
-- **執行鎖** `run/.runtime/run.lock`：PID＋程序啟動時間，殘留舊鎖自動清除。
+- **執行鎖** `run/.runtime/run.lock`：PID＋程序啟動時間，殘留舊鎖用互斥檔安全清除；鎖 token 只交給 hours 自己啟動的
+  run 子程序，代理與指令站拿不到（它們執行 approve／reset 只會排進佇列）。
+- **指令佇列** `run/commands.jsonl`：每筆有 id，套用結果存進 state.json 後才刪認領檔，當機後重讀也不會重複套用。
+- **子程序環境**：claude -p 只拿到 gate 需要的 `LH_PROJECT_DIR／LH_UNIT／LH_ROUND／LH_ROLE／LH_STATION／LH_TRACE_OFFSET`；
+  指令站一個 `LH_*` 都沒有。gate 也拒絕 Bash 指令呼叫引擎本身（`-m lhf`、`lhf/`、引擎路徑）。
+- **工作目錄控制檔**：workdir 與 agent_cwd 底下的 `.claude/`、`.mcp.json`、`.git/` 一律不可寫；
+  每次 claude -p 前都檢查 `.claude/settings*.json` 有沒有放寬權限。
 - **state.json 驗證**：缺欄位、未知狀態、站名不存在都會明確報錯，不覆寫檔案。
+
+## 版控策略（run/ 底下哪些進 git）
+
+| 進版控（跨電腦接手需要） | 不進版控（.gitignore） |
+| --- | --- |
+| `state.json`（進度）、`trace.jsonl`（gate 紀錄）、`alerts.jsonl`（ALERT 清單） | `.runtime/`（鎖、hook 設定、設定快照、假模式標記） |
+| `plans/`、`reviews/`、`test-logs/`、`logs/hours-*`（各站產物與連續執行摘要） | `heartbeat.txt`、`commands*.jsonl`（只在本機執行中有意義） |
+| `approvals/`（核准紀錄） | `logs/agent-fail-*`（完整 stdout／stderr，可能很大）、`trace-*.jsonl`（歸檔） |
+
+換電腦接手前先確認舊電腦沒有在跑（`status` 不會顯示「執行中」），再 commit／pull。
 
 ## 與第一代（capstone/）的差異
 

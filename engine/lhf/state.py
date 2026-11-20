@@ -8,6 +8,8 @@
 
 import json
 import os
+import secrets
+import time
 
 from lhf.common import atomic_replace, now_iso, now_str, tmp_name
 from lhf.config import FINAL_STATUSES
@@ -253,23 +255,30 @@ def commands_path(cfg):
 
 
 def queue_command(cfg, command, unit):
-    """引擎執行中：把 approve／reset／reset-calls 排進佇列，由引擎下一站開始時套用。"""
-    append_jsonl(commands_path(cfg), {"ts": now_str(), "command": command, "unit": unit, "pid": os.getpid()})
+    """引擎執行中：把 approve／reset／reset-calls 排進佇列，由引擎下一站開始時套用。每筆帶唯一 id。"""
+    append_jsonl(
+        commands_path(cfg),
+        {"id": secrets.token_hex(8), "ts": now_str(), "command": command, "unit": unit, "pid": os.getpid()},
+    )
 
 
-def take_commands(cfg):
-    """把佇列原子地改名再讀；改名之後別人新排的指令會進新的佇列檔，不會遺失。"""
+def command_id(record):
+    """舊格式（沒有 id）用內容組一個穩定的 id，才能判斷是否套用過。"""
+    return record.get("id") or "|".join(str(record.get(k)) for k in ("ts", "command", "unit", "pid"))
+
+
+def claim_commands(cfg):
+    """把目前的佇列原子地改名認領，連同上次沒處理完（當機留下）的認領檔一起回傳。
+    只有持有執行鎖的引擎會呼叫，所以不會有兩個程序同時處理同一個認領檔。
+    認領檔要等套用結果存進 state.json 之後才刪（見 round.apply_queued），中途當機也不會遺失指令。"""
     path = commands_path(cfg)
-    if not path.exists():
-        return []
-    claimed = path.with_name(f"commands.processing-{os.getpid()}.jsonl")
-    try:
-        atomic_replace(path, claimed)
-    except (FileNotFoundError, PermissionError):
-        return []  # 別人正在寫入：這一站先不處理，下一站再拿
-    records = read_jsonl(claimed)
-    claimed.unlink(missing_ok=True)
-    return records
+    if path.exists():
+        claimed = path.with_name(f"commands.processing-{os.getpid()}-{time.time_ns()}.jsonl")
+        try:
+            atomic_replace(path, claimed)
+        except (FileNotFoundError, PermissionError):
+            pass  # 別人正在寫入：這一站先不認領，下一站再拿
+    return sorted(cfg.run_dir.glob("commands.processing-*.jsonl"))
 
 
 def requeue_commands(cfg, records):

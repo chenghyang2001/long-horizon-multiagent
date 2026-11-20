@@ -27,4 +27,6 @@ projects/*/run/*.tmp
 projects/*/run/approvals/*.tmp
 projects/*/run/commands.processing-*.jsonl
 projects/*/run/trace-*.jsonl
-projects/*/run/logs/
+projects/*/run/heartbeat.txt
+projects/*/run/commands*.jsonl
+projects/*/run/logs/agent-fail-*

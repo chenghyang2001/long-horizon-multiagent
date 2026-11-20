@@ -1,7 +1,8 @@
 """設定快照：每輪開始把 factory.yaml 內容＋sha256 存進 run/.runtime/factory.snapshot.json。
 
-gate 只讀快照、不讀即時的 factory.yaml：代理（或任何人）在本輪中途改設定，影響不到正在執行的把關。
-快照的 sha256 對不上（被竄改或寫壞）時 gate 直接 fail closed。
+gate 只讀快照、不讀即時的 factory.yaml：本輪中途改了設定，影響不到正在執行的把關。
+sha256 只防「損毀」（寫到一半、磁碟錯誤）：能改快照的人也能一起改 sha256，所以它擋不了刻意竄改。
+防竄改靠的是 run/.runtime/ 不可被代理寫入（gate 固定拒絕、config 也拒絕任何角色的 write 涵蓋它）。
 """
 
 import hashlib
