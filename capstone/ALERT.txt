@@ -1,0 +1,6 @@
+時間：2026-11-20 12:53:14
+原因：連續 2 輪 run_round.py 結束碼非 0，已停止連續執行
+log：C:\Users\user\workspace\long-horizon-multiagent\capstone\logs\hours-20261120-124426.log
+最後兩輪：
+  第 1 輪｜ch06｜exit=1｜heartbeat：2026-11-20 12:47:42｜第 3 輪｜ch06｜失敗｜claude -p 1 次｜195 秒
+  第 2 輪｜ch06｜exit=1｜heartbeat：2026-11-20 12:53:14｜第 3 輪｜ch06｜失敗｜claude -p 2 次｜302 秒
