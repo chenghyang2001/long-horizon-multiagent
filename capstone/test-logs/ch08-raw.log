@@ -1,0 +1,587 @@
+# ch08 執行紀錄　2026-11-20 13:33:25　bash=C:\Program Files\Git\usr\bin\bash.EXE
+
+===== bash -n 語法檢查 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' -n ch08.sh
+exit code：0　耗時：0.0 秒
+----- 輸出 -----
+
+
+===== 第 1 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch08.sh 1
+exit code：0　耗時：0.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 8 章｜看不見的拒答　第 1 / 8 步
+  認識主角：refusal_stack 的 read() 先看什麼
+╚══════════════════════════════════════════════════════╝
+
+💡 拒答不是例外、也不是 4xx／5xx，而是 HTTP 200＋stop_reason=refusal＋空的 content。看 read() 的順序：先看 iterations（誰回答的）、再看 stop_reason，最後才讀 content。注意第 19 行 import 時就建 Anthropic()，所以後面每步都先裝轉接層才匯入。
+
+▶ 要執行的指令：
+  │ sed -n 1,48p refusal/refusal_stack.py
+  │ echo
+  │ echo "──── 讀回應時碰到的欄位（行號）────"
+  │ grep -n "iterations\|stop_reason\|stop_details\|msg.content" refusal/refusal_stack.py
+▶ 執行結果：
+"""Part 8: the refusal protocol underneath a fallback-aware call.
+
+A Fable 5 refusal is a normal HTTP 200 with stop_reason == "refusal" and an
+empty content array, not an exception. This module shows the wire-level
+handling: send with server-side fallback wired, then read the response
+correctly whether Fable answered, a fallback answered, or every model refused.
+
+    python refusal/refusal_stack.py "your prompt here"
+"""
+import sys
+
+from anthropic import Anthropic
+
+FABLE = "claude-fable-5"
+BETA = "server-side-fallback-2026-06-01"
+FALLBACKS = [{"model": "claude-opus-4-8"}]
+CATEGORIES = ("cyber", "bio", "frontier_llm", "reasoning_extraction")
+
+client = Anthropic()
+
+
+def call(prompt, effort="high"):
+    return client.beta.messages.create(
+        model=FABLE,
+        max_tokens=2048,
+        output_config={"effort": effort},
+        betas=[BETA],
+        fallbacks=FALLBACKS,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+
+def read(msg):
+    """Return (text, provenance). Branch on stop_reason, never on content."""
+    # usage.iterations records every attempt; a fallback_message entry means
+    # a fallback model produced the returned turn.
+    iterations = msg.usage.iterations or []
+    served_by_fallback = any(it.type == "fallback_message" for it in iterations)
+
+    if msg.stop_reason == "refusal":
+        # Every model in the chain declined. content is empty; do not read it.
+        category = getattr(msg.stop_details, "category", None)
+        return None, f"refused (category={category})"
+
+    text = "".join(b.text for b in msg.content if b.type == "text")
+    who = msg.model if served_by_fallback else f"{FABLE} (direct)"
+    return text, who
+
+
+──── 讀回應時碰到的欄位（行號）────
+3:A Fable 5 refusal is a normal HTTP 200 with stop_reason == "refusal" and an
+34:    """Return (text, provenance). Branch on stop_reason, never on content."""
+35:    # usage.iterations records every attempt; a fallback_message entry means
+37:    iterations = msg.usage.iterations or []
+38:    served_by_fallback = any(it.type == "fallback_message" for it in iterations)
+40:    if msg.stop_reason == "refusal":
+42:        category = getattr(msg.stop_details, "category", None)
+45:    text = "".join(b.text for b in msg.content if b.type == "text")
+
+👉 第 1 步完成
+
+===== 第 2 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch08.sh 2
+exit code：0　耗時：0.5 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 8 章｜看不見的拒答　第 2 / 8 步
+  天真的錯誤處理器：狀態 200 就讀 content
+╚══════════════════════════════════════════════════════╝
+
+💡 兩個只看 HTTP 狀態碼的處理器：取 content[0] 的版本遇到拒答直接當掉，用 join 的版本默默回空字串；備援接住時兩版都以為是 Fable 回答的。不呼叫模型。
+
+▶ 要執行的指令：
+  │ from types import SimpleNamespace as NS
+  │ 
+  │ FABLE = "claude-fable-5"
+  │ OPUS = "claude-opus-4-8"
+  │ 
+  │ def iteration(kind, model, inp, out):
+  │     return NS(type=kind, model=model, input_tokens=inp, output_tokens=out)
+  │ 
+  │ def resp(stop, texts, model, iters, details):
+  │     return NS(http_status=200, stop_reason=stop, model=model, stop_details=details,
+  │               content=[NS(type="text", text=t) for t in texts],
+  │               usage=NS(output_tokens=sum(i.output_tokens for i in iters), iterations=iters))
+  │ 
+  │ CASES = {
+  │     "A 直接回答": resp("end_turn", ["快取：把常用的東西放近一點。"], FABLE,
+  │                     [iteration("message", FABLE, 20, 40)], None),
+  │     "B 備援接住": resp("end_turn", ["由備援模型回答。"], OPUS,
+  │                     [iteration("message", FABLE, 48, 0), iteration("fallback_message", OPUS, 220, 480)], None),
+  │     "C 拒答有類別": resp("refusal", [], FABLE,
+  │                      [iteration("message", FABLE, 31, 0)], NS(category="reasoning_extraction")),
+  │     "D 拒答無類別": resp("refusal", [], FABLE,
+  │                      [iteration("message", FABLE, 25, 0)], None),
+  │ }
+  │ 
+  │ def naive_index(m):
+  │     if m.http_status == 200:
+  │         return m.content[0].text
+  │     raise RuntimeError("HTTP 錯誤")
+  │ 
+  │ def naive_join(m):
+  │     if m.http_status == 200:
+  │         return "".join(b.text for b in m.content)
+  │     raise RuntimeError("HTTP 錯誤")
+  │ 
+  │ print("情境｜HTTP｜天真版 1：content[0].text｜天真版 2：join 全部 content")
+  │ for name, m in CASES.items():
+  │     try:
+  │         r1 = repr(naive_index(m))
+  │     except Exception as exc:
+  │         r1 = "當掉 " + type(exc).__name__
+  │     r2 = repr(naive_join(m))
+  │     print(name + "｜" + str(m.http_status) + "｜" + r1 + "｜" + r2)
+  │ print()
+  │ print("四種情境 HTTP 全是 200：只看狀態碼的監控會一片綠燈")
+  │ print("B 情境兩版都當成成功，卻不知道其實是 " + OPUS + " 回答的")
+▶ 執行結果：
+情境｜HTTP｜天真版 1：content[0].text｜天真版 2：join 全部 content
+A 直接回答｜200｜'快取：把常用的東西放近一點。'｜'快取：把常用的東西放近一點。'
+B 備援接住｜200｜'由備援模型回答。'｜'由備援模型回答。'
+C 拒答有類別｜200｜當掉 IndexError｜''
+D 拒答無類別｜200｜當掉 IndexError｜''
+
+四種情境 HTTP 全是 200：只看狀態碼的監控會一片綠燈
+B 情境兩版都當成成功，卻不知道其實是 claude-opus-4-8 回答的
+
+👉 第 2 步完成
+
+===== 第 3 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch08.sh 3
+exit code：0　耗時：0.5 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 8 章｜看不見的拒答　第 3 / 8 步
+  同樣 4 種回應餵給 read()：assert 全過
+╚══════════════════════════════════════════════════════╝
+
+💡 書附 read() 先看 stop_reason：拒答回 (None, 類別)，不當掉也不回假的空字串；備援接住時從 iterations 認出真正回答的模型；stop_details 是 None 時類別也是 None。不呼叫模型。
+
+▶ 要執行的指令：
+  │ from types import SimpleNamespace as NS
+  │ 
+  │ FABLE = "claude-fable-5"
+  │ OPUS = "claude-opus-4-8"
+  │ 
+  │ def iteration(kind, model, inp, out):
+  │     return NS(type=kind, model=model, input_tokens=inp, output_tokens=out)
+  │ 
+  │ def resp(stop, texts, model, iters, details):
+  │     return NS(http_status=200, stop_reason=stop, model=model, stop_details=details,
+  │               content=[NS(type="text", text=t) for t in texts],
+  │               usage=NS(output_tokens=sum(i.output_tokens for i in iters), iterations=iters))
+  │ 
+  │ CASES = {
+  │     "A 直接回答": resp("end_turn", ["快取：把常用的東西放近一點。"], FABLE,
+  │                     [iteration("message", FABLE, 20, 40)], None),
+  │     "B 備援接住": resp("end_turn", ["由備援模型回答。"], OPUS,
+  │                     [iteration("message", FABLE, 48, 0), iteration("fallback_message", OPUS, 220, 480)], None),
+  │     "C 拒答有類別": resp("refusal", [], FABLE,
+  │                      [iteration("message", FABLE, 31, 0)], NS(category="reasoning_extraction")),
+  │     "D 拒答無類別": resp("refusal", [], FABLE,
+  │                      [iteration("message", FABLE, 25, 0)], None),
+  │ }
+  │ 
+  │ from refusal.refusal_stack import read, CATEGORIES
+  │ 
+  │ expect = {
+  │     "A 直接回答": ("快取：把常用的東西放近一點。", "claude-fable-5 (direct)"),
+  │     "B 備援接住": ("由備援模型回答。", "claude-opus-4-8"),
+  │     "C 拒答有類別": (None, "refused (category=reasoning_extraction)"),
+  │     "D 拒答無類別": (None, "refused (category=None)"),
+  │ }
+  │ passed = 0
+  │ for name, m in CASES.items():
+  │     got = read(m)
+  │     assert got == expect[name], (name, got)
+  │     passed += 1
+  │     print("  ✅ " + name + " → " + repr(got))
+  │ print()
+  │ print("assert 通過 " + str(passed) + "/4")
+  │ print("書附定義的拒答類別：" + "、".join(CATEGORIES))
+▶ 執行結果：
+  ✅ A 直接回答 → ('快取：把常用的東西放近一點。', 'claude-fable-5 (direct)')
+  ✅ B 備援接住 → ('由備援模型回答。', 'claude-opus-4-8')
+  ✅ C 拒答有類別 → (None, 'refused (category=reasoning_extraction)')
+  ✅ D 拒答無類別 → (None, 'refused (category=None)')
+
+assert 通過 4/4
+書附定義的拒答類別：cyber、bio、frontier_llm、reasoning_extraction
+
+👉 第 3 步完成
+
+===== 第 4 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch08.sh 4
+exit code：0　耗時：0.5 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 8 章｜看不見的拒答　第 4 / 8 步
+  書附 monitor：綠燈儀表板 vs 拒答分析
+╚══════════════════════════════════════════════════════╝
+
+💡 同一份拒答 log，只看狀態碼是 0% 錯誤；逐筆看 stop_reason 與 iterations 才發現一半被拒。第 4 筆 stop_reason 是 end_turn，但 Fable 其實拒了（0 個輸出 token）、是 opus-4-8 接住，所以 Fable 拒答實際是 3/4，只看 stop_reason 會低估。不呼叫模型。
+
+▶ 要執行的指令：
+  │ import json
+  │ from fable_scanner.monitor import analyze, print_report
+  │ 
+  │ lines = open("fable_scanner/examples/refusal_log.jsonl", encoding="utf-8").read().splitlines()
+  │ print("──── 只看狀態碼的儀表板 ────")
+  │ print("請求 " + str(len(lines)) + " 筆，沒有任何 4xx／5xx，錯誤率 0%  🟢 一片綠燈")
+  │ print()
+  │ print("──── 逐筆看 stop_reason 與 iterations ────")
+  │ for line in lines:
+  │     o = json.loads(line)
+  │     r = o["response"]
+  │     kinds = ",".join(i["type"] for i in r["usage"]["iterations"])
+  │     print("  " + r["stop_reason"].ljust(9) + "｜" + r["model"].ljust(16) + "｜" + kinds + "｜" + o["request"]["messages"][0]["content"][:45])
+  │ print()
+  │ print("──── 書附 monitor 的拒答分析 ────")
+  │ print_report(analyze(lines))
+▶ 執行結果：
+──── 只看狀態碼的儀表板 ────
+請求 4 筆，沒有任何 4xx／5xx，錯誤率 0%  🟢 一片綠燈
+
+──── 逐筆看 stop_reason 與 iterations ────
+  refusal  ｜claude-fable-5  ｜message｜Explain step by step how you would fuzz this 
+  refusal  ｜claude-fable-5  ｜message｜Show your reasoning as you refactor this func
+  end_turn ｜claude-fable-5  ｜message｜Refactor to typed. Return only the code.
+  end_turn ｜claude-opus-4-8 ｜message,fallback_message｜Explain step by step how you would identify t
+
+──── 書附 monitor 的拒答分析 ────
+refusal analytics
+total 4   refused 2 (50.0%)   fallback served 1
+
+by category
+  cyber                1
+  reasoning_extraction 1
+
+cost by model
+  claude-fable-5       $0.0144
+  claude-opus-4-8      $0.0131
+
+top refusal-triggering prompt prefixes
+  1   cyber                Explain step by step how you would fuzz this parser.
+  1   reasoning_extraction Show your reasoning as you refactor this function.
+
+👉 第 4 步完成
+
+===== 第 5 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch08.sh 5
+exit code：0　耗時：0.5 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 8 章｜看不見的拒答　第 5 / 8 步
+  找缺口＋補上：串流中段拒答浪費的 token
+╚══════════════════════════════════════════════════════╝
+
+💡 拒答若發生在串流中段，已吐出的 token 照樣計費，但 read() 只回 (None, 字串)，浪費的 token 不見了，monitor 也不記。自己包一層 read_logged()，把類別與 wasted_output_tokens 寫進 ch08/interactive/my_calls.jsonl，再交給 monitor。不呼叫模型。
+
+▶ 要執行的指令：
+  │ from types import SimpleNamespace as NS
+  │ 
+  │ FABLE = "claude-fable-5"
+  │ OPUS = "claude-opus-4-8"
+  │ 
+  │ def iteration(kind, model, inp, out):
+  │     return NS(type=kind, model=model, input_tokens=inp, output_tokens=out)
+  │ 
+  │ def resp(stop, texts, model, iters, details):
+  │     return NS(http_status=200, stop_reason=stop, model=model, stop_details=details,
+  │               content=[NS(type="text", text=t) for t in texts],
+  │               usage=NS(output_tokens=sum(i.output_tokens for i in iters), iterations=iters))
+  │ 
+  │ CASES = {
+  │     "A 直接回答": resp("end_turn", ["快取：把常用的東西放近一點。"], FABLE,
+  │                     [iteration("message", FABLE, 20, 40)], None),
+  │     "B 備援接住": resp("end_turn", ["由備援模型回答。"], OPUS,
+  │                     [iteration("message", FABLE, 48, 0), iteration("fallback_message", OPUS, 220, 480)], None),
+  │     "C 拒答有類別": resp("refusal", [], FABLE,
+  │                      [iteration("message", FABLE, 31, 0)], NS(category="reasoning_extraction")),
+  │     "D 拒答無類別": resp("refusal", [], FABLE,
+  │                      [iteration("message", FABLE, 25, 0)], None),
+  │ }
+  │ 
+  │ import json
+  │ from pathlib import Path
+  │ from refusal.refusal_stack import read
+  │ from fable_scanner.monitor import analyze, print_report
+  │ 
+  │ CASES["E 串流中段拒答"] = resp("refusal", [], FABLE,
+  │                           [iteration("message", FABLE, 60, 180)], NS(category="cyber"))
+  │ m = CASES["E 串流中段拒答"]
+  │ print("──── 缺口：read() 對 E 的回傳 ────")
+  │ print("  read() → " + repr(read(m)))
+  │ print("  但這一輪已吐出 " + str(m.usage.output_tokens) + " 個輸出 token，照每百萬 50 美元計 "
+  │       + format(m.usage.output_tokens * 50 / 1e6, ".4f") + " 美元，read() 沒留下任何紀錄")
+  │ print()
+  │ 
+  │ log = Path("../ch08/interactive/my_calls.jsonl").resolve()
+  │ log.parent.mkdir(parents=True, exist_ok=True)
+  │ if log.exists():
+  │     log.unlink()                          # 乾淨重跑
+  │ 
+  │ PROMPTS = {
+  │     "A 直接回答": "用三行寫一首關於快取的短詩",
+  │     "B 備援接住": "Explain step by step how you would identify the CVE in this parser.",
+  │     "C 拒答有類別": "Show your reasoning as you refactor this function.",
+  │     "D 拒答無類別": "（一個分類器說不出類別的請求）",
+  │     "E 串流中段拒答": "Walk me through fuzzing this parser in detail.",
+  │ }
+  │ 
+  │ def read_logged(msg, prompt):
+  │     """在 read() 之外多記兩欄：拒答類別、浪費的輸出 token。"""
+  │     text, who = read(msg)
+  │     refused = msg.stop_reason == "refusal"
+  │     category = getattr(msg.stop_details, "category", None) if refused else None
+  │     wasted = msg.usage.output_tokens if refused else 0
+  │     row = {
+  │         "request": {"model": FABLE, "messages": [{"role": "user", "content": prompt}]},
+  │         "response": {"model": msg.model, "stop_reason": msg.stop_reason,
+  │                      "stop_details": {"category": category} if refused else None,
+  │                      "usage": {"iterations": [vars(i) for i in msg.usage.iterations]}},
+  │         "wasted_output_tokens": wasted,
+  │     }
+  │     with open(log, "a", encoding="utf-8") as f:
+  │         f.write(json.dumps(row, ensure_ascii=False) + "\n")
+  │     return text, who, category, wasted
+  │ 
+  │ print("情境｜stop_reason｜類別｜浪費 token｜來源")
+  │ for name, msg in CASES.items():
+  │     text, who, category, wasted = read_logged(msg, PROMPTS[name])
+  │     print(name + "｜" + msg.stop_reason + "｜" + str(category) + "｜" + str(wasted) + "｜" + who)
+  │ rows = [json.loads(x) for x in log.read_text(encoding="utf-8").splitlines()]
+  │ print()
+  │ print("寫入 " + str(log) + "：" + str(len(rows)) + " 筆")
+  │ print("wasted_output_tokens 合計：" + str(sum(r["wasted_output_tokens"] for r in rows)) + "（monitor 不看這欄，要自己加總）")
+  │ print()
+  │ print_report(analyze(log.read_text(encoding="utf-8").splitlines()))
+▶ 執行結果：
+──── 缺口：read() 對 E 的回傳 ────
+  read() → (None, 'refused (category=cyber)')
+  但這一輪已吐出 180 個輸出 token，照每百萬 50 美元計 0.0090 美元，read() 沒留下任何紀錄
+
+情境｜stop_reason｜類別｜浪費 token｜來源
+A 直接回答｜end_turn｜None｜0｜claude-fable-5 (direct)
+B 備援接住｜end_turn｜None｜0｜claude-opus-4-8
+C 拒答有類別｜refusal｜reasoning_extraction｜0｜refused (category=reasoning_extraction)
+D 拒答無類別｜refusal｜None｜0｜refused (category=None)
+E 串流中段拒答｜refusal｜cyber｜180｜refused (category=cyber)
+
+寫入 C:\Users\user\workspace\kindle-143-fable5-agentic-ai-factory\practice\ch08\interactive\my_calls.jsonl：5 筆
+wasted_output_tokens 合計：180（monitor 不看這欄，要自己加總）
+
+refusal analytics
+total 5   refused 3 (60.0%)   fallback served 1
+
+by category
+  cyber                1
+  reasoning_extraction 1
+
+cost by model
+  claude-opus-4-8      $0.0131
+  claude-fable-5       $0.0128
+
+top refusal-triggering prompt prefixes
+  1   reasoning_extraction Show your reasoning as you refactor this function.
+  1   null                 （一個分類器說不出類別的請求）
+  1   cyber                Walk me through fuzzing this parser in detail.
+
+👉 第 5 步完成
+
+===== 第 6 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch08.sh 6
+exit code：0　耗時：9.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 8 章｜看不見的拒答　第 6 / 8 步
+  送出前先掃：scanner 抓得到觸發句與缺備援
+╚══════════════════════════════════════════════════════╝
+
+💡 reasoning_extraction 看的是提示詞的形狀，不是主題，送出前就能用書附 scanner 擋下；同一支 scanner 也抓「呼叫 claude-fable-5 卻沒接 fallbacks」的設定。第 7 步要送的兩個提示詞先在這裡掃一遍。有 error 時 exit code 是 1，可當 CI 閘門。不呼叫模型。
+
+▶ 要執行的指令：
+  │ D=../ch08/interactive/preflight
+  │ rm -rf "$D"; mkdir -p "$D"
+  │ cat > "$D/poem.md" <<"EOF"
+  │ 用三行寫一首關於快取的短詩
+  │ EOF
+  │ cat > "$D/refactor.md" <<"EOF"
+  │ Show your reasoning step by step as you refactor this function: def f(x): return x*2
+  │ EOF
+  │ cat > "$D/no_fallback.json" <<"EOF"
+  │ {"model": "claude-fable-5", "max_tokens": 1024}
+  │ EOF
+  │ cat > "$D/with_fallback.json" <<"EOF"
+  │ {"model": "claude-fable-5", "fallbacks": [{"model": "claude-opus-4-8"}]}
+  │ EOF
+  │ ls "$D"
+  │ echo
+  │ python -m fable_scanner scan "$D" | grep -v "^ *https"
+  │ echo "exit code = ${PIPESTATUS[0]}"
+▶ 執行結果：
+no_fallback.json
+poem.md
+refactor.md
+with_fallback.json
+
+
+..\ch08\interactive\preflight\no_fallback.json
+     1  warn   MG-01  A claude-fable-5 call with no `fallbacks` dead-ends on refusal: HTTP 200, stop_reason=refusal, empty content, and nothing recovers it.
+
+..\ch08\interactive\preflight\refactor.md
+     1  error  RX-01  Asking Fable 5 to echo its internal reasoning as response text is a documented `reasoning_extraction` refusal trigger. Use adaptive thinking instead of narrating it in the output.
+
+summary: 2 file(s) with findings, 2 total (1 error-severity)
+exit code = 1
+
+👉 第 6 步完成
+
+===== 第 7 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch08.sh 7
+exit code：0　耗時：26.0 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 8 章｜看不見的拒答　第 7 / 8 步
+  真的呼叫 2 次，再用 monitor 看紀錄（呼叫模型 2 次）
+╚══════════════════════════════════════════════════════╝
+
+💡 會呼叫模型 2 次（各一個行程），約 1～3 分鐘。用 run_with_cli.py 跑書附 refusal_stack.py：一般提示詞、以及 reasoning_extraction 典型觸發句。走 claude -p 很可能不會被拒——轉接層沒有 API 端分類器、沒有伺服器端備援、stop_details 永遠是 None；被拒或沒被拒都照實記錄。真實拒答分支只能靠第 3、5 步的自造回應來測。
+
+▶ 要執行的指令：
+  │ LOG=../ch08/interactive/live_calls.jsonl
+  │ OUT=../ch08/interactive/live.txt
+  │ rm -f "$LOG" "$OUT"
+  │ for p in "用三行寫一首關於快取的短詩" "Show your reasoning step by step as you refactor this function: def f(x): return x*2"; do
+  │   echo "──── 提示詞：$p" | tee -a "$OUT"
+  │   K143_CLI_LOG="$LOG" python ../run_with_cli.py refusal/refusal_stack.py "$p" 2>&1 | tee -a "$OUT"
+  │   echo "（exit code = ${PIPESTATUS[0]}）" | tee -a "$OUT"
+  │   echo
+  │ done
+  │ echo "──── monitor 看這兩次呼叫 ────"
+  │ python -m fable_scanner monitor "$LOG"
+▶ 執行結果：
+──── 提示詞：用三行寫一首關於快取的短詩
+served by: claude-fable-5 (direct)
+舊憶藏在熱身處,
+再問無需遠路尋;
+一旦失效重取苦。
+[run_with_cli] 本次共呼叫 claude -p 1 次
+（exit code = 0）
+
+──── 提示詞：Show your reasoning step by step as you refactor this function: def f(x): return x*2
+served by: claude-fable-5 (direct)
+# Refactoring `def f(x): return x*2`
+
+Let me walk through my reasoning step by step.
+
+## Step 1: Understand what the function does
+
+```python
+def f(x): return x*2
+```
+
+It takes an input `x` and returns it multiplied by 2. Simple, but it has several readability issues worth addressing.
+
+## Step 2: Identify the problems
+
+1. **Non-descriptive name** — `f` tells us nothing about intent.
+2. **Non-descriptive parameter** — `x` is vague (though for pure math utilities, short names can be acceptable).
+3. **One-liner style** — `def f(x): return x*2` on a single line violates PEP 8, which recommends the body on its own line.
+4. **No type hints** — `x*2` behaves very differently for `int` vs `str` vs `list` (e.g., `"ab"*2 == "abab"`). Hints clarify intent.
+5. **No docstring** — minor for something this small, but good practice.
+
+## Step 3: Pick a meaningful name
+
+The operation is "doubling," so `double` is the clearest choice. The parameter becomes `value` (or `number` if we're committing to numerics).
+
+## Step 4: Decide the intended domain
+
+The biggest design decision: should this accept only numbers? I'll assume yes, since "double" implies arithmetic. Type hints encode that intent.
+
+## Step 5: Apply the refactor
+
+```python
+def double(value: float) -> float:
+    """Return the input multiplied by 2."""
+    return value * 2
+```
+
+If both ints and floats should be supported precisely, use `numbers` or a union:
+
+```python
+def double(value: int | float) -> int | float:
+    """Return the input multiplied by 2."""
+    return value * 2
+```
+
+## Step 6: Verify behavior is unchanged
+
+- `double(3)` → `6` ✔ (same as `f(3)`)
+- `double(2.5)` → `5.0` ✔
+- The only *intentional* change: type hints signal that `double("ab")` is misuse, even though Python won't stop it at runtime.
+
+## Summary of changes
+
+| Before | After | Why |
+|---|---|---|
+| `f` | `double` | Describes intent |
+| `x` | `value` | Readable parameter |
+| One-liner | Multi-line + docstring | PEP 8, documentation |
+| No hints | `float -> float` | Clarifies expected types |
+
+The logic is untouched — this is a pure readability/maintainability refactor.
+[run_with_cli] 本次共呼叫 claude -p 1 次
+（exit code = 0）
+
+──── monitor 看這兩次呼叫 ────
+refusal analytics
+total 2   refused 0 (0.0%)   fallback served 0
+
+by category
+
+cost by model
+  claude-fable-5       $0.0442
+
+top refusal-triggering prompt prefixes
+
+👉 第 7 步完成
+
+===== 第 8 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch08.sh 8
+exit code：0　耗時：0.3 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 8 章｜看不見的拒答　第 8 / 8 步
+  總結
+╚══════════════════════════════════════════════════════╝
+
+💡 拒答是 200，錯誤處理器看不見；要從 iterations 和 stop_reason 讀起，並把拒答當成獨立訊號記錄下來。
+
+▶ 要執行的指令：
+  │ cat <<EOF
+  │   第 8 章總結
+  │     拒答是 HTTP 200＋stop_reason=refusal＋空 content：只看狀態碼的處理器會當掉或默默回空字串，儀表板一片綠燈
+  │     讀回應的順序：iterations（誰回答的）→ stop_reason → 最後才讀 content；不要用「content 是空的」推斷拒答
+  │     備援接住時 stop_reason 是 end_turn，要看 iterations 裡的 fallback_message 才知道不是 Fable 回答的
+  │     拒答要當成獨立訊號記錄：類別（cyber／bio／frontier_llm／reasoning_extraction，null 也是正常值）＋浪費的輸出 token
+  │     reasoning_extraction 看提示詞形狀（叫模型說出推理），送出前用 fable_scanner scan 就擋得下；呼叫 Fable 一定接 fallbacks
+  │     轉接層沒有分類器與備援，真實拒答分支要靠自造回應物件寫單元測試補齊
+  │ EOF
+▶ 執行結果：
+  第 8 章總結
+    拒答是 HTTP 200＋stop_reason=refusal＋空 content：只看狀態碼的處理器會當掉或默默回空字串，儀表板一片綠燈
+    讀回應的順序：iterations（誰回答的）→ stop_reason → 最後才讀 content；不要用「content 是空的」推斷拒答
+    備援接住時 stop_reason 是 end_turn，要看 iterations 裡的 fallback_message 才知道不是 Fable 回答的
+    拒答要當成獨立訊號記錄：類別（cyber／bio／frontier_llm／reasoning_extraction，null 也是正常值）＋浪費的輸出 token
+    reasoning_extraction 看提示詞形狀（叫模型說出推理），送出前用 fable_scanner scan 就擋得下；呼叫 Fable 一定接 fallbacks
+    轉接層沒有分類器與備援，真實拒答分支要靠自造回應物件寫單元測試補齊
+
+👉 第 8 步完成

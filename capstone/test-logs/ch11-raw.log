@@ -1,0 +1,637 @@
+# ch11 執行紀錄　2026-11-20 14:01:43　bash=C:\Program Files\Git\usr\bin\bash.EXE
+
+===== bash -n 語法檢查 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' -n ch11.sh
+exit code：0　耗時：0.0 秒
+----- 輸出 -----
+
+
+===== 第 1 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch11.sh 1
+exit code：0　耗時：0.5 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 11 章｜自適應思考與重放　第 1 / 8 步
+  認識主角：第 7 章 linter 的思考區塊檢查
+╚══════════════════════════════════════════════════════╝
+
+💡 本章在書附 repo 沒有獨立資料夾，重放規則唯一落地的地方是 migration_linter 的 messages 檢查。先看它檢查什麼，再用書附的舊請求跑一次：assistant 帶 thinking 會被標成 warn，不是 error。不呼叫模型。
+
+▶ 要執行的指令：
+  │ echo "──── migration_linter.py 第 39～48 行：assistant 思考區塊檢查 ────"
+  │ sed -n 39,48p migration/migration_linter.py
+  │ echo
+  │ echo "──── 書附的舊請求 sample_opus_request.json ────"
+  │ cat migration/sample_opus_request.json
+  │ echo
+  │ echo "──── 跑 linter ────"
+  │ python migration/migration_linter.py migration/sample_opus_request.json
+▶ 執行結果：
+──── migration_linter.py 第 39～48 行：assistant 思考區塊檢查 ────
+    for m in req.get("messages", []):
+        if m.get("role") == "assistant":
+            for block in m.get("content", []) if isinstance(m.get("content"), list) else []:
+                if isinstance(block, dict) and block.get("type") in ("thinking", "redacted_thinking"):
+                    findings.append(("messages", "warn",
+                                     "Assistant turn carries a thinking block. On a "
+                                     "cross-model switch (incl. an Opus fallback) strip "
+                                     "thinking/redacted_thinking unless an exact-body "
+                                     "fallback-credit redemption requires otherwise."))
+                    break
+
+──── 書附的舊請求 sample_opus_request.json ────
+{
+  "model": "claude-fable-5",
+  "max_tokens": 4096,
+  "temperature": 0.7,
+  "top_p": 0.9,
+  "thinking": { "type": "enabled", "budget_tokens": 8000 },
+  "messages": [
+    { "role": "user", "content": "Summarize this incident report." },
+    { "role": "assistant", "content": [
+      { "type": "thinking", "thinking": "The report describes..." },
+      { "type": "text", "text": "Here is the summary." }
+    ] }
+  ]
+}
+
+──── 跑 linter ────
+  error  temperature
+         temperature returns 400 on Fable 5. Remove it; adaptive thinking is always on and does not accept sampling params.
+  error  top_p
+         top_p returns 400 on Fable 5. Remove it; adaptive thinking is always on and does not accept sampling params.
+  error  thinking.budget_tokens
+         Manual budget_tokens is rejected. Use output_config.effort instead.
+  warn   messages
+         Assistant turn carries a thinking block. On a cross-model switch (incl. an Opus fallback) strip thinking/redacted_thinking unless an exact-body fallback-credit redemption requires otherwise.
+  warn   fallbacks
+         No fallbacks wired. A refusal is an HTTP 200 with empty content; add fallbacks + the server-side-fallback beta header.
+  info   output_config.effort
+         No effort set. Fable 5 defaults to 'high'; set it explicitly so a fleet-wide change is one edit, not many.
+
+6 finding(s), 3 that 400 on Fable 5
+
+👉 第 1 步完成
+
+===== 第 2 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch11.sh 2
+exit code：0　耗時：0.5 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 11 章｜自適應思考與重放　第 2 / 8 步
+  造一段含三種思考區塊與工具呼叫的歷史
+╚══════════════════════════════════════════════════════╝
+
+💡 兩條重放規則要有東西可測：有內容的 thinking、空的 thinking（日誌清洗最愛刪的那種）、redacted_thinking、一組 tool_use／tool_result。第 5 則 assistant 只有 redacted_thinking，用來測剝完變空訊息。每次重跑都覆寫 ch11/interactive/history.json，不呼叫模型。
+
+▶ 要執行的指令：
+  │ import json
+  │ from pathlib import Path
+  │ work = Path("../ch11/interactive").resolve()
+  │ work.mkdir(parents=True, exist_ok=True)
+  │ history = [
+  │     {"role": "user", "content": "幫我查告警 A-1002 的來源 IP。"},
+  │     {"role": "assistant", "content": [
+  │         {"type": "thinking", "thinking": "要先呼叫 lookup_alert 查告警明細。", "signature": "sig-001"},
+  │         {"type": "tool_use", "id": "toolu_01", "name": "lookup_alert", "input": {"alert_id": "A-1002"}}]},
+  │     {"role": "user", "content": [
+  │         {"type": "tool_result", "tool_use_id": "toolu_01",
+  │          "content": "A-1002：來源 IP 10.0.3.7，目的埠 445，連續 3 次登入失敗"}]},
+  │     {"role": "assistant", "content": [
+  │         {"type": "thinking", "thinking": "", "signature": "sig-002"},
+  │         {"type": "text", "text": "A-1002 的來源 IP 是 10.0.3.7。"}]},
+  │     {"role": "user", "content": "這個 IP 要封鎖嗎？"},
+  │     {"role": "assistant", "content": [
+  │         {"type": "redacted_thinking", "data": "EncryptedOpaqueBlob=="}]},
+  │     {"role": "user", "content": "剛才查到的來源 IP 是多少？只回 IP 本身。"},
+  │ ]
+  │ path = work / "history.json"
+  │ path.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
+  │ print("已寫入 " + str(path))
+  │ print("共 " + str(len(history)) + " 則訊息，user 發言 4 次")
+  │ print()
+  │ for i, m in enumerate(history):
+  │     c = m["content"]
+  │     if isinstance(c, str):
+  │         print("  " + str(i) + " " + m["role"] + "：(字串) " + c)
+  │         continue
+  │     for b in c:
+  │         t = b["type"]
+  │         if t == "thinking":
+  │             note = "內容＝" + repr(b["thinking"]) + ("" if b["thinking"] else "（空的！）")
+  │         elif t == "redacted_thinking":
+  │             note = "加密內容，看不到"
+  │         elif t == "tool_use":
+  │             note = b["name"] + " id=" + b["id"]
+  │         elif t == "tool_result":
+  │             note = "回應 " + b["tool_use_id"]
+  │         else:
+  │             note = b.get("text", "")
+  │         print("  " + str(i) + " " + m["role"] + "：" + t + "｜" + note)
+▶ 執行結果：
+已寫入 C:\Users\user\workspace\kindle-143-fable5-agentic-ai-factory\practice\ch11\interactive\history.json
+共 7 則訊息，user 發言 4 次
+
+  0 user：(字串) 幫我查告警 A-1002 的來源 IP。
+  1 assistant：thinking｜內容＝'要先呼叫 lookup_alert 查告警明細。'
+  1 assistant：tool_use｜lookup_alert id=toolu_01
+  2 user：tool_result｜回應 toolu_01
+  3 assistant：thinking｜內容＝''（空的！）
+  3 assistant：text｜A-1002 的來源 IP 是 10.0.3.7。
+  4 user：(字串) 這個 IP 要封鎖嗎？
+  5 assistant：redacted_thinking｜加密內容，看不到
+  6 user：(字串) 剛才查到的來源 IP 是多少？只回 IP 本身。
+
+👉 第 2 步完成
+
+===== 第 3 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch11.sh 3
+exit code：0　耗時：0.5 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 11 章｜自適應思考與重放　第 3 / 8 步
+  規則一：同模型繼續對話，思考區塊原封不動
+╚══════════════════════════════════════════════════════╝
+
+💡 Fable 5 接 Fable 5 時，輔助函式要回傳跟輸入逐位元組相同的歷史，連空的 thinking 和 redacted_thinking 都要留著；同時驗證回傳的是深拷貝，改回傳值不會改到原物件。不呼叫模型。
+
+▶ 要執行的指令：
+  │ import copy, json
+  │ from pathlib import Path
+  │ WORK = Path("../ch11/interactive").resolve()
+  │ HIST = WORK / "history.json"
+  │ THINKING_TYPES = ("thinking", "redacted_thinking")
+  │ PLACEHOLDER = "（此輪原本只有思考區塊，跨模型時已移除）"
+  │ 
+  │ def dumps(obj):
+  │     return json.dumps(obj, ensure_ascii=False)
+  │ 
+  │ def prepare_history(messages, source_model, target_model):
+  │     out = copy.deepcopy(messages)             # 回傳深拷貝，絕不改傳入的原物件
+  │     if source_model == target_model:
+  │         return out                             # 同模型：一個區塊都不動，連空的 thinking 也留著
+  │     for m in out:
+  │         if m.get("role") != "assistant" or not isinstance(m.get("content"), list):
+  │             continue
+  │         kept = [b for b in m["content"]
+  │                 if not (isinstance(b, dict) and b.get("type") in THINKING_TYPES)]
+  │         if not kept:
+  │             # 整則只剩思考區塊：留一個說明用的 text，因為 API 不收 content 為空的 assistant 訊息
+  │             kept = [{"type": "text", "text": PLACEHOLDER}]
+  │         m["content"] = kept
+  │     return out
+  │ 
+  │ def count_thinking(messages):
+  │     return sum(1 for m in messages if isinstance(m["content"], list)
+  │                for b in m["content"] if b.get("type") in THINKING_TYPES)
+  │ 
+  │ def block_types(messages):
+  │     rows = []
+  │     for i, m in enumerate(messages):
+  │         c = m["content"]
+  │         kinds = [b["type"] for b in c] if isinstance(c, list) else ["(字串)"]
+  │         rows.append("  " + str(i) + " " + m["role"] + "：" + "、".join(kinds))
+  │     return rows
+  │ 
+  │ def load_history():
+  │     if not HIST.exists():
+  │         raise SystemExit("找不到 " + str(HIST) + "，請先跑第 2 步")
+  │     return json.loads(HIST.read_text(encoding="utf-8"))
+  │ 
+  │ history = load_history()
+  │ same = prepare_history(history, "claude-fable-5", "claude-fable-5")
+  │ print("同模型（claude-fable-5 → claude-fable-5）")
+  │ print("  json.dumps 逐位元組相同：" + str(dumps(same) == dumps(history)))
+  │ print("  回傳的是同一個物件嗎（應為 False＝深拷貝）：" + str(same is history))
+  │ empties = [b for m in same if isinstance(m["content"], list) for b in m["content"]
+  │            if b.get("type") == "thinking" and b.get("thinking") == ""]
+  │ print("  空 thinking 還在：" + str(len(empties)) + " 個，簽章 " + empties[0]["signature"])
+  │ redacted = [b for m in same if isinstance(m["content"], list) for b in m["content"]
+  │             if b.get("type") == "redacted_thinking"]
+  │ print("  redacted_thinking 還在：" + str(len(redacted)) + " 個")
+  │ print("  思考區塊總數：" + str(count_thinking(same)) + "（原本 " + str(count_thinking(history)) + "）")
+  │ same[1]["content"][0]["thinking"] = "被竄改了"
+  │ print("  改了回傳值第 1 則的 thinking 之後，原物件仍是：" + history[1]["content"][0]["thinking"])
+  │ assert dumps(prepare_history(history, "claude-fable-5", "claude-fable-5")) == dumps(history)
+  │ print("✅ 同模型規則成立")
+▶ 執行結果：
+同模型（claude-fable-5 → claude-fable-5）
+  json.dumps 逐位元組相同：True
+  回傳的是同一個物件嗎（應為 False＝深拷貝）：False
+  空 thinking 還在：1 個，簽章 sig-002
+  redacted_thinking 還在：1 個
+  思考區塊總數：3（原本 3）
+  改了回傳值第 1 則的 thinking 之後，原物件仍是：要先呼叫 lookup_alert 查告警明細。
+✅ 同模型規則成立
+
+👉 第 3 步完成
+
+===== 第 4 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch11.sh 4
+exit code：0　耗時：0.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 11 章｜自適應思考與重放　第 4 / 8 步
+  規則二：轉給備援模型，思考區塊全部剝掉
+╚══════════════════════════════════════════════════════╝
+
+💡 Fable 5 轉 Opus 4.8 備援時方向相反：thinking／redacted_thinking 全部拿掉。忘了剝不會報錯，只是每次都替對方看不懂的思考付輸入費。同時確認 tool_use／tool_result 配對沒壞，只剩思考區塊的那一則換成說明文字。不呼叫模型。
+
+▶ 要執行的指令：
+  │ import copy, json
+  │ from pathlib import Path
+  │ WORK = Path("../ch11/interactive").resolve()
+  │ HIST = WORK / "history.json"
+  │ THINKING_TYPES = ("thinking", "redacted_thinking")
+  │ PLACEHOLDER = "（此輪原本只有思考區塊，跨模型時已移除）"
+  │ 
+  │ def dumps(obj):
+  │     return json.dumps(obj, ensure_ascii=False)
+  │ 
+  │ def prepare_history(messages, source_model, target_model):
+  │     out = copy.deepcopy(messages)             # 回傳深拷貝，絕不改傳入的原物件
+  │     if source_model == target_model:
+  │         return out                             # 同模型：一個區塊都不動，連空的 thinking 也留著
+  │     for m in out:
+  │         if m.get("role") != "assistant" or not isinstance(m.get("content"), list):
+  │             continue
+  │         kept = [b for b in m["content"]
+  │                 if not (isinstance(b, dict) and b.get("type") in THINKING_TYPES)]
+  │         if not kept:
+  │             # 整則只剩思考區塊：留一個說明用的 text，因為 API 不收 content 為空的 assistant 訊息
+  │             kept = [{"type": "text", "text": PLACEHOLDER}]
+  │         m["content"] = kept
+  │     return out
+  │ 
+  │ def count_thinking(messages):
+  │     return sum(1 for m in messages if isinstance(m["content"], list)
+  │                for b in m["content"] if b.get("type") in THINKING_TYPES)
+  │ 
+  │ def block_types(messages):
+  │     rows = []
+  │     for i, m in enumerate(messages):
+  │         c = m["content"]
+  │         kinds = [b["type"] for b in c] if isinstance(c, list) else ["(字串)"]
+  │         rows.append("  " + str(i) + " " + m["role"] + "：" + "、".join(kinds))
+  │     return rows
+  │ 
+  │ def load_history():
+  │     if not HIST.exists():
+  │         raise SystemExit("找不到 " + str(HIST) + "，請先跑第 2 步")
+  │     return json.loads(HIST.read_text(encoding="utf-8"))
+  │ 
+  │ history = load_history()
+  │ after = prepare_history(history, "claude-fable-5", "claude-opus-4-8")
+  │ print("處理前（原歷史）")
+  │ print("\n".join(block_types(history)))
+  │ print("處理後（claude-fable-5 → claude-opus-4-8）")
+  │ print("\n".join(block_types(after)))
+  │ print()
+  │ print("思考區塊：處理前 " + str(count_thinking(history)) + " 個 → 處理後 " + str(count_thinking(after)) + " 個")
+  │ print("JSON 字元數：處理前 " + str(len(dumps(history))) + " → 處理後 " + str(len(dumps(after)))
+  │       + "（差的那一截，跨模型時就是白付的輸入）")
+  │ uses = [b["id"] for m in after if isinstance(m["content"], list) for b in m["content"] if b["type"] == "tool_use"]
+  │ results = [b["tool_use_id"] for m in after if isinstance(m["content"], list) for b in m["content"] if b["type"] == "tool_result"]
+  │ print("tool_use id：" + str(uses) + "｜tool_result 對應：" + str(results) + "｜配對完整：" + str(uses == results))
+  │ print("第 5 則 assistant 剝完後：" + after[5]["content"][0]["text"])
+  │ print("原物件的思考區塊數仍是：" + str(count_thinking(history)))
+  │ assert count_thinking(after) == 0 and uses == results and count_thinking(history) == 3
+  │ print("✅ 跨模型規則成立")
+▶ 執行結果：
+處理前（原歷史）
+  0 user：(字串)
+  1 assistant：thinking、tool_use
+  2 user：tool_result
+  3 assistant：thinking、text
+  4 user：(字串)
+  5 assistant：redacted_thinking
+  6 user：(字串)
+處理後（claude-fable-5 → claude-opus-4-8）
+  0 user：(字串)
+  1 assistant：tool_use
+  2 user：tool_result
+  3 assistant：text
+  4 user：(字串)
+  5 assistant：text
+  6 user：(字串)
+
+思考區塊：處理前 3 個 → 處理後 0 個
+JSON 字元數：處理前 764 → 處理後 602（差的那一截，跨模型時就是白付的輸入）
+tool_use id：['toolu_01']｜tool_result 對應：['toolu_01']｜配對完整：True
+第 5 則 assistant 剝完後：（此輪原本只有思考區塊，跨模型時已移除）
+原物件的思考區塊數仍是：3
+✅ 跨模型規則成立
+
+👉 第 4 步完成
+
+===== 第 5 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch11.sh 5
+exit code：0　耗時：0.5 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 11 章｜自適應思考與重放　第 5 / 8 步
+  反例：日誌清洗順手刪掉空的思考區塊
+╚══════════════════════════════════════════════════════╝
+
+💡 很多日誌管線會好心濾掉內容為空的區塊，但同模型重放時思考區塊只要被動過，下一輪就會 400。再拿 linter 檢查清洗後的請求：它只管跨模型帶思考，抓不到這個錯，同模型這一側要靠位元組比對。不呼叫模型。
+
+▶ 要執行的指令：
+  │ import copy, json
+  │ from pathlib import Path
+  │ WORK = Path("../ch11/interactive").resolve()
+  │ HIST = WORK / "history.json"
+  │ THINKING_TYPES = ("thinking", "redacted_thinking")
+  │ PLACEHOLDER = "（此輪原本只有思考區塊，跨模型時已移除）"
+  │ 
+  │ def dumps(obj):
+  │     return json.dumps(obj, ensure_ascii=False)
+  │ 
+  │ def prepare_history(messages, source_model, target_model):
+  │     out = copy.deepcopy(messages)             # 回傳深拷貝，絕不改傳入的原物件
+  │     if source_model == target_model:
+  │         return out                             # 同模型：一個區塊都不動，連空的 thinking 也留著
+  │     for m in out:
+  │         if m.get("role") != "assistant" or not isinstance(m.get("content"), list):
+  │             continue
+  │         kept = [b for b in m["content"]
+  │                 if not (isinstance(b, dict) and b.get("type") in THINKING_TYPES)]
+  │         if not kept:
+  │             # 整則只剩思考區塊：留一個說明用的 text，因為 API 不收 content 為空的 assistant 訊息
+  │             kept = [{"type": "text", "text": PLACEHOLDER}]
+  │         m["content"] = kept
+  │     return out
+  │ 
+  │ def count_thinking(messages):
+  │     return sum(1 for m in messages if isinstance(m["content"], list)
+  │                for b in m["content"] if b.get("type") in THINKING_TYPES)
+  │ 
+  │ def block_types(messages):
+  │     rows = []
+  │     for i, m in enumerate(messages):
+  │         c = m["content"]
+  │         kinds = [b["type"] for b in c] if isinstance(c, list) else ["(字串)"]
+  │         rows.append("  " + str(i) + " " + m["role"] + "：" + "、".join(kinds))
+  │     return rows
+  │ 
+  │ def load_history():
+  │     if not HIST.exists():
+  │         raise SystemExit("找不到 " + str(HIST) + "，請先跑第 2 步")
+  │     return json.loads(HIST.read_text(encoding="utf-8"))
+  │ 
+  │ from migration.migration_linter import lint
+  │ history = load_history()
+  │ 
+  │ def naive_clean(messages):
+  │     """錯誤示範：日誌管線常見的「好心清洗」——把空的 thinking 濾掉"""
+  │     out = copy.deepcopy(messages)
+  │     for m in out:
+  │         if isinstance(m["content"], list):
+  │             m["content"] = [b for b in m["content"]
+  │                             if not (b.get("type") == "thinking" and not b.get("thinking", "").strip())]
+  │     return out
+  │ 
+  │ same = prepare_history(history, "claude-fable-5", "claude-fable-5")
+  │ cleaned = naive_clean(same)
+  │ print("同模型重放（claude-fable-5 → claude-fable-5）")
+  │ print("  正確版與原歷史逐位元組相同：" + str(dumps(same) == dumps(history)))
+  │ print("  清洗版與原歷史逐位元組相同：" + str(dumps(cleaned) == dumps(history)))
+  │ print("  第 3 則 assistant：原本 " + "、".join(b["type"] for b in history[3]["content"])
+  │       + " → 清洗後 " + "、".join(b["type"] for b in cleaned[3]["content"]))
+  │ print("  → 思考區塊被改動，下一次呼叫 Fable 5 會 400 驗證失敗")
+  │ print()
+  │ req = {"model": "claude-fable-5", "output_config": {"effort": "medium"},
+  │        "fallbacks": [{"model": "claude-opus-4-8"}], "messages": cleaned}
+  │ print("把清洗版包成 Fable 5 請求交給 linter：")
+  │ for field, sev, msg in lint(req):
+  │     print("  " + sev + "  " + field + "｜" + msg[:60])
+  │ print("  → linter 只警告「帶著思考區塊」（跨模型的事），沒發現空 thinking 被刪掉")
+  │ print("  → 同模型這一側的驗證者是 json.dumps 位元組比對，不是 linter")
+▶ 執行結果：
+同模型重放（claude-fable-5 → claude-fable-5）
+  正確版與原歷史逐位元組相同：True
+  清洗版與原歷史逐位元組相同：False
+  第 3 則 assistant：原本 thinking、text → 清洗後 text
+  → 思考區塊被改動，下一次呼叫 Fable 5 會 400 驗證失敗
+
+把清洗版包成 Fable 5 請求交給 linter：
+  warn  messages｜Assistant turn carries a thinking block. On a cross-model sw
+  warn  messages｜Assistant turn carries a thinking block. On a cross-model sw
+  → linter 只警告「帶著思考區塊」（跨模型的事），沒發現空 thinking 被刪掉
+  → 同模型這一側的驗證者是 json.dumps 位元組比對，不是 linter
+
+👉 第 5 步完成
+
+===== 第 6 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch11.sh 6
+exit code：0　耗時：0.6 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 11 章｜自適應思考與重放　第 6 / 8 步
+  交叉驗證：處理後的 messages 警告消失
+╚══════════════════════════════════════════════════════╝
+
+💡 把跨模型處理前、處理後的歷史各包成以 Opus 4.8 為目標的請求，交給 lint() 跑：處理後 messages 警告應該消失、整個請求是 clean。最後看 fallback_credit 的註解，那是唯一不能剝的例外。每次重跑覆寫 request-before.json、request-after.json，不呼叫模型。
+
+▶ 要執行的指令：
+  │ import copy, json
+  │ from pathlib import Path
+  │ WORK = Path("../ch11/interactive").resolve()
+  │ HIST = WORK / "history.json"
+  │ THINKING_TYPES = ("thinking", "redacted_thinking")
+  │ PLACEHOLDER = "（此輪原本只有思考區塊，跨模型時已移除）"
+  │ 
+  │ def dumps(obj):
+  │     return json.dumps(obj, ensure_ascii=False)
+  │ 
+  │ def prepare_history(messages, source_model, target_model):
+  │     out = copy.deepcopy(messages)             # 回傳深拷貝，絕不改傳入的原物件
+  │     if source_model == target_model:
+  │         return out                             # 同模型：一個區塊都不動，連空的 thinking 也留著
+  │     for m in out:
+  │         if m.get("role") != "assistant" or not isinstance(m.get("content"), list):
+  │             continue
+  │         kept = [b for b in m["content"]
+  │                 if not (isinstance(b, dict) and b.get("type") in THINKING_TYPES)]
+  │         if not kept:
+  │             # 整則只剩思考區塊：留一個說明用的 text，因為 API 不收 content 為空的 assistant 訊息
+  │             kept = [{"type": "text", "text": PLACEHOLDER}]
+  │         m["content"] = kept
+  │     return out
+  │ 
+  │ def count_thinking(messages):
+  │     return sum(1 for m in messages if isinstance(m["content"], list)
+  │                for b in m["content"] if b.get("type") in THINKING_TYPES)
+  │ 
+  │ def block_types(messages):
+  │     rows = []
+  │     for i, m in enumerate(messages):
+  │         c = m["content"]
+  │         kinds = [b["type"] for b in c] if isinstance(c, list) else ["(字串)"]
+  │         rows.append("  " + str(i) + " " + m["role"] + "：" + "、".join(kinds))
+  │     return rows
+  │ 
+  │ def load_history():
+  │     if not HIST.exists():
+  │         raise SystemExit("找不到 " + str(HIST) + "，請先跑第 2 步")
+  │     return json.loads(HIST.read_text(encoding="utf-8"))
+  │ 
+  │ import subprocess, sys
+  │ from migration.migration_linter import lint
+  │ history = load_history()
+  │ after = prepare_history(history, "claude-fable-5", "claude-opus-4-8")
+  │ 
+  │ def body(msgs):
+  │     return {"model": "claude-opus-4-8", "output_config": {"effort": "medium"}, "messages": msgs}
+  │ 
+  │ for name, msgs, fname in [("處理前", history, "request-before.json"), ("處理後", after, "request-after.json")]:
+  │     req = body(msgs)
+  │     (WORK / fname).write_text(json.dumps(req, ensure_ascii=False, indent=2), encoding="utf-8")
+  │     findings = lint(req)
+  │     has_msg = any(f == "messages" for f, _, _ in findings)
+  │     print(name + "：" + str(len(findings)) + " 個發現｜messages 警告：" + ("有" if has_msg else "無 ✅"))
+  │     for f, sev, msg in findings:
+  │         print("    " + sev + "  " + f + "｜" + msg[:60])
+  │ print()
+  │ print("──── 用 linter 命令列跑處理後的檔案 ────")
+  │ r = subprocess.run([sys.executable, "migration/migration_linter.py", str(WORK / "request-after.json")],
+  │                    capture_output=True, text=True, encoding="utf-8")
+  │ print("  " + r.stdout.strip())
+  │ print()
+  │ print("──── 唯一的例外：fallback_credit/credit_retry.py 第 36～37 行 ────")
+  │ for line in Path("fallback_credit/credit_retry.py").read_text(encoding="utf-8").splitlines()[35:37]:
+  │     print("  " + line)
+▶ 執行結果：
+處理前：3 個發現｜messages 警告：有
+    warn  messages｜Assistant turn carries a thinking block. On a cross-model sw
+    warn  messages｜Assistant turn carries a thinking block. On a cross-model sw
+    warn  messages｜Assistant turn carries a thinking block. On a cross-model sw
+處理後：0 個發現｜messages 警告：無 ✅
+
+──── 用 linter 命令列跑處理後的檔案 ────
+  clean: this request is already Fable-5 valid
+
+──── 唯一的例外：fallback_credit/credit_retry.py 第 36～37 行 ────
+      # Redemption requires an EXACT body match, so change only the model and
+      # attach the credit. Do not strip or reorder anything else.
+
+👉 第 6 步完成
+
+===== 第 7 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch11.sh 7
+exit code：0　耗時：4.5 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 11 章｜自適應思考與重放　第 7 / 8 步
+  剝完思考的歷史，接手的模型還接得下去嗎（呼叫模型 1 次）
+╚══════════════════════════════════════════════════════╝
+
+💡 會呼叫模型 1 次（走 claude -p，用 haiku 代替 Opus 備援，通常幾秒到一分多鐘）。確認剝掉思考區塊不會丟掉真正的資訊：工具查到的 IP 還在 tool_result 裡。照實說明轉接層限制：攤平對話時本來就不送 thinking，所以本機重現不了同模型 400，那一條只能靠第 3、5 步的位元組比對。log 寫到 ch11/interactive/calls.jsonl。
+
+▶ 要執行的指令：
+  │ import copy, json
+  │ from pathlib import Path
+  │ WORK = Path("../ch11/interactive").resolve()
+  │ HIST = WORK / "history.json"
+  │ THINKING_TYPES = ("thinking", "redacted_thinking")
+  │ PLACEHOLDER = "（此輪原本只有思考區塊，跨模型時已移除）"
+  │ 
+  │ def dumps(obj):
+  │     return json.dumps(obj, ensure_ascii=False)
+  │ 
+  │ def prepare_history(messages, source_model, target_model):
+  │     out = copy.deepcopy(messages)             # 回傳深拷貝，絕不改傳入的原物件
+  │     if source_model == target_model:
+  │         return out                             # 同模型：一個區塊都不動，連空的 thinking 也留著
+  │     for m in out:
+  │         if m.get("role") != "assistant" or not isinstance(m.get("content"), list):
+  │             continue
+  │         kept = [b for b in m["content"]
+  │                 if not (isinstance(b, dict) and b.get("type") in THINKING_TYPES)]
+  │         if not kept:
+  │             # 整則只剩思考區塊：留一個說明用的 text，因為 API 不收 content 為空的 assistant 訊息
+  │             kept = [{"type": "text", "text": PLACEHOLDER}]
+  │         m["content"] = kept
+  │     return out
+  │ 
+  │ def count_thinking(messages):
+  │     return sum(1 for m in messages if isinstance(m["content"], list)
+  │                for b in m["content"] if b.get("type") in THINKING_TYPES)
+  │ 
+  │ def block_types(messages):
+  │     rows = []
+  │     for i, m in enumerate(messages):
+  │         c = m["content"]
+  │         kinds = [b["type"] for b in c] if isinstance(c, list) else ["(字串)"]
+  │         rows.append("  " + str(i) + " " + m["role"] + "：" + "、".join(kinds))
+  │     return rows
+  │ 
+  │ def load_history():
+  │     if not HIST.exists():
+  │         raise SystemExit("找不到 " + str(HIST) + "，請先跑第 2 步")
+  │     return json.loads(HIST.read_text(encoding="utf-8"))
+  │ 
+  │ import os
+  │ import anthropic
+  │ log = WORK / "calls.jsonl"
+  │ if log.exists():
+  │     log.unlink()                                   # 舊 log 會讓呼叫次數算錯
+  │ os.environ["K143_CLI_LOG"] = str(log)
+  │ os.environ["K143_CLI_MODEL"] = "haiku"             # 演練用 haiku 代替 Opus 備援，比較快
+  │ history = load_history()
+  │ after = prepare_history(history, "claude-fable-5", "claude-opus-4-8")
+  │ flat = claude_cli_client._flatten_messages(history)
+  │ print("轉接層限制：攤平原歷史後還看得到 sig-001 嗎：" + str("sig-001" in flat) + "（False＝CLI 不重放思考區塊）")
+  │ print("送出：跨模型處理後的 " + str(len(after)) + " 則訊息，思考區塊 " + str(count_thinking(after)) + " 個")
+  │ try:
+  │     m = anthropic.Anthropic().messages.create(
+  │         model="claude-opus-4-8", max_tokens=100,
+  │         system="你是 SOC 助理，用繁體中文簡短回答。",
+  │         messages=after, output_config={"effort": "low"})
+  │     text = m.content[0].text if m.content else "(空內容)"
+  │     print("stop_reason：" + str(m.stop_reason) + "｜output_tokens：" + str(m.usage.output_tokens))
+  │     print("回答：" + text.strip()[:200])
+  │     print("答案含 10.0.3.7：" + ("是 ✅" if "10.0.3.7" in text else "否"))
+  │ except anthropic.APIError as exc:
+  │     print("❌ 呼叫模型失敗：" + str(exc))
+  │ print("呼叫次數：" + str(claude_cli_client.calls_made()))
+▶ 執行結果：
+轉接層限制：攤平原歷史後還看得到 sig-001 嗎：False（False＝CLI 不重放思考區塊）
+送出：跨模型處理後的 7 則訊息，思考區塊 0 個
+stop_reason：end_turn｜output_tokens：9
+回答：10.0.3.7
+答案含 10.0.3.7：是 ✅
+呼叫次數：1
+
+👉 第 7 步完成
+
+===== 第 8 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch11.sh 8
+exit code：0　耗時：0.3 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 11 章｜自適應思考與重放　第 8 / 8 步
+  總結：兩條方向相反的重放規則
+╚══════════════════════════════════════════════════════╝
+
+💡 同模型一個都不能動、跨模型一個都不能留；同模型那一側靠位元組比對驗證，跨模型那一側靠第 7 章 linter 驗證。不呼叫模型，也不寫任何檔。
+
+▶ 要執行的指令：
+  │ cat <<EOF
+  │   第 11 章總結
+  │     Fable 5 思考永遠開著，深度由模型自己決定、用 effort 調，不再送 thinking 參數
+  │     同模型繼續對話：思考區塊原封不動，連空的 thinking、redacted_thinking 都不能刪、不能改
+  │     跨模型（含 Opus 備援）：思考區塊整個剝掉，否則不報錯但白付輸入 token；剝空的訊息要補說明文字
+  │     「好心清洗」刪空區塊是同模型 400 的頭號來源；linter 抓不到，要靠 json.dumps 位元組比對
+  │     第 7 章 linter 驗證跨模型那一側：處理後 messages 警告消失；唯一例外是 fallback credit 要求本體完全相同
+  │     輔助函式一律回傳深拷貝，tool_use／tool_result 配對要完整保留
+  │ EOF
+▶ 執行結果：
+  第 11 章總結
+    Fable 5 思考永遠開著，深度由模型自己決定、用 effort 調，不再送 thinking 參數
+    同模型繼續對話：思考區塊原封不動，連空的 thinking、redacted_thinking 都不能刪、不能改
+    跨模型（含 Opus 備援）：思考區塊整個剝掉，否則不報錯但白付輸入 token；剝空的訊息要補說明文字
+    「好心清洗」刪空區塊是同模型 400 的頭號來源；linter 抓不到，要靠 json.dumps 位元組比對
+    第 7 章 linter 驗證跨模型那一側：處理後 messages 警告消失；唯一例外是 fallback credit 要求本體完全相同
+    輔助函式一律回傳深拷貝，tool_use／tool_result 配對要完整保留
+
+👉 第 8 步完成

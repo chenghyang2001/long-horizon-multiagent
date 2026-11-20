@@ -1,0 +1,549 @@
+# ch12 執行紀錄　2026-11-20 14:10:52　bash=C:\Program Files\Git\usr\bin\bash.EXE
+
+===== bash -n 語法檢查 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' -n ch12.sh
+exit code：0　耗時：0.0 秒
+----- 輸出 -----
+
+
+===== 第 1 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch12.sh 1
+exit code：0　耗時：0.5 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 12 章｜提示快取經濟學　第 1 / 8 步
+  書附裡的定價與快取線索（本章沒有獨立資料夾）
+╚══════════════════════════════════════════════════════╝
+
+💡 本章在書附 repo 沒有專屬資料夾。先找計算器要用的單價（monitor 單價表、README），再看兩個伏筆：重送會從零寫快取、書附 monitor 算錢完全沒算快取欄位。
+
+▶ 要執行的指令：
+  │ echo "──── fable5/ 底下的資料夾（沒有 cache 專章資料夾）────"
+  │ ls -d */
+  │ echo
+  │ echo "──── README：Fable 5 定價 ────"
+  │ grep -n -i "pricing" README.md
+  │ echo
+  │ echo "──── monitor.py 的單價表（每百萬 token：輸入, 輸出）────"
+  │ sed -n 13,18p fable_scanner/monitor.py
+  │ echo
+  │ echo "──── monitor.py 怎麼算錢（只看 input_tokens / output_tokens）────"
+  │ sed -n 51,57p fable_scanner/monitor.py
+  │ echo
+  │ echo "──── credit_retry.py：重送會從零寫快取，比讀快取貴 ────"
+  │ sed -n 1,8p fallback_credit/credit_retry.py
+  │ echo
+  │ echo "──── 轉接層會把 claude -p 的快取欄位帶回來 ────"
+  │ grep -n "cache_" ../claude_cli_client.py
+▶ 執行結果：
+──── fable5/ 底下的資料夾（沒有 cache 專章資料夾）────
+agentic_soc/
+deep_research/
+effort/
+fable_scanner/
+fallback_credit/
+job_packet/
+memory/
+migration/
+mythos_scope/
+projects/
+refusal/
+skills/
+templates/
+
+──── README：Fable 5 定價 ────
+121:   always-on adaptive thinking behavior, and $10/$50 pricing. Mythos is
+
+──── monitor.py 的單價表（每百萬 token：輸入, 輸出）────
+PRICE_PER_M = {
+    "claude-fable-5": (10, 50),
+    "claude-opus-4-8": (5, 25),
+    "claude-sonnet-5": (3, 15),
+    "claude-haiku-4-5": (1, 5),
+}
+
+──── monitor.py 怎麼算錢（只看 input_tokens / output_tokens）────
+        for it in resp.get("usage", {}).get("iterations", []):
+            price = PRICE_PER_M.get(it.get("model"))
+            if not price:
+                continue
+            in_price, out_price = price
+            cost = it.get("input_tokens", 0) * in_price / 1e6 + it.get("output_tokens", 0) * out_price / 1e6
+            stats["cost_by_model"][it["model"]] = stats["cost_by_model"].get(it["model"], 0) + cost
+
+──── credit_retry.py：重送會從零寫快取，比讀快取貴 ────
+"""Part 9: redeem a fallback credit so a retry doesn't pay twice.
+
+When you build the retry yourself (Ruby, PHP, raw HTTP, or any custom loop),
+a manual re-send on the fallback model writes that model's prompt cache from
+scratch, which costs more than a cache read. The fallback-credit beta returns
+a one-time token that, echoed back on the retry, reprices the retry as if the
+conversation had been on the fallback model all along.
+
+
+──── 轉接層會把 claude -p 的快取欄位帶回來 ────
+224:        cache_creation_input_tokens=usage_raw.get("cache_creation_input_tokens", 0),
+225:        cache_read_input_tokens=usage_raw.get("cache_read_input_tokens", 0),
+
+👉 第 1 步完成
+
+===== 第 2 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch12.sh 2
+exit code：0　耗時：0.5 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 12 章｜提示快取經濟學　第 2 / 8 步
+  用計算器驗證書中的回本次數
+╚══════════════════════════════════════════════════════╝
+
+💡 把「寫入 1.25／2 倍、讀取 0.1 倍」寫成 cost()，以一份前綴原價當 1，列出複用 0～3 次的總成本。書中說 5 分鐘快取複用 1 次回本、1 小時要 2 次，看 break_even 是否一致。
+
+▶ 要執行的指令：
+  │ print("乘數：寫入 5m=" + str(WRITE_MULT["5m"]) + "、1h=" + str(WRITE_MULT["1h"]) + "（書中）；讀取=" + str(READ_MULT) + "（假設，需查官方定價頁確認）")
+  │ print("以一份前綴的原價當 1，比較總輸入成本：")
+  │ print()
+  │ for ttl in ["5m", "1h"]:
+  │     print("  ──── " + ttl + " 快取 ────")
+  │     print("  複用次數  呼叫數  不快取  用快取  划算嗎")
+  │     for k in range(4):
+  │         plain, cached = cost(k + 1, 1000000, ttl, 1)
+  │         ok = "是" if cached < plain else "否"
+  │         print(f"  {k:>6}  {k + 1:>6}  {plain:>6.2f}  {cached:>6.2f}  {ok}")
+  │     print()
+  │ book = {"5m": 1, "1h": 2}
+  │ for ttl in ["5m", "1h"]:
+  │     got = break_even(ttl)
+  │     verdict = "和書中一致" if got == book[ttl] else "和書中不一致（書：" + str(book[ttl]) + "）"
+  │     print(f"  break_even({ttl}) = 複用 {got} 次就回本 → {verdict}")
+  │ print()
+  │ print("推算式：用快取＝寫入乘數＋複用次數×0.1；不快取＝(複用次數+1)×1")
+▶ 執行結果：
+乘數：寫入 5m=1.25、1h=2.0（書中）；讀取=0.1（假設，需查官方定價頁確認）
+以一份前綴的原價當 1，比較總輸入成本：
+
+  ──── 5m 快取 ────
+  複用次數  呼叫數  不快取  用快取  划算嗎
+       0       1    1.00    1.25  否
+       1       2    2.00    1.35  是
+       2       3    3.00    1.45  是
+       3       4    4.00    1.55  是
+
+  ──── 1h 快取 ────
+  複用次數  呼叫數  不快取  用快取  划算嗎
+       0       1    1.00    2.00  否
+       1       2    2.00    2.10  否
+       2       3    3.00    2.20  是
+       3       4    4.00    2.30  是
+
+  break_even(5m) = 複用 1 次就回本 → 和書中一致
+  break_even(1h) = 複用 2 次就回本 → 和書中一致
+
+推算式：用快取＝寫入乘數＋複用次數×0.1；不快取＝(複用次數+1)×1
+
+👉 第 2 步完成
+
+===== 第 3 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch12.sh 3
+exit code：0　耗時：0.5 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 12 章｜提示快取經濟學　第 3 / 8 步
+  算一份真實帳：無快取、5m、1h、1h＋批次
+╚══════════════════════════════════════════════════════╝
+
+💡 Fable 輸入 10 USD／百萬 token、8 萬 token 共用前綴、每天 200 次呼叫，假設每個存活期內都有呼叫（一天只寫 1 次）。算四種做法的每日成本與降幅，結果存到 ch12/interactive/daily-cost.txt。
+
+▶ 要執行的指令：
+  │ N, PREFIX = 200, 80000
+  │ print(f"Fable 輸入單價 {FABLE_IN} USD／百萬 token；前綴 {PREFIX} token；每天 {N} 次；假設每個存活期內都有呼叫（一天只寫 1 次）")
+  │ print()
+  │ rows = [
+  │     ("無快取", None, False),
+  │     ("5 分鐘快取", "5m", False),
+  │     ("1 小時快取", "1h", False),
+  │     ("1 小時快取＋批次 5 折", "1h", True),
+  │ ]
+  │ plain0 = cost(N, PREFIX, None, FABLE_IN)[0]
+  │ lines = []
+  │ for name, ttl, batch in rows:
+  │     _, c = cost(N, PREFIX, ttl, FABLE_IN, writes=1, batch=batch)
+  │     drop = (plain0 - c) / plain0 * 100
+  │     line = f"  {name:<14} 每日 {c:>7.2f} USD   降幅 {drop:>5.1f}%"
+  │     print(line)
+  │     lines.append(line)
+  │ (WORK / "daily-cost.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+  │ print()
+  │ print("已存到 " + str(WORK / "daily-cost.txt"))
+▶ 執行結果：
+Fable 輸入單價 10 USD／百萬 token；前綴 80000 token；每天 200 次；假設每個存活期內都有呼叫（一天只寫 1 次）
+
+  無快取            每日  160.00 USD   降幅   0.0%
+  5 分鐘快取         每日   16.92 USD   降幅  89.4%
+  1 小時快取         每日   17.52 USD   降幅  89.0%
+  1 小時快取＋批次 5 折  每日    8.76 USD   降幅  94.5%
+
+已存到 C:\Users\user\workspace\kindle-143-fable5-agentic-ai-factory\practice\ch12\interactive\daily-cost.txt
+
+👉 第 3 步完成
+
+===== 第 4 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch12.sh 4
+exit code：0　耗時：0.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 12 章｜提示快取經濟學　第 4 / 8 步
+  找缺口：存活期要配呼叫節奏，快取不保證省錢
+╚══════════════════════════════════════════════════════╝
+
+💡 第 3 步假設每個存活期內都有呼叫。改成固定間隔 3、7.2（200 次平均攤在 24 小時）、30、90 分鐘：間隔超過存活期就過期、每次重寫。看 5 分鐘快取何時比不快取還貴。
+
+▶ 要執行的指令：
+  │ N, PREFIX = 200, 80000
+  │ plain0 = cost(N, PREFIX, None, FABLE_IN)[0]
+  │ print("假設：每次命中會刷新存活期；間隔超過存活期就過期、下次重寫（需查官方文件確認）")
+  │ print(f"無快取基準：{plain0:.2f} USD")
+  │ print()
+  │ print("  間隔(分)   5m 快取 USD   1h 快取 USD")
+  │ for gap in [3, 7.2, 30, 90]:
+  │     cells = []
+  │     for ttl in ["5m", "1h"]:
+  │         writes = 1 if gap <= TTL_MIN[ttl] else N
+  │         _, c = cost(N, PREFIX, ttl, FABLE_IN, writes=writes)
+  │         mark = "（比不快取貴）" if c > plain0 else ""
+  │         cells.append(f"{c:>8.2f}{mark}")
+  │     print(f"  {gap:>7}   {cells[0]:<16}  {cells[1]}")
+  │ print()
+  │ print("結論：200 次平均攤在一天（7.2 分鐘一次）時，5 分鐘快取每次都過期重寫，比不快取還貴；要改用 1 小時。")
+▶ 執行結果：
+假設：每次命中會刷新存活期；間隔超過存活期就過期、下次重寫（需查官方文件確認）
+無快取基準：160.00 USD
+
+  間隔(分)   5m 快取 USD   1h 快取 USD
+        3      16.92             17.52
+      7.2     200.00（比不快取貴）      17.52
+       30     200.00（比不快取貴）      17.52
+       90     200.00（比不快取貴）     320.00（比不快取貴）
+
+結論：200 次平均攤在一天（7.2 分鐘一次）時，5 分鐘快取每次都過期重寫，比不快取還貴；要改用 1 小時。
+
+👉 第 4 步完成
+
+===== 第 5 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch12.sh 5
+exit code：0　耗時：0.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 12 章｜提示快取經濟學　第 5 / 8 步
+  排序檢查器：短存活期排前面會連累誰
+╚══════════════════════════════════════════════════════╝
+
+💡 快取是位元組前綴比對，前面一塊變了，後面全部失效。check_order 檢查四種排法：正確、session 倒置在最前、中間夾一塊不快取的時間戳、空清單；最後用 4 個 assert 鎖住，結果存到 ch12/interactive/order-check.txt。
+
+▶ 要執行的指令：
+  │ cases = {
+  │     "正確排序": [
+  │         {"name": "system", "ttl": "1h"}, {"name": "tools", "ttl": "1h"},
+  │         {"name": "examples", "ttl": "1h"}, {"name": "session", "ttl": "5m"},
+  │         {"name": "question", "ttl": None}],
+  │     "倒置：session 在最前": [
+  │         {"name": "session", "ttl": "5m"}, {"name": "system", "ttl": "1h"},
+  │         {"name": "tools", "ttl": "1h"}, {"name": "question", "ttl": None}],
+  │     "中間夾時間戳": [
+  │         {"name": "system", "ttl": "1h"}, {"name": "timestamp", "ttl": None},
+  │         {"name": "tools", "ttl": "1h"}, {"name": "session", "ttl": "5m"}],
+  │     "空清單": [],
+  │ }
+  │ out = []
+  │ for name, blocks in cases.items():
+  │     order = " → ".join(b["name"] + "(" + str(b["ttl"]) + ")" for b in blocks) or "（空）"
+  │     probs = check_order(blocks)
+  │     out.append("【" + name + "】" + order)
+  │     if not probs:
+  │         out.append("  ✅ 排序正確")
+  │     for p in probs:
+  │         out.append("  ❌ " + p["block"] + "(" + str(p["ttl"]) + ") 排在 " + "、".join(p["排在它後面的較長區塊"]) + " 前面；它一變，" + "、".join(p["會失效"]) + " 的快取全部失效")
+  │ print("\n".join(out))
+  │ assert break_even("5m") == 1 and break_even("1h") == 2
+  │ assert check_order(cases["正確排序"]) == []
+  │ assert [p["block"] for p in check_order(cases["倒置：session 在最前"])] == ["session"]
+  │ assert check_order([]) == []
+  │ print()
+  │ print("4 個 assert 全部通過")
+  │ (WORK / "order-check.txt").write_text("\n".join(out) + "\n", encoding="utf-8")
+  │ print("已存到 " + str(WORK / "order-check.txt"))
+▶ 執行結果：
+【正確排序】system(1h) → tools(1h) → examples(1h) → session(5m) → question(None)
+  ✅ 排序正確
+【倒置：session 在最前】session(5m) → system(1h) → tools(1h) → question(None)
+  ❌ session(5m) 排在 system、tools 前面；它一變，system、tools 的快取全部失效
+【中間夾時間戳】system(1h) → timestamp(None) → tools(1h) → session(5m)
+  ❌ timestamp(None) 排在 tools、session 前面；它一變，tools、session 的快取全部失效
+【空清單】（空）
+  ✅ 排序正確
+
+4 個 assert 全部通過
+已存到 C:\Users\user\workspace\kindle-143-fable5-agentic-ai-factory\practice\ch12\interactive\order-check.txt
+
+👉 第 5 步完成
+
+===== 第 6 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch12.sh 6
+exit code：0　耗時：10.0 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 12 章｜提示快取經濟學　第 6 / 8 步
+  同一份長系統提示詞連打兩次：第 2 次讀快取（呼叫模型 2 次）
+╚══════════════════════════════════════════════════════╝
+
+💡 會呼叫模型 2 次（claude-haiku-4-5、effort low），約需 20～60 秒。約 1 萬 2 千 token 的穩定前綴打兩次：第 1 次寫入快取、第 2 次幾乎全部讀快取。再用書附 monitor.analyze 算同一份 log，看它完全沒算快取帳。log 寫到 ch12/interactive/calls-same.jsonl。
+
+▶ 要執行的指令：
+  │ import json
+  │ from pathlib import Path
+  │ from fable_scanner.monitor import PRICE_PER_M
+  │ WORK = Path("../ch12/interactive").resolve()
+  │ WORK.mkdir(parents=True, exist_ok=True)
+  │ 
+  │ # 出處：書中第 12 章（5 分鐘寫入 1.25 倍、1 小時寫入 2 倍）
+  │ WRITE_MULT = {"5m": 1.25, "1h": 2.0}
+  │ TTL_MIN = {"5m": 5, "1h": 60}
+  │ # 假設，需查官方定價頁確認
+  │ READ_MULT = 0.1
+  │ BATCH_DISCOUNT = 0.5
+  │ # 出處：fable5/fable_scanner/monitor.py PRICE_PER_M，與 README「10/50 pricing」一致
+  │ FABLE_IN = PRICE_PER_M["claude-fable-5"][0]
+  │ 
+  │ def cost(n_calls, prefix_tokens, ttl, price_per_m, writes=1, batch=False):
+  │     """回傳（不用快取, 用快取）兩種總輸入成本；writes＝這段期間寫入快取幾次。"""
+  │     base = prefix_tokens / 1e6 * price_per_m
+  │     plain = n_calls * base
+  │     if ttl is None:
+  │         cached = plain
+  │     else:
+  │         w = min(writes, n_calls)
+  │         cached = w * base * WRITE_MULT[ttl] + (n_calls - w) * base * READ_MULT
+  │     if batch:
+  │         cached = cached * BATCH_DISCOUNT
+  │     return plain, cached
+  │ 
+  │ def break_even(ttl):
+  │     """最少要複用幾次（呼叫數－1）才比不用快取便宜。"""
+  │     k = 0
+  │     while True:
+  │         plain, cached = cost(k + 1, 1000000, ttl, 1)
+  │         if cached < plain:
+  │             return k
+  │         k += 1
+  │ 
+  │ RANK = {"1h": 2, "5m": 1, None: 0}
+  │ 
+  │ def check_order(blocks):
+  │     """短存活期（或不快取）排在較長存活期之前就回報：哪塊排錯、它一變會讓後面哪些快取失效。"""
+  │     problems = []
+  │     for i, b in enumerate(blocks):
+  │         longer_after = [x["name"] for x in blocks[i + 1:] if RANK[x["ttl"]] > RANK[b["ttl"]]]
+  │         if longer_after:
+  │             hit = [x["name"] for x in blocks[i + 1:] if x["ttl"] is not None]
+  │             problems.append({"block": b["name"], "ttl": b["ttl"], "排在它後面的較長區塊": longer_after, "會失效": hit})
+  │     return problems
+  │ 
+  │ import os
+  │ from datetime import datetime
+  │ import anthropic
+  │ from fable_scanner.monitor import analyze
+  │ 
+  │ # 約 1 萬 2 千 token 的穩定前綴（超過 Haiku 最小可快取長度），內容固定不變
+  │ STABLE = "你是 K143 演練的 SOC 助理，以下是全機隊共用、很少改的規則清單。\n" + "\n".join(
+  │     "Rule " + str(i) + ": keep the answer short, cite the log line, never run commands." for i in range(1, 801))
+  │ 
+  │ def ask(tag, system, user, log):
+  │     os.environ["K143_CLI_LOG"] = str(log)
+  │     m = anthropic.Anthropic().messages.create(
+  │         model="claude-haiku-4-5", system=system, output_config={"effort": "low"},
+  │         messages=[{"role": "user", "content": user}])
+  │     u = m.usage
+  │     text = m.content[0].text.strip()[:10] if m.content else "（拒答）"
+  │     print(f"  {tag:<16} 寫入快取={u.cache_creation_input_tokens:>6}  讀取快取={u.cache_read_input_tokens:>6}  未快取輸入={u.input_tokens:>5}  回覆={text}")
+  │     return u
+  │ 
+  │ log = WORK / "calls-same.jsonl"
+  │ if log.exists():
+  │     log.unlink()                          # 舊 log 會讓統計算錯
+  │ print("穩定前綴約 " + str(len(STABLE)) + " 個字元，兩次完全相同；約需 20～60 秒")
+  │ print()
+  │ try:
+  │     u1 = ask("第 1 次", STABLE, "只回一個字：好", log)
+  │     u2 = ask("第 2 次（相同）", STABLE, "只回一個字：好", log)
+  │ except anthropic.APIError as exc:
+  │     print("  ❌ 呼叫模型失敗：" + str(exc))
+  │ else:
+  │     total = u2.cache_creation_input_tokens + u2.cache_read_input_tokens + u2.input_tokens
+  │     plain = total / 1e6 * FABLE_IN
+  │     priced = (u2.cache_creation_input_tokens * 1.25 + u2.cache_read_input_tokens * READ_MULT + u2.input_tokens) / 1e6 * FABLE_IN
+  │     print()
+  │     print(f"  第 2 次若照 Fable 單價計：不快取 {plain:.4f} USD；照書中乘數（5m 寫入、0.1 讀取）{priced:.4f} USD")
+  │     stats = analyze(log.read_text(encoding="utf-8").splitlines())
+  │     print("  書附 monitor 對同一份 log 算出的成本：" + json.dumps(stats["cost_by_model"], ensure_ascii=False))
+  │     print("  → monitor 只用 input_tokens×單價，快取寫入／讀取的 token 完全沒進帳")
+  │ print("呼叫次數：" + str(len(log.read_text(encoding="utf-8").splitlines()) if log.exists() else 0))
+▶ 執行結果：
+穩定前綴約 57529 個字元，兩次完全相同；約需 20～60 秒
+
+  第 1 次            寫入快取= 15768  讀取快取=     0  未快取輸入=   10  回覆=好
+  第 2 次（相同）        寫入快取=     0  讀取快取= 15768  未快取輸入=   10  回覆=好
+
+  第 2 次若照 Fable 單價計：不快取 0.1578 USD；照書中乘數（5m 寫入、0.1 讀取）0.0159 USD
+  書附 monitor 對同一份 log 算出的成本：{"claude-haiku-4-5": 0.0016749999999999998}
+  → monitor 只用 input_tokens×單價，快取寫入／讀取的 token 完全沒進帳
+呼叫次數：2
+
+👉 第 6 步完成
+
+===== 第 7 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch12.sh 7
+exit code：0　耗時：16.5 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 12 章｜提示快取經濟學　第 7 / 8 步
+  時間戳放在前綴最前面，快取整段穿透（呼叫模型 4 次）
+╚══════════════════════════════════════════════════════╝
+
+💡 會呼叫模型 4 次（claude-haiku-4-5、effort low），約需 1～2 分鐘。A 組把每次都變的時間戳放在後面的 user 訊息；B 組把時間戳放在系統提示詞最前面。各打兩次，看 B 組第 2 次幾乎讀不到快取、又重寫一大筆。log 寫到 ch12/interactive/calls-order.jsonl。
+
+▶ 要執行的指令：
+  │ import json
+  │ from pathlib import Path
+  │ from fable_scanner.monitor import PRICE_PER_M
+  │ WORK = Path("../ch12/interactive").resolve()
+  │ WORK.mkdir(parents=True, exist_ok=True)
+  │ 
+  │ # 出處：書中第 12 章（5 分鐘寫入 1.25 倍、1 小時寫入 2 倍）
+  │ WRITE_MULT = {"5m": 1.25, "1h": 2.0}
+  │ TTL_MIN = {"5m": 5, "1h": 60}
+  │ # 假設，需查官方定價頁確認
+  │ READ_MULT = 0.1
+  │ BATCH_DISCOUNT = 0.5
+  │ # 出處：fable5/fable_scanner/monitor.py PRICE_PER_M，與 README「10/50 pricing」一致
+  │ FABLE_IN = PRICE_PER_M["claude-fable-5"][0]
+  │ 
+  │ def cost(n_calls, prefix_tokens, ttl, price_per_m, writes=1, batch=False):
+  │     """回傳（不用快取, 用快取）兩種總輸入成本；writes＝這段期間寫入快取幾次。"""
+  │     base = prefix_tokens / 1e6 * price_per_m
+  │     plain = n_calls * base
+  │     if ttl is None:
+  │         cached = plain
+  │     else:
+  │         w = min(writes, n_calls)
+  │         cached = w * base * WRITE_MULT[ttl] + (n_calls - w) * base * READ_MULT
+  │     if batch:
+  │         cached = cached * BATCH_DISCOUNT
+  │     return plain, cached
+  │ 
+  │ def break_even(ttl):
+  │     """最少要複用幾次（呼叫數－1）才比不用快取便宜。"""
+  │     k = 0
+  │     while True:
+  │         plain, cached = cost(k + 1, 1000000, ttl, 1)
+  │         if cached < plain:
+  │             return k
+  │         k += 1
+  │ 
+  │ RANK = {"1h": 2, "5m": 1, None: 0}
+  │ 
+  │ def check_order(blocks):
+  │     """短存活期（或不快取）排在較長存活期之前就回報：哪塊排錯、它一變會讓後面哪些快取失效。"""
+  │     problems = []
+  │     for i, b in enumerate(blocks):
+  │         longer_after = [x["name"] for x in blocks[i + 1:] if RANK[x["ttl"]] > RANK[b["ttl"]]]
+  │         if longer_after:
+  │             hit = [x["name"] for x in blocks[i + 1:] if x["ttl"] is not None]
+  │             problems.append({"block": b["name"], "ttl": b["ttl"], "排在它後面的較長區塊": longer_after, "會失效": hit})
+  │     return problems
+  │ 
+  │ import os
+  │ from datetime import datetime
+  │ import anthropic
+  │ from fable_scanner.monitor import analyze
+  │ 
+  │ # 約 1 萬 2 千 token 的穩定前綴（超過 Haiku 最小可快取長度），內容固定不變
+  │ STABLE = "你是 K143 演練的 SOC 助理，以下是全機隊共用、很少改的規則清單。\n" + "\n".join(
+  │     "Rule " + str(i) + ": keep the answer short, cite the log line, never run commands." for i in range(1, 801))
+  │ 
+  │ def ask(tag, system, user, log):
+  │     os.environ["K143_CLI_LOG"] = str(log)
+  │     m = anthropic.Anthropic().messages.create(
+  │         model="claude-haiku-4-5", system=system, output_config={"effort": "low"},
+  │         messages=[{"role": "user", "content": user}])
+  │     u = m.usage
+  │     text = m.content[0].text.strip()[:10] if m.content else "（拒答）"
+  │     print(f"  {tag:<16} 寫入快取={u.cache_creation_input_tokens:>6}  讀取快取={u.cache_read_input_tokens:>6}  未快取輸入={u.input_tokens:>5}  回覆={text}")
+  │     return u
+  │ 
+  │ log = WORK / "calls-order.jsonl"
+  │ if log.exists():
+  │     log.unlink()
+  │ def stamp():
+  │     return datetime.now().isoformat()     # 精確到微秒，每次都不同
+  │ print("A 組：系統提示詞＝穩定前綴，時間戳放在後面的 user 訊息")
+  │ print("B 組：系統提示詞＝時間戳＋穩定前綴（易變內容排最前面）")
+  │ print("共 4 次呼叫，約需 1～2 分鐘")
+  │ print()
+  │ try:
+  │     a1 = ask("A-1 時間在後", STABLE, "現在時間：" + stamp() + "。只回一個字：好", log)
+  │     a2 = ask("A-2 時間在後", STABLE, "現在時間：" + stamp() + "。只回一個字：好", log)
+  │     b1 = ask("B-1 時間在前", "現在時間：" + stamp() + "\n" + STABLE, "只回一個字：好", log)
+  │     b2 = ask("B-2 時間在前", "現在時間：" + stamp() + "\n" + STABLE, "只回一個字：好", log)
+  │ except anthropic.APIError as exc:
+  │     print("  ❌ 呼叫模型失敗：" + str(exc))
+  │ else:
+  │     print()
+  │     print(f"  A-2 讀到快取 {a2.cache_read_input_tokens} token；B-2 讀到快取 {b2.cache_read_input_tokens} token、又寫入 {b2.cache_creation_input_tokens} token")
+  │     print("  → 前面變一個字，後面整段快取失效；所以 session 內容要排在穩定前綴之後")
+  │ print("呼叫次數：" + str(len(log.read_text(encoding="utf-8").splitlines()) if log.exists() else 0))
+▶ 執行結果：
+A 組：系統提示詞＝穩定前綴，時間戳放在後面的 user 訊息
+B 組：系統提示詞＝時間戳＋穩定前綴（易變內容排最前面）
+共 4 次呼叫，約需 1～2 分鐘
+
+  A-1 時間在後         寫入快取=   537  讀取快取= 15252  未快取輸入=   10  回覆=好
+  A-2 時間在後         寫入快取=   537  讀取快取= 15252  未快取輸入=   10  回覆=好
+  B-1 時間在前         寫入快取= 15789  讀取快取=     0  未快取輸入=   10  回覆=好
+  B-2 時間在前         寫入快取= 15789  讀取快取=     0  未快取輸入=   10  回覆=好
+
+  A-2 讀到快取 15252 token；B-2 讀到快取 0 token、又寫入 15789 token
+  → 前面變一個字，後面整段快取失效；所以 session 內容要排在穩定前綴之後
+呼叫次數：4
+
+👉 第 7 步完成
+
+===== 第 8 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch12.sh 8
+exit code：0　耗時：0.3 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 12 章｜提示快取經濟學　第 8 / 8 步
+  總結：順序就是成本
+╚══════════════════════════════════════════════════════╝
+
+💡 提示快取省不省錢，看的是兩件事：區塊的排列順序，以及存活期有沒有配上呼叫節奏。
+
+▶ 要執行的指令：
+  │ cat <<EOF
+  │   第 12 章總結
+  │     提示快取是位元組前綴比對：前面變一個字，後面整段快取失效（第 7 步 B 組）
+  │     5 分鐘快取寫入 1.25 倍、複用 1 次回本；1 小時寫入 2 倍、複用 2 次回本（第 2 步驗過）
+  │     快取不保證省錢：呼叫間隔超過存活期就每次重寫，5 分鐘快取反而比不快取貴（第 4 步）
+  │     排序守則：存活期長、最穩定的放最前（系統提示詞、工具、範例放 1 小時），session 內容放 5 分鐘排後面，每次都變的不快取、放最後
+  │     快取再疊批次折扣，每天 160 USD 可以壓到 8.76 USD 左右；讀取 0.1 倍與批次 5 折是假設，要查官方定價頁
+  │     成本儀表板要把快取寫入／讀取 token 算進去，書附 monitor 只看 input_tokens 會看不到這筆帳（第 6 步）
+  │ EOF
+▶ 執行結果：
+  第 12 章總結
+    提示快取是位元組前綴比對：前面變一個字，後面整段快取失效（第 7 步 B 組）
+    5 分鐘快取寫入 1.25 倍、複用 1 次回本；1 小時寫入 2 倍、複用 2 次回本（第 2 步驗過）
+    快取不保證省錢：呼叫間隔超過存活期就每次重寫，5 分鐘快取反而比不快取貴（第 4 步）
+    排序守則：存活期長、最穩定的放最前（系統提示詞、工具、範例放 1 小時），session 內容放 5 分鐘排後面，每次都變的不快取、放最後
+    快取再疊批次折扣，每天 160 USD 可以壓到 8.76 USD 左右；讀取 0.1 倍與批次 5 折是假設，要查官方定價頁
+    成本儀表板要把快取寫入／讀取 token 算進去，書附 monitor 只看 input_tokens 會看不到這筆帳（第 6 步）
+
+👉 第 8 步完成

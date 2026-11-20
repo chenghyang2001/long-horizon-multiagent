@@ -1,0 +1,557 @@
+# ch06 執行紀錄　2026-11-20 13:14:37　bash=C:\Program Files\Git\usr\bin\bash.EXE
+
+===== bash -n 語法檢查 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' -n ch06.sh
+exit code：0　耗時：0.0 秒
+----- 輸出 -----
+
+
+===== 第 1 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch06.sh 1
+exit code：0　耗時：0.5 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 6 章｜代理技能庫　第 1 / 8 步
+  認識技能庫：11 個技能、任務型與常駐型
+╚══════════════════════════════════════════════════════╝
+
+💡 對話裡的叮嚀會隨上下文淡掉，作者把規則封裝成 SKILL.md。先看 README 總表：只有 3 個任務型會自動觸發，其餘常駐型要明確呼叫或貼進系統提示詞／CLAUDE.md。
+
+▶ 要執行的指令：
+  │ cat -n skills/README.md
+  │ echo
+  │ echo "──── skills/ 底下的技能資料夾 ────"
+  │ ls -d skills/*/ | sed "s#skills/##; s#/##"
+  │ echo "資料夾數量：$(ls -d skills/*/ | wc -l)"
+▶ 執行結果：
+     1	# fable5-skills
+     2	
+     3	11 Agent Skills written for how Claude Fable 5 and Mythos-class deployments
+     4	actually behave, independently designed for this series after auditing (not
+     5	reusing) a third-party collection. See Part 6 of the Substack series for the
+     6	audit and the design notes.
+     7	
+     8	| # | Skill | What it fixes |
+     9	|---|-------|---------------|
+    10	| 1 | [`effort-router`](effort-router/SKILL.md) | Picking and re-evaluating `output_config.effort` per workload instead of carrying over an old model's defaults. |
+    11	| 2 | [`scope-fence`](scope-fence/SKILL.md) | Unrequested actions -- applying a fix when only asked to diagnose, restarting a service, backup branches nobody asked for. |
+    12	| 3 | [`no-gold-plating`](no-gold-plating/SKILL.md) | Diffs bigger than the ask: speculative abstractions, defensive checks for impossible states. |
+    13	| 4 | [`evidence-bound-progress`](evidence-bound-progress/SKILL.md) | Status reports on long runs bound to an actual tool result, never a fabricated "tests passing". |
+    14	| 5 | [`act-on-sufficiency`](act-on-sufficiency/SKILL.md) | Over-planning and re-deriving settled facts at high effort. |
+    15	| 6 | [`verifier-subagent`](verifier-subagent/SKILL.md) | Fresh-context verifier subagents instead of self-critique; the maker never grades its own work. |
+    16	| 7 | [`autonomy-contract`](autonomy-contract/SKILL.md) | Unattended runs that stall on a stated intent or a mid-run permission question. |
+    17	| 8 | [`lesson-memory`](lesson-memory/SKILL.md) | File-based cross-session memory, with the anti-poisoning gate a shared lesson file needs. |
+    18	| 9 | [`reader-first-summary`](reader-first-summary/SKILL.md) | Final reports readable by someone who saw none of the work -- no arrow chains, no invented shorthand. |
+    19	| 10 | [`refusal-aware-calling`](refusal-aware-calling/SKILL.md) | `claude-fable-5` calls that degrade gracefully on a classifier refusal instead of dead-ending. |
+    20	| 11 | [`mythos-scope-gate`](mythos-scope-gate/SKILL.md) | Approved Mythos-style cyber work must carry authorization, bounded targets, private artifacts, independent validation, and a patch owner. |
+    21	
+    22	## Install
+    23	
+    24	**Claude Code, as a plugin:**
+    25	
+    26	```
+    27	/plugin marketplace add kenhuangus/fable5
+    28	/plugin install fable5-skills@fable5
+    29	```
+    30	
+    31	**Manual, per skill:**
+    32	
+    33	```bash
+    34	git clone https://github.com/kenhuangus/fable5
+    35	cp -r fable5/skills/scope-fence ~/.claude/skills/
+    36	```
+    37	
+    38	## How they activate
+    39	
+    40	`effort-router`, `verifier-subagent`, and `lesson-memory` are task-shaped and
+    41	trigger automatically when a matching request appears. The rest are standing
+    42	behavioral rules -- a model mid-over-planning won't reliably invoke
+    43	`act-on-sufficiency` on its own. For those, either invoke explicitly in an
+    44	interactive session, or copy the skill body into your system prompt /
+    45	`CLAUDE.md` for unattended pipelines (`autonomy-contract` is written for
+    46	exactly that case).
+
+──── skills/ 底下的技能資料夾 ────
+act-on-sufficiency
+autonomy-contract
+effort-router
+evidence-bound-progress
+lesson-memory
+mythos-scope-gate
+no-gold-plating
+reader-first-summary
+refusal-aware-calling
+scope-fence
+verifier-subagent
+資料夾數量：11
+
+👉 第 1 步完成
+
+===== 第 2 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch06.sh 2
+exit code：0　耗時：0.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 6 章｜代理技能庫　第 2 / 8 步
+  畫出技能地圖：自動觸發 vs 貼進 CLAUDE.md
+╚══════════════════════════════════════════════════════╝
+
+💡 用程式真的讀 11 份 SKILL.md 的 frontmatter，分出任務型／常駐型、建議放哪裡、對應前面章節哪個範例；再核對 README、plugin.json、marketplace.json 寫的技能數和實際資料夾數是否一致。地圖寫到 ch06/interactive/skill-map.md。
+
+▶ 要執行的指令：
+  │ import json, re
+  │ from pathlib import Path
+  │ work = Path("../ch06/interactive").resolve()
+  │ work.mkdir(parents=True, exist_ok=True)
+  │ TASK = {"effort-router", "verifier-subagent", "lesson-memory"}   # README 第 40 行點名的任務型
+  │ RELATED = {
+  │     "effort-router": "effort/effort_router.py",
+  │     "refusal-aware-calling": "refusal/refusal_stack.py",
+  │     "lesson-memory": "memory/memory_tool_handler.py",
+  │     "verifier-subagent": "agentic_soc/triage_loop.py",
+  │     "mythos-scope-gate": "mythos_scope/scope_gate.py",
+  │     "scope-fence": "projects/04_refactor_legacy/sample_target.py",
+  │ }
+  │ def front(text):
+  │     meta = {}
+  │     for line in text.split("---")[1].splitlines():
+  │         if ":" in line:
+  │             k, v = line.split(":", 1)
+  │             meta[k.strip()] = v.strip()
+  │     return meta
+  │ dirs = sorted(p for p in Path("skills").iterdir() if p.is_dir())
+  │ rows = []
+  │ print("#  技能                     類型    建議放置               對應範例")
+  │ for i, d in enumerate(dirs, 1):
+  │     meta = front((d / "SKILL.md").read_text(encoding="utf-8"))
+  │     name = meta.get("name", "?")
+  │     kind = "任務型" if name in TASK else "常駐型"
+  │     place = "自動觸發" if name in TASK else "明確呼叫／貼進 CLAUDE.md"
+  │     rel = RELATED.get(name, "—")
+  │     ok = "" if rel == "—" else (" ✅" if Path(rel).exists() else " ❌")
+  │     desc = meta.get("description", "")[:90]
+  │     print(f"{i:<2} {name:<24} {kind:<6} {place:<20} {rel}{ok}")
+  │     rows.append(f"| {i} | {name} | {kind} | {place} | {rel} | {desc}… |")
+  │ readme = Path("skills/README.md").read_text(encoding="utf-8")
+  │ n_readme = int(re.search(r"(\d+) Agent Skills", readme).group(1))
+  │ n_table = len(re.findall(r"^\| \d+ \|", readme, re.MULTILINE))
+  │ n_plugin = int(json.loads(Path(".claude-plugin/plugin.json").read_text(encoding="utf-8"))["description"].split()[0])
+  │ mk = json.loads(Path(".claude-plugin/marketplace.json").read_text(encoding="utf-8"))
+  │ n_market = int(mk["plugins"][0]["description"].split()[0])
+  │ print()
+  │ print(f"數量核對：資料夾 {len(dirs)}｜README 開頭 {n_readme}｜README 表格 {n_table} 列｜plugin.json {n_plugin}｜marketplace.json {n_market}")
+  │ same = len({len(dirs), n_readme, n_table, n_plugin, n_market}) == 1
+  │ print("結論：" + ("全部一致 ✅" if same else "有出入 ⚠️"))
+  │ out = work / "skill-map.md"
+  │ out.write_text("# 第 6 章技能地圖\n\n| # | 技能 | 類型 | 建議放置 | 對應範例 | description 前 90 字 |\n|---|---|---|---|---|---|\n" + "\n".join(rows) + "\n", encoding="utf-8")
+  │ print("已寫入 " + str(out))
+▶ 執行結果：
+#  技能                     類型    建議放置               對應範例
+1  act-on-sufficiency       常駐型    明確呼叫／貼進 CLAUDE.md    —
+2  autonomy-contract        常駐型    明確呼叫／貼進 CLAUDE.md    —
+3  effort-router            任務型    自動觸發                 effort/effort_router.py ✅
+4  evidence-bound-progress  常駐型    明確呼叫／貼進 CLAUDE.md    —
+5  lesson-memory            任務型    自動觸發                 memory/memory_tool_handler.py ✅
+6  mythos-scope-gate        常駐型    明確呼叫／貼進 CLAUDE.md    mythos_scope/scope_gate.py ✅
+7  no-gold-plating          常駐型    明確呼叫／貼進 CLAUDE.md    —
+8  reader-first-summary     常駐型    明確呼叫／貼進 CLAUDE.md    —
+9  refusal-aware-calling    常駐型    明確呼叫／貼進 CLAUDE.md    refusal/refusal_stack.py ✅
+10 scope-fence              常駐型    明確呼叫／貼進 CLAUDE.md    projects/04_refactor_legacy/sample_target.py ✅
+11 verifier-subagent        任務型    自動觸發                 agentic_soc/triage_loop.py ✅
+
+數量核對：資料夾 11｜README 開頭 11｜README 表格 11 列｜plugin.json 11｜marketplace.json 11
+結論：全部一致 ✅
+已寫入 C:\Users\user\workspace\kindle-143-fable5-agentic-ai-factory\practice\ch06\interactive\skill-map.md
+
+👉 第 2 步完成
+
+===== 第 3 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch06.sh 3
+exit code：0　耗時：15.1 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 6 章｜代理技能庫　第 3 / 8 步
+  技能也要被檢查：掃描 skills/ 與 .claude-plugin/
+╚══════════════════════════════════════════════════════╝
+
+💡 技能就是提示詞，所以也能用 fable_scanner 靜態掃描，不呼叫模型。看作者的 11 個技能有沒有踩到他自己寫的規則；結束碼 1 表示至少有一個 error。
+
+▶ 要執行的指令：
+  │ python -m fable_scanner scan skills > ../ch06/interactive/scan-skills.txt
+  │ echo "skills/ 掃描結束碼：$?（1 表示有 error）"
+  │ grep -v "^ *https" ../ch06/interactive/scan-skills.txt
+  │ echo
+  │ echo "──── 外掛設定檔 .claude-plugin/ ────"
+  │ python -m fable_scanner scan .claude-plugin | grep -v "^ *https"
+▶ 執行結果：
+skills/ 掃描結束碼：1（1 表示有 error）
+
+skills\act-on-sufficiency\SKILL.md
+     1  info   MG-02  Long-running agent prompts without a progress-audit line let Fable 5 fabricate status updates.
+
+skills\effort-router\SKILL.md
+     1  info   MG-02  Long-running agent prompts without a progress-audit line let Fable 5 fabricate status updates.
+
+skills\evidence-bound-progress\SKILL.md
+     1  info   MG-02  Long-running agent prompts without a progress-audit line let Fable 5 fabricate status updates.
+    14  warn   OM-01  12+ enumerated behavior items suggests a skill written for a weaker model. Fable 5 follows a brief intent statement better than a long list.
+
+skills\reader-first-summary\SKILL.md
+     1  info   MG-02  Long-running agent prompts without a progress-audit line let Fable 5 fabricate status updates.
+
+skills\refusal-aware-calling\SKILL.md
+    18  error  RX-01  Asking Fable 5 to echo its internal reasoning as response text is a documented `reasoning_extraction` refusal trigger. Use adaptive thinking instead of narrating it in the output.
+    18  error  RX-02  "Think step by step" / "think out loud" asks the model to externalize thinking as output, another reasoning_extraction trigger.
+
+skills\verifier-subagent\SKILL.md
+     1  info   MG-02  Long-running agent prompts without a progress-audit line let Fable 5 fabricate status updates.
+
+summary: 6 file(s) with findings, 8 total (2 error-severity)
+
+──── 外掛設定檔 .claude-plugin/ ────
+
+.claude-plugin\plugin.json
+    11  warn   MG-01  A claude-fable-5 call with no `fallbacks` dead-ends on refusal: HTTP 200, stop_reason=refusal, empty content, and nothing recovers it.
+
+summary: 1 file(s) with findings, 1 total (0 error-severity)
+
+👉 第 3 步完成
+
+===== 第 4 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch06.sh 4
+exit code：0　耗時：15.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 6 章｜代理技能庫　第 4 / 8 步
+  正規表達式不懂上下文：改寫副本消掉誤報
+╚══════════════════════════════════════════════════════╝
+
+💡 refusal-aware-calling 第 18 行其實是在說「不要」這樣寫，但掃描器只比對字串，引述反例也照抓。複製一份到 ch06/interactive/ 改寫成不引用觸發詞的說法再掃，原檔一個字都不動。
+
+▶ 要執行的指令：
+  │ echo "──── 原檔第 18 行 ────"
+  │ sed -n 18p skills/refusal-aware-calling/SKILL.md
+  │ echo
+  │ mkdir -p ../ch06/interactive/refusal-aware-calling
+  │ sed "s/.think step by step. or .explain your reasoning. framing/prompts that ask it to narrate its chain of thought/" skills/refusal-aware-calling/SKILL.md > ../ch06/interactive/refusal-aware-calling/SKILL.md
+  │ echo "──── 原檔與副本差異 ────"
+  │ diff --strip-trailing-cr skills/refusal-aware-calling/SKILL.md ../ch06/interactive/refusal-aware-calling/SKILL.md
+  │ echo
+  │ echo "──── 原檔掃描 ────"
+  │ python -m fable_scanner scan skills/refusal-aware-calling/SKILL.md | grep -v "^ *https"
+  │ echo
+  │ echo "──── 改寫後副本掃描 ────"
+  │ python -m fable_scanner scan ../ch06/interactive/refusal-aware-calling/SKILL.md | grep -v "^ *https"
+▶ 執行結果：
+──── 原檔第 18 行 ────
+- Never ask the model to reproduce its reasoning as output text. Use adaptive thinking (`output_config.effort`) instead of "think step by step" or "explain your reasoning" framing -- both are documented `reasoning_extraction` triggers.
+
+──── 原檔與副本差異 ────
+18c18
+< - Never ask the model to reproduce its reasoning as output text. Use adaptive thinking (`output_config.effort`) instead of "think step by step" or "explain your reasoning" framing -- both are documented `reasoning_extraction` triggers.
+---
+> - Never ask the model to reproduce its reasoning as output text. Use adaptive thinking (`output_config.effort`) instead of prompts that ask it to narrate its chain of thought -- both are documented `reasoning_extraction` triggers.
+
+──── 原檔掃描 ────
+
+skills\refusal-aware-calling\SKILL.md
+    18  error  RX-01  Asking Fable 5 to echo its internal reasoning as response text is a documented `reasoning_extraction` refusal trigger. Use adaptive thinking instead of narrating it in the output.
+    18  error  RX-02  "Think step by step" / "think out loud" asks the model to externalize thinking as output, another reasoning_extraction trigger.
+
+summary: 1 file(s) with findings, 2 total (2 error-severity)
+
+──── 改寫後副本掃描 ────
+
+summary: 0 file(s) with findings, 0 total (0 error-severity)
+
+👉 第 4 步完成
+
+===== 第 5 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch06.sh 5
+exit code：0　耗時：0.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 6 章｜代理技能庫　第 5 / 8 步
+  範圍圍欄的前置：先用工具輸出證明問題
+╚══════════════════════════════════════════════════════╝
+
+💡 自己造一份 10 行 log（3 行故意壞掉），證明 sample_target.parse_log 不報錯、直接丟行。不呼叫模型；結果存成 probe.txt，下一步會附給模型當證據。
+
+▶ 要執行的指令：
+  │ import sys
+  │ from pathlib import Path
+  │ sys.path.insert(0, "projects/04_refactor_legacy")
+  │ import sample_target as st
+  │ work = Path("../ch06/interactive").resolve()
+  │ work.mkdir(parents=True, exist_ok=True)
+  │ lines = [
+  │     "2026-11-20T10:00:01 web01 severity=3 user=alice login ok",
+  │     "2026-11-20T10:00:02 web01 severity=2 user=bob logout",
+  │     "2026-11-20T10:00:03 web02 severity=10 user=carol brute force burst",
+  │     "2026-11-20T10:00:04 web02 severity=4 user=dave sudo used",
+  │     "2026-11-20T10:00:05 db01 severity=5 disk almost full",
+  │     "2026-11-20T10:00:06 db01 severity=1 user=erin query slow",
+  │     "2026-11-20T10:00:07 web03 severity=high user=frank port scan",
+  │     "2026-11-20T10:00:08 web03 severity=2 user=gina password changed",
+  │     "2026-11-20T10:00:09 web01 severity=3 user=hank file uploaded",
+  │     "2026-11-20T10:00:10 db02 severity=6 user=ivy backup done",
+  │ ]
+  │ log = work / "sample.log"
+  │ log.write_text("\n".join(lines) + "\n", encoding="utf-8")   # 每次覆寫，重跑結果一樣
+  │ events = st.parse_log(str(log))
+  │ report = [f"輸入 {len(lines)} 行，parse_log 回傳 {len(events)} 筆，少算 {len(lines) - len(events)} 筆，沒有任何錯誤訊息", "被默默丟掉的行："]
+  │ for no, line in enumerate(lines, 1):
+  │     if st.parse_line(line) is None:
+  │         report.append(f"  第 {no} 行：{line}")
+  │ report.append("原因：PATTERN 的 severity 只吃 1 位數字，且 user= 欄位必填；不符就 return None")
+  │ text = "\n".join(report)
+  │ print(text)
+  │ (work / "probe.txt").write_text(text + "\n", encoding="utf-8")
+  │ print()
+  │ print("已寫入 " + str(work / "probe.txt"))
+▶ 執行結果：
+輸入 10 行，parse_log 回傳 7 筆，少算 3 筆，沒有任何錯誤訊息
+被默默丟掉的行：
+  第 3 行：2026-11-20T10:00:03 web02 severity=10 user=carol brute force burst
+  第 5 行：2026-11-20T10:00:05 db01 severity=5 disk almost full
+  第 7 行：2026-11-20T10:00:07 web03 severity=high user=frank port scan
+原因：PATTERN 的 severity 只吃 1 位數字，且 user= 欄位必填；不符就 return None
+
+已寫入 C:\Users\user\workspace\kindle-143-fable5-agentic-ai-factory\practice\ch06\interactive\probe.txt
+
+👉 第 5 步完成
+
+===== 第 6 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch06.sh 6
+exit code：0　耗時：36.1 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 6 章｜代理技能庫　第 6 / 8 步
+  同一個提問，掛技能 vs 不掛技能（呼叫模型 2 次）
+╚══════════════════════════════════════════════════════╝
+
+💡 會呼叫模型 2 次（A、B 各 1 次，effort medium），約需 1～3 分鐘。使用者只是「問問題」，交付物應是診斷與建議。A 版 system 只有一句角色，B 版加上 scope-fence 與 evidence-bound-progress 兩份技能本文，比較有沒有越界、結論有沒有指向 probe.txt。模型輸出每次會變，照實看。
+
+▶ 要執行的指令：
+  │ import claude_cli_client
+  │ from pathlib import Path
+  │ work = Path("../ch06/interactive").resolve()
+  │ probe = work / "probe.txt"
+  │ if not probe.exists():
+  │     print("找不到 " + str(probe) + "，先跑第 5 步")
+  │     raise SystemExit(0)
+  │ for old in work.glob("answer-*.md"):
+  │     old.unlink()                          # 清掉上次的回答，免得呼叫失敗時拿舊檔充數
+  │ def body(name):
+  │     return Path("skills/" + name + "/SKILL.md").read_text(encoding="utf-8").split("---", 2)[2].strip()
+  │ question = ("我們的 SIEM 解析器 parse_log 好像有時候少算幾行，怎麼回事？\n\n"
+  │             "<sample_target.py>\n" + Path("projects/04_refactor_legacy/sample_target.py").read_text(encoding="utf-8") + "</sample_target.py>\n\n"
+  │             "<probe.txt>\n" + probe.read_text(encoding="utf-8") + "</probe.txt>")
+  │ systems = {
+  │     "A": "你是資深工程師。請用繁體中文回答。",
+  │     "B": "你是資深工程師。請用繁體中文回答。\n\n" + body("scope-fence") + "\n\n" + body("evidence-bound-progress"),
+  │ }
+  │ client = claude_cli_client.Anthropic()
+  │ answers = {}
+  │ for tag, system in systems.items():
+  │     print("呼叫模型：" + tag + " 版（system " + str(len(system)) + " 字）…", flush=True)
+  │     try:
+  │         msg = client.messages.create(model="claude-fable-5", system=system,
+  │                                      output_config={"effort": "medium"},
+  │                                      messages=[{"role": "user", "content": question}])
+  │     except claude_cli_client.APIError as exc:
+  │         print("  ❌ 呼叫失敗：" + str(exc))
+  │         continue
+  │     text = msg.content[0].text if msg.content else "（stop_reason=" + str(msg.stop_reason) + "，沒有內容）"
+  │     answers[tag] = text
+  │     (work / ("answer-" + tag + ".md")).write_text(text, encoding="utf-8")
+  │ fence = chr(96) * 3
+  │ side = ["README", "備份", "backup", "工單", "ticket", "test_", "單元測試"]
+  │ evidence = ["probe", "第 3 行", "第 5 行", "第 7 行", "severity=10", "severity=high"]
+  │ def cell(tag, fn):
+  │     return str(fn(answers[tag])) if tag in answers else "—"
+  │ def row(label, fn):
+  │     print(f"{label:<26} " + "  ".join(f"{cell(t, fn):>6}" for t in "AB"))
+  │ print()
+  │ print("指標                         A 版    B 版")
+  │ row("回答字數", len)
+  │ row("程式碼區塊數", lambda s: s.count(fence) // 2)
+  │ row("含改好的 def parse_line", lambda s: "是" if "def parse_line" in s else "否")
+  │ row("額外產出關鍵字次數", lambda s: sum(s.count(k) for k in side))
+  │ row("指向證據次數", lambda s: sum(s.count(k) for k in evidence))
+  │ for t in answers:
+  │     print()
+  │     print("──── " + t + " 版前 12 行（全文在 answer-" + t + ".md）────")
+  │     print("\n".join(answers[t].splitlines()[:12]))
+  │ print()
+  │ print("本步呼叫次數：" + str(claude_cli_client.calls_made()))
+▶ 執行結果：
+呼叫模型：A 版（system 17 字）…
+呼叫模型：B 版（system 2952 字）…
+
+指標                         A 版    B 版
+回答字數                         2133     906
+程式碼區塊數                          2       1
+含改好的 def parse_line             是       否
+額外產出關鍵字次數                       0       1
+指向證據次數                          8       9
+
+──── A 版前 12 行（全文在 answer-A.md）────
+問題就出在 `PATTERN` 這條 regex 太嚴格，不符合的行被 `return None` 默默丟掉。從 probe 結果看有三個破洞：
+
+## 原因分析
+
+```python
+PATTERN = re.compile(r"^(\S+) (\S+) severity=(\d) user=(\S+) (.*)$")
+```
+
+1. **`severity=(\d)` 只吃 1 位數字** → 第 3 行 `severity=10` 直接不匹配。
+2. **`user=(\S+)` 是必填** → 第 5 行沒有 user 欄位（系統事件很常見）就被丟掉。
+3. **severity 非數字**（第 7 行 `severity=high`）不匹配，而且就算進到 `int(sev)` 也會炸——目前 regex 擋掉了，所以連例外都看不到。
+
+
+──── B 版前 12 行（全文在 answer-B.md）────
+這是個診斷問題，根據 `probe.txt` 和原始碼，原因很明確——**不是隨機掉行，而是 regex 太嚴格，不符合的行被 `parse_line` 默默丟掉（return None）**。
+
+## 根本原因
+
+```python
+PATTERN = re.compile(r"^(\S+) (\S+) severity=(\d) user=(\S+) (.*)$")
+```
+
+有兩個硬限制：
+
+1. **`severity=(\d)` 只匹配單一位數字**
+   - 第 3 行 `severity=10` → 兩位數，不匹配，被丟掉
+
+本步呼叫次數：2
+
+👉 第 6 步完成
+
+===== 第 7 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch06.sh 7
+exit code：0　耗時：0.5 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 6 章｜代理技能庫　第 7 / 8 步
+  Mythos 的邊界在外部閘門：基準＋3 份壞工作包
+╚══════════════════════════════════════════════════════╝
+
+💡 Fable 的分類器不是 Mythos 的安全邊界，要在跑之前用 scope_gate.py 檢查授權、範圍、私有證據、獨立驗證、修補負責人。不呼叫模型：先跑兩份範例與自帶測試當基準，再複製出 3 份壞工作包到 ch06/interactive/gate/，看哪些被擋、哪些只是警告。
+
+▶ 要執行的指令：
+  │ import copy, io, json, contextlib
+  │ from pathlib import Path
+  │ import mythos_scope.scope_gate as sg
+  │ import mythos_scope.test_scope_gate as tg
+  │ gate = Path("../ch06/interactive/gate").resolve()
+  │ gate.mkdir(parents=True, exist_ok=True)
+  │ def run(path):
+  │     buf = io.StringIO()
+  │     with contextlib.redirect_stdout(buf):
+  │         code = sg.main(str(path))
+  │     print("──── " + Path(path).name + "（結束碼 " + str(code) + "，" + ("擋下" if code else "放行") + "）")
+  │     print(buf.getvalue().rstrip())
+  │ print("== 基準：書附兩份範例 ==")
+  │ run("mythos_scope/sample_mythos_scope.json")
+  │ run("mythos_scope/sample_fable_scope.json")
+  │ for name in ("test_valid_mythos_scope_packet_is_clean", "test_mythos_requires_authorization_and_private_artifacts", "test_fable_packet_warns_without_refusal_path"):
+  │     getattr(tg, name)()
+  │     print("ok  " + name)
+  │ mythos = json.loads(Path("mythos_scope/sample_mythos_scope.json").read_text(encoding="utf-8"))
+  │ fable = json.loads(Path("mythos_scope/sample_fable_scope.json").read_text(encoding="utf-8"))
+  │ bad_forbidden = copy.deepcopy(mythos)
+  │ bad_forbidden["allowed_actions"] += ["public_poc", "exfiltration"]
+  │ bad_missing = copy.deepcopy(mythos)
+  │ for field in ("authorization_id", "glasswing_scope_id", "evidence_store", "human_patch_owner"):
+  │     bad_missing.pop(field)
+  │ fable_no_tel = copy.deepcopy(fable)
+  │ fable_no_tel.pop("refusal_logging")
+  │ fable_no_tel.pop("fallbacks")
+  │ print()
+  │ print("== 3 份壞工作包 ==")
+  │ for fname, packet in (("bad-forbidden.json", bad_forbidden), ("bad-missing.json", bad_missing), ("fable-no-telemetry.json", fable_no_tel)):
+  │     p = gate / fname
+  │     p.write_text(json.dumps(packet, ensure_ascii=False, indent=2), encoding="utf-8")   # 每次覆寫，可重跑
+  │     run(p)
+▶ 執行結果：
+== 基準：書附兩份範例 ==
+──── sample_mythos_scope.json（結束碼 0，放行）
+clean: scope packet is ready
+──── sample_fable_scope.json（結束碼 0，放行）
+clean: scope packet is ready
+ok  test_valid_mythos_scope_packet_is_clean
+ok  test_mythos_requires_authorization_and_private_artifacts
+ok  test_fable_packet_warns_without_refusal_path
+
+== 3 份壞工作包 ==
+──── bad-forbidden.json（結束碼 1，擋下）
+  error  allowed_actions
+         Forbidden action(s) cannot be approved here: exfiltration, public_poc
+
+1 finding(s), 1 blocking
+──── bad-missing.json（結束碼 1，擋下）
+  error  authorization_id
+         Mythos workloads require this field before the run starts.
+  error  glasswing_scope_id
+         Mythos workloads require this field before the run starts.
+  error  evidence_store
+         Mythos workloads require this field before the run starts.
+  error  human_patch_owner
+         Mythos workloads require this field before the run starts.
+
+4 finding(s), 4 blocking
+──── fable-no-telemetry.json（結束碼 0，放行）
+  warn   refusal_logging
+         Fable workloads should log stop_reason and stop_details.category.
+  warn   fallbacks
+         Fable workloads should define a refusal fallback path.
+
+2 finding(s), 0 blocking
+
+👉 第 7 步完成
+
+===== 第 8 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch06.sh 8
+exit code：0　耗時：0.3 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 6 章｜代理技能庫　第 8 / 8 步
+  總結：規則寫成技能才會留下
+╚══════════════════════════════════════════════════════╝
+
+💡 把本章重點收成 6 句話，每句都連回前面 7 步看到的證據。
+
+▶ 要執行的指令：
+  │ cat <<EOF
+  │   第 6 章總結
+  │     寫在對話裡的叮嚀會淡掉；寫成 SKILL.md 技能才會留下，還能當 Claude Code 外掛安裝
+  │     11 個技能裡只有 effort-router、verifier-subagent、lesson-memory 會自動觸發，其餘常駐型要明確呼叫或貼進系統提示詞／CLAUDE.md
+  │     範圍圍欄：提問的交付物是診斷與建議，不是動手修，也不附沒人要的備份、README、工單（第 6 步 A/B）
+  │     證據綁定進度：每句結論都要指得到工具輸出，例如 probe.txt 的第 3／5／7 行（第 5 步）
+  │     技能本身也能被掃描器檢查；正規表達式不懂上下文，引述反例也會被抓，要分辨真違規與誤報（第 3、4 步）
+  │     Mythos 的邊界在外部閘門：授權、範圍、私有證據、獨立驗證、修補負責人缺一不可；Fable 缺拒答紀錄與備援只會 warn（第 7 步）
+  │ EOF
+  │ echo
+  │ echo "本章產出："
+  │ ls ../ch06/interactive
+▶ 執行結果：
+  第 6 章總結
+    寫在對話裡的叮嚀會淡掉；寫成 SKILL.md 技能才會留下，還能當 Claude Code 外掛安裝
+    11 個技能裡只有 effort-router、verifier-subagent、lesson-memory 會自動觸發，其餘常駐型要明確呼叫或貼進系統提示詞／CLAUDE.md
+    範圍圍欄：提問的交付物是診斷與建議，不是動手修，也不附沒人要的備份、README、工單（第 6 步 A/B）
+    證據綁定進度：每句結論都要指得到工具輸出，例如 probe.txt 的第 3／5／7 行（第 5 步）
+    技能本身也能被掃描器檢查；正規表達式不懂上下文，引述反例也會被抓，要分辨真違規與誤報（第 3、4 步）
+    Mythos 的邊界在外部閘門：授權、範圍、私有證據、獨立驗證、修補負責人缺一不可；Fable 缺拒答紀錄與備援只會 warn（第 7 步）
+
+本章產出：
+answer-A.md
+answer-B.md
+gate
+probe.txt
+refusal-aware-calling
+sample.log
+scan-skills.txt
+skill-map.md
+
+👉 第 8 步完成
