@@ -225,17 +225,20 @@ def check_requires(rt, templates, mapping):
 
 
 def prepare_paths(station, mapping, jobs=()):
-    """建好產出檔的資料夾，刪掉 clear 清單（避免代理沒寫檔卻讀到上一版的 PASS）。"""
+    """建好產出檔的資料夾，刪掉 clear 清單與本站判定檔。
+    判定檔一律由引擎在每次執行前刪除（不依賴 yaml 的 clear）：代理沒寫檔時才會讀不到 → 判失敗，
+    而不是沿用上一版的 PASS。"""
     targets = render_list(station.get("outputs"), mapping)
     for job in jobs:
         targets += render_list(job.get("outputs"), mapping)
+    stale = render_list(station.get("clear"), mapping)
     if station.get("verdict"):
-        targets.append(render_path(station["verdict"]["file"], mapping))
-    for path in targets + render_list(station.get("clear"), mapping):
+        stale.append(render_path(station["verdict"]["file"], mapping))
+    for path in targets + stale:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
     for path in render_list(station.get("mkdirs"), mapping):
         Path(path).mkdir(parents=True, exist_ok=True)
-    for path in render_list(station.get("clear"), mapping):
+    for path in stale:
         Path(path).unlink(missing_ok=True)
 
 

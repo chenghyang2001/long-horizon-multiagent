@@ -123,7 +123,11 @@ roles:                         # 意圖合約：tools 白名單、write 可寫�
   now-updater: {tools: [Read, Grep, Write], write: ["{now}"], budget: 15}
   tester: {tools: [Read, Write], write: ["{RUN}/test-logs/**"], budget: 15}
   reviewer: {tools: [Read, Glob, Grep, Write], write: ["{RUN}/reviews/**"], budget: 30}
-  # 要給某角色 Bash：tools 加 Bash，並加 bash_allow: ["^pytest "]（regex，只放行符合的指令）
+  # 🔴 Bash 安全只靠 bash_allow 白名單（forbidden 的字串比對只是額外一層，擋不住所有變形）：
+  #   - 要給某角色 Bash：tools 加 Bash，並加 bash_allow: ["^pytest( |$)"]（regex，必須以 ^ 開頭）
+  #   - 不可用 .*、^.*$、.+ 這類萬用 pattern（啟動時會被拒）
+  #   - 指令含 ; & | < > ` $ 或換行一律拒絕（防止在白名單指令後面串接其他指令）
+  #   - QA（qa 站）與審查（review 站）角色不可有 Bash、不可有 bash_allow
 
 forbidden:                     # 任何角色都不行（路徑比對不分大小寫、\ 與 / 視同）
   paths: ["practice/<書附原始碼>"]   # ★

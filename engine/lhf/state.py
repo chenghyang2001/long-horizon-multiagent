@@ -63,9 +63,57 @@ def load_state(cfg):
         state = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise RoundError(f"state.json 讀取失敗（{path}）：{exc}") from exc
-    if not isinstance(state, dict) or not isinstance(state.get("units"), dict):
-        raise RoundError(f"state.json 格式不對（{path}）：缺少 units")
+    problem = state_problem(cfg, state)
+    if problem:
+        raise RoundError(f"state.json 格式不對（{path}）：{problem}；請修正或備份後刪除再 init，引擎不會覆寫它")
     return state
+
+
+# 每個單位必須有的欄位與型別；缺任何一個就拒絕使用（不猜預設值，避免默默蓋掉進度）
+UNIT_FIELDS = {
+    "status": str,
+    "station": str,
+    "retries": dict,
+    "verdicts": list,
+    "calls": int,
+    "once_done": list,
+    "sessions": list,
+    "approved": list,
+    "cost_usd": (int, float),
+}
+VALID_STATUSES = {"pending", IN_PROGRESS, PENDING_APPROVAL} | set(FINAL_STATUSES)
+
+
+def state_problem(cfg, state):
+    """回傳第一個發現的問題描述；沒問題回 None。"""
+    if not isinstance(state, dict):
+        return "最外層不是物件"
+    for key, kind in (("round", int), ("queue", list), ("units", dict), ("history", list)):
+        if not isinstance(state.get(key), kind) or isinstance(state.get(key), bool):
+            return f"缺少或型別錯誤的欄位 {key}"
+    missing_units = [unit for unit in state["queue"] if unit not in state["units"]]
+    if missing_units:
+        return f"queue 裡的 {missing_units} 不在 units"
+    for unit, rec in state["units"].items():
+        problem = unit_problem(cfg, rec)
+        if problem:
+            return f"單位 {unit}：{problem}"
+    return None
+
+
+def unit_problem(cfg, rec):
+    if not isinstance(rec, dict):
+        return "不是物件"
+    for key, kind in UNIT_FIELDS.items():
+        if key not in rec:
+            return f"缺少欄位 {key}"
+        if not isinstance(rec[key], kind) or isinstance(rec[key], bool):
+            return f"欄位 {key} 型別錯誤"
+    if rec["status"] not in VALID_STATUSES:
+        return f"未知狀態 {rec['status']!r}"
+    if rec["station"] not in {station["id"] for station in cfg.stations}:
+        return f"站 {rec['station']!r} 不在 factory.yaml（設定改過站名？）"
+    return None
 
 
 def save_state(cfg, state):
@@ -117,7 +165,7 @@ def blocked_reason(cfg, state, unit):
     if rec["status"] in FINAL_STATUSES:
         return f"{unit} 已是 {rec['status']}；要重跑請 reset {unit}"
     if rec["status"] == PENDING_APPROVAL:
-        return f"{unit} 等待人工核准；確認後執行 approve {unit}"
+        return f"{unit} 等待核准，執行 approve {unit}（先確認 run/approvals/pending.jsonl 的內容）"
     waiting = [dep for dep in cfg.depends_on.get(unit) or [] if state["units"].get(dep, {}).get("status") != "done"]
     if waiting:
         return f"{unit} 依賴的 {'、'.join(waiting)} 尚未完成"

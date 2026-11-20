@@ -36,6 +36,7 @@ from lhf.state import append_jsonl, approved_path, pending_approvals_path, read_
 
 WRITE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 PREVIEW_LEN = 120
+SHELL_META = set(";&|<>`$") | {chr(10), chr(13)}  # 換行也算：可在後面接第二條指令
 
 
 def setup_utf8_io():
@@ -111,13 +112,24 @@ def bash_command(event):
 # ---------- 各項檢查（回傳 deny 原因或 None） ----------
 
 
+def norm_command(command):
+    """比對用的指令正規化：小寫、反斜線轉 /、去掉引號、連續空白壓成一格。
+    擋得住 GIT  PUSH、fab''le5、反斜線路徑這類變形；真正的安全邊界仍是 bash_allow 白名單。"""
+    text = str(command).lower().replace("\\", "/").replace("'", "").replace('"', "")
+    return " ".join(text.split())
+
+
 def check_global(cfg, target, command):
+    """forbidden.paths 同時套用到寫入目標與 Bash 指令字串（額外一層，不取代白名單）。"""
     forbidden = cfg.data.get("forbidden") or {}
+    normalized = norm_command(command) if command is not None else None
     for item in forbidden.get("paths") or []:
         if target and norm_text(item) in target:
             return f"全域禁止寫入 {item}"
+        if normalized is not None and norm_command(item) in normalized:
+            return f"全域禁止指令：碰到受保護路徑 {item}"
     for item in forbidden.get("commands") or []:
-        if command is not None and item.lower() in command.lower():
+        if normalized is not None and norm_command(item) in normalized:
             return f"全域禁止指令：含「{item}」"
     return None
 
@@ -142,9 +154,13 @@ def needs_approval(cfg, command, ctx):
 
 
 def check_bash(role_policy, role, command):
+    """白名單之外再擋 shell 控制字元：白名單只看開頭，; | & > $ 等可以在後面接任意指令。"""
     patterns = role_policy.get("bash_allow") or []
     if not patterns:
         return f"{role} 沒有 bash_allow，不可執行 Bash"
+    meta = sorted({ch for ch in command if ch in SHELL_META})
+    if meta:
+        return f"Bash 指令不可含 shell 控制字元 {meta}（串接、重導、變數展開一律不放行）"
     if any(re.search(pattern, command) for pattern in patterns):
         return None
     return f"{role} 的 bash_allow 不允許此指令"

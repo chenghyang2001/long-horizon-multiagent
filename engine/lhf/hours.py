@@ -5,8 +5,12 @@
   (a) 經過時間 ≥ --hours：不砍正在跑的那一輪，只是不再開新的一輪
   (b) 沒有可執行的單位（全部結束、等待核准、或依賴未完成）
   (c) 連續 2 輪結束碼非 0：醒目警告並寫 run/ALERT.txt
+  (c2) state.json 讀不到（損毀）：停止、不覆寫、寫 ALERT.txt，exit 1
   (d) Ctrl+C：等子程序存檔收尾後停止，exit 130
   (e) 達到 --max-rounds
+結束碼：0＝正常停止且沒有任何 failed／rejected 單位；130＝Ctrl+C；
+        1＝有 ALERT（連續失敗、state.json 讀不到、或 queue 中有 failed／rejected 單位），
+        此時一定會寫 run/ALERT.txt 並列出原因與單位，給無人值守的監看程式一眼判斷。
 """
 
 import os
@@ -25,6 +29,7 @@ EXIT_INTERRUPTED = 130
 # 子程序收到 Ctrl+C 後要寫 state.json／heartbeat，給它時間收尾，太久才強制終止
 INTERRUPT_GRACE_SEC = 60
 USD_TO_TWD = 32.0
+STATE_UNREADABLE = "state.json 讀不到"
 
 
 # ---------- 輸出 ----------
@@ -186,26 +191,44 @@ def consecutive_fails(ctx):
 
 
 def raise_alert(ctx):
-    """健康檢查失敗：醒目警告＋ALERT.txt（給隔天早上一眼就看到）。"""
-    path = run_path(ctx["cfg"], "ALERT.txt")
-    lines = [
-        f"時間：{datetime.now():%Y-%m-%d %H:%M:%S}",
-        f"原因：連續 {MAX_CONSECUTIVE_FAILS} 輪結束碼非 0，已停止連續執行",
-        f"log：{ctx['log_path']}",
-        "最後兩輪：",
-    ]
+    """連續失敗：先記進本次的 ALERT 原因，結束時統一寫 ALERT.txt。"""
+    lines = [f"連續 {MAX_CONSECUTIVE_FAILS} 輪結束碼非 0，已停止連續執行；最後兩輪："]
     lines += [
         f"  第 {r['no']} 輪｜{r['unit']}｜exit={r['exit']}｜heartbeat：{r['heartbeat']}"
         for r in ctx["rounds"][-MAX_CONSECUTIVE_FAILS:]
     ]
+    ctx["alert_lines"] += lines
+
+
+def failed_units(state):
+    """queue 中所有 failed／rejected 的單位（含以前就失敗、還沒人 reset 的）。"""
+    return [
+        (unit, unit_rec(state, unit).get("status"))
+        for unit in (state or {}).get("queue", [])
+        if unit_rec(state, unit).get("status") in ("failed", "rejected")
+    ]
+
+
+def finalize_alerts(ctx, code):
+    """結束時：有任何 ALERT 原因或 failed／rejected 單位 → 寫 ALERT.txt 並回傳非 0 結束碼。"""
+    state = safe_state(ctx["cfg"])
+    units = failed_units(state)
+    if units:
+        ctx["alert_lines"].append("需要人看過的單位（看完後 reset <id> 才會重做）：")
+        ctx["alert_lines"] += [f"  {unit}：{status}" for unit, status in units]
+    if not ctx["alert_lines"]:
+        return code
+    path = run_path(ctx["cfg"], "ALERT.txt")
+    lines = [f"時間：{datetime.now():%Y-%m-%d %H:%M:%S}", f"log：{ctx['log_path']}", *ctx["alert_lines"]]
     try:
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     except OSError as exc:
         say(ctx, f"（寫 ALERT.txt 失敗：{exc}）")
     bar = "!" * 60
-    say(ctx, f"\n{bar}\n!! 警告：連續 {MAX_CONSECUTIVE_FAILS} 輪失敗，停止連續執行。詳見 {path}\n{bar}")
+    say(ctx, f"\n{bar}\n!! 警告：詳見 {path}\n{bar}")
     for line in lines:
         say(ctx, "!! " + line)
+    return code if code != 0 else 1
 
 
 # ---------- 主迴圈 ----------
@@ -218,7 +241,7 @@ def stop_reason(args, ctx):
         return f"已達 --max-rounds {args.max_rounds}"
     state = safe_state(ctx["cfg"])
     if state is None:
-        return "state.json 讀不到"
+        return STATE_UNREADABLE
     if not runnable_units(ctx["cfg"], state):
         return "沒有可執行的工作單位"
     return None
@@ -240,6 +263,9 @@ def wait_gap(args, ctx):
 def run_loop(args, ctx):
     while True:
         reason = stop_reason(args, ctx)
+        if reason == STATE_UNREADABLE:
+            ctx["alert_lines"].append(f"{STATE_UNREADABLE}：引擎不會覆寫它，請人工檢查 run/state.json")
+            return reason, 1
         if reason:
             return reason, 0
         _, interrupted = run_one_round(ctx)
@@ -349,6 +375,7 @@ def cmd_hours(cfg, args):
             "rounds": [],
             "log": log_fh,
             "log_path": log_path,
+            "alert_lines": [],
         }
         say(
             ctx, f"連續執行開始：{cfg.name}｜{args.hours} 小時、max-rounds={args.max_rounds}、gap={args.gap_seconds} 秒"
@@ -359,5 +386,6 @@ def cmd_hours(cfg, args):
         except KeyboardInterrupt:
             reason, code = "Ctrl+C 中斷", EXIT_INTERRUPTED
         finally:
+            code = finalize_alerts(ctx, code)
             write_summary(ctx, reason, code)
         return code

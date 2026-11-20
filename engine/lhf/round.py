@@ -71,6 +71,16 @@ def pick_unit(cfg, state, unit_arg):
     return units[0] if units else None
 
 
+def print_nothing_runnable(cfg, state):
+    """沒有可跑的單位時說明原因：等待核准、依賴未完成，提示下一步該做什麼。"""
+    print("queue 裡沒有可執行的工作單位")
+    for unit in state["queue"]:
+        if state["units"][unit]["status"] not in FINAL_STATUSES:
+            reason = blocked_reason(cfg, state, unit)
+            if reason:
+                print(f"  - {reason}")
+
+
 def begin_round(cfg, state, unit):
     """新單位才開新一輪；接續中的單位沿用原本的輪次與 claude -p 次數。"""
     rec = state["units"][unit]
@@ -119,7 +129,7 @@ def cmd_run(cfg, unit_arg=None):
     unit = pick_unit(cfg, state, unit_arg)
     if unit is None:
         if not unit_arg:
-            print("queue 裡沒有可執行的工作單位")
+            print_nothing_runnable(cfg, state)
         return 0
     rt, start, summary = begin_round(cfg, state, unit), time.monotonic(), []
     try:
