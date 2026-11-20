@@ -13,3 +13,7 @@ session-state.md
 # 代理執行紀錄（太大，留本機）
 run.jsonl
 state.json.tmp
+
+# 工廠執行期檔案
+capstone/.runtime/
+capstone/.fake-practice/

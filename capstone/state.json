@@ -1,0 +1,45 @@
+{
+  "round": 0,
+  "queue": [
+    "ch04",
+    "ch05"
+  ],
+  "chapters": {
+    "ch04": {
+      "status": "pending",
+      "rewrites": 0,
+      "review_retries": 0,
+      "verdicts": [],
+      "calls": 0,
+      "started": null,
+      "finished": null,
+      "round": null,
+      "now_done": false,
+      "feedback": null,
+      "cost_usd": 0.0,
+      "sessions": []
+    },
+    "ch05": {
+      "status": "pending",
+      "rewrites": 0,
+      "review_retries": 0,
+      "verdicts": [],
+      "calls": 0,
+      "started": null,
+      "finished": null,
+      "round": null,
+      "now_done": false,
+      "feedback": null,
+      "cost_usd": 0.0,
+      "sessions": []
+    }
+  },
+  "history": [
+    {
+      "ts": "2026-11-20 11:23:17",
+      "round": 0,
+      "chapter": "-",
+      "event": "建立 queue：ch04 ch05"
+    }
+  ]
+}

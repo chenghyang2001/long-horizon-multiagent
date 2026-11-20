@@ -1,0 +1,48 @@
+# 畢業專案「K143 演練備課工廠」控制政策：gate.py 每次工具呼叫前都讀這份檔
+# 規則改這裡就好，不必動程式碼（對照 K142 IntentVerifier／CapabilityBudget）
+#
+# 佔位符由 gate.py 展開：
+#   {CAPSTONE} ＝ ~/workspace/long-horizon-multiagent/capstone
+#   {PRACTICE} ＝ ~/workspace/kindle-143-fable5-agentic-ai-factory/practice
+#   {chapter}  ＝ 環境變數 LH_CHAPTER（例：ch04）
+# 路徑比對一律先把 \ 轉 /、轉小寫、resolve 成絕對路徑，再用 fnmatch（** 視同任意層）
+# Read／Glob／Grep 是只讀工具，不限制路徑
+
+# 意圖合約：每個角色只能用清單上的工具；write_paths 是 Write／Edit 可寫入的位置
+# 所有角色都沒有 Bash：測試腳本由 run_round.py 自己跑，模型不需要也不該執行指令
+# 若日後真要給某角色 Bash，加 bash_allow（regex 清單），只放行符合的指令
+roles:
+  planner:
+    tools: [Read, Glob, Grep, Write]
+    write_paths: ["{CAPSTONE}/plans/**"]
+  writer:
+    tools: [Read, Glob, Grep, Write, Edit]
+    # 鎖到本章檔名，避免 writer 順手改到別章的腳本
+    write_paths:
+      - "{PRACTICE}/interactive/{chapter}.sh"
+      - "{PRACTICE}/interactive/coach-{chapter}.txt"
+  now-updater:
+    tools: [Read, Grep, Write]
+    write_paths: ["{PRACTICE}/interactive/now-{chapter}.txt"]
+  tester:
+    # tester 只看 raw log 下判決，不需要搜尋整個 repo
+    tools: [Read, Write]
+    write_paths: ["{CAPSTONE}/test-logs/**"]
+  reviewer:
+    # 審查者沒有 Edit：只能寫自己的審查報告，不能動被審的檔案
+    tools: [Read, Glob, Grep, Write]
+    write_paths: ["{CAPSTONE}/reviews/**"]
+
+# 權限預算：同一輪（LH_ROUND＋LH_CHAPTER 相同）每個角色的工具呼叫總數上限
+# 只算真的放行的次數；超過就 deny，防止單一角色在一輪內無止境打轉
+budgets:
+  planner: 40
+  writer: 40
+  now-updater: 15
+  tester: 15
+  reviewer: 30
+
+# 全域禁止（任何角色、任何情況）
+# practice/fable5 是 K143 書附原始碼，是教材的基準，絕不能被改
+forbidden_paths: ["practice/fable5"]
+forbidden_commands: ["rm -rf", "git push", ".claude/", "ANTHROPIC_API_KEY"]
