@@ -1,0 +1,210 @@
+# K143《Fable 5》演練備課工廠的專案設定（lhf 引擎讀這份）
+# 由 capstone/run_round.py＋policy.yaml 搬移而來，行為與 i5 實戰 8 輪的舊版一致。
+# 欄位說明見 templates/kindle-drill/factory.yaml。
+name: k143
+type: kindle-drill
+description: 每一輪備好一章 8 步互動演練（規劃 → 腳本＋教練稿∥現況 → 實跑 → 測試判定 → 審查 → commit）
+workdir: ~/workspace/kindle-143-fable5-agentic-ai-factory
+branch: factory/drills
+agent_cwd: "{PRACTICE}"
+read_dirs:
+  - ~/workspace/console/drills/k143-interactive
+  - "{WORK}/prompts"   # prompts/ 在 worktree 根目錄、不在 cwd(practice) 底下，planner／reviewer 要讀
+
+vars:
+  PRACTICE: "{WORK}/practice"
+  INTER: "{PRACTICE}/interactive"
+  NOW_TABLE: ~/workspace/console/drills/k143-interactive/fable-5-to-5.2.md
+  common_rules: "\n\n規則：全程使用繁體中文（程式碼本體除外）。絕對不可修改、新增或刪除 practice/fable5/ 底下任何檔案。不要執行 git，也不要執行任何 shell 指令。只寫入本任務指定的檔案。完成後用一兩句話回報寫了哪些檔案。"
+
+env:
+  K143_CLI_MAX_CALLS: "6"   # 書附 claude_cli_client 轉接層每次執行最多呼叫模型 6 次
+
+units:
+  ids: [ch04, ch05, ch06, ch07, ch08, ch09, ch10, ch11, ch12, ch13, ch14, ch15, ch16, ch17, ch18]
+  depends_on: {}
+  vars:
+    num: '^ch0*(\d+)$'   # ch04 → 4（prompt 裡的「第 N 章」）；別用 no／yes 當名稱，YAML 會當成布林
+
+files:
+  prompt_md: "{WORK}/prompts/{unit}.md"
+  plan: "{RUN}/plans/{unit}.md"
+  script: "{INTER}/{unit}.sh"
+  coach: "{INTER}/coach-{unit}.txt"
+  now: "{INTER}/now-{unit}.txt"
+  raw: "{RUN}/test-logs/{unit}-raw.log"
+  testlog: "{RUN}/test-logs/{unit}.md"
+  review: "{RUN}/reviews/{unit}.md"
+
+extracts:
+  now_row:   # 對照表中本章那一列直接放進 prompt，減少模型讀錯列的機會
+    file: "{NOW_TABLE}"
+    regex: "^\\|\\s*{unit}\\s*\\|.*$"
+    default: "（對照表沒有本章這一列＝本章沒有差異）"
+
+stations:
+  - id: plan
+    kind: agent
+    chain: plan
+    label: 1 規劃
+    role: planner
+    prompt: plan
+    requires: ["{prompt_md}"]
+    outputs: ["{plan}"]
+  - id: write
+    kind: parallel
+    chain: producer
+    label: 2 寫腳本＋現況（平行）
+    mkdirs: ["{INTER}"]
+    jobs:
+      - {role: writer, prompt: write}
+      - {role: now-updater, prompt: now, once: true, outputs: ["{now}"]}   # 現況檔只需寫一次，重寫輪不再重做
+  - id: run
+    kind: command
+    chain: verify
+    label: 3 執行腳本
+    cwd: "{INTER}"
+    timeout: 180
+    require: ["{script}", "{coach}"]
+    log: "{raw}"
+    fail_report: "{testlog}"
+    cmds:
+      - {title: "bash -n 語法檢查", cmd: "bash -n {unit}.sh", fail_on_error: true}
+      - {title: "第 {step} 步", cmd: "bash {unit}.sh {step}", steps: [1, 8]}
+    on_fail: {goto: write, max: 2, label: 測試}
+  - id: judge
+    kind: agent
+    chain: qa
+    label: 4 測試判定
+    role: tester
+    prompt: judge
+    clear: ["{testlog}"]
+    verdict: {file: "{testlog}"}
+    on_fail: {goto: write, max: 2, label: 測試}
+  - id: review
+    kind: agent
+    chain: review
+    label: 5 審查
+    role: reviewer
+    prompt: review
+    clear: ["{review}"]
+    verdict: {file: "{review}"}
+    on_fail: {goto: write, max: 1, label: 審查}
+  - id: commit
+    kind: commit
+    chain: finish
+    label: 6 commit
+    paths:
+      - "practice/interactive/{unit}.sh"
+      - "practice/interactive/coach-{unit}.txt"
+      - "practice/interactive/now-{unit}.txt"
+    message: "工廠：新增 K143 {unit} 互動演練腳本（第 {round} 輪）"
+
+# 意圖合約：每個角色只能用清單上的工具；write 是 Write／Edit 可寫入的位置；budget 是每次呼叫的工具次數上限
+# 所有角色都沒有 Bash：測試腳本由引擎自己跑，模型不需要也不該執行指令
+roles:
+  planner:
+    tools: [Read, Glob, Grep, Write]
+    write: ["{RUN}/plans/**"]
+    budget: 40
+  writer:
+    tools: [Read, Glob, Grep, Write, Edit]
+    write: ["{script}", "{coach}"]   # 鎖到本章檔名，避免順手改到別章的腳本
+    budget: 40
+  now-updater:
+    tools: [Read, Grep, Write]
+    write: ["{now}"]
+    budget: 15
+  tester:
+    tools: [Read, Write]   # 只看 raw log 下判決，不需要搜尋整個 repo
+    write: ["{RUN}/test-logs/**"]
+    budget: 15
+  reviewer:
+    tools: [Read, Glob, Grep, Write]   # 沒有 Edit：只能寫自己的審查報告，不能動被審的檔案
+    write: ["{RUN}/reviews/**"]
+    budget: 30
+
+# practice/fable5 是 K143 書附原始碼，是教材的基準，絕不能被改
+forbidden:
+  paths: ["practice/fable5"]
+  commands: ["rm -rf", "git push", ".claude/", "ANTHROPIC_API_KEY"]
+approval_commands: []
+
+limits:
+  calls_per_unit: 10
+  agent_timeout: 900
+  feedback_max_chars: 6000
+
+feedback_template: "\n\n這是重寫。上一版沒有通過{feedback_label}，原因如下（來自 {feedback_path}）：\n-----\n{feedback_content}\n-----\n請針對以上問題修正兩個檔案（整檔覆寫），沒問題的步驟保持不變。"
+
+prompts:
+  plan: |-
+    你是 K143《Fable 5》互動演練的規劃者，負責第 {num} 章（{unit}）。
+    請先閱讀：本章提示詞 {prompt_md}；書附範例 {PRACTICE}/fable5/（用 Glob／Grep 找出本章相關模組與 examples，確認檔案真的存在）；格式範本 {INTER}/ch01.sh、{INTER}/ch03.sh。
+    然後把規劃寫成 Markdown 存到 {plan}。
+    規劃剛好 8 步，每步都要有五項：
+    1. 標題（一行）
+    2. 目的：白話說明這一步要讓學習者懂什麼
+    3. 要跑的指令或內嵌 Python（完整可直接執行；cwd 是 practice/fable5，用相對路徑；只能用書附真的存在的模組與檔案）
+    4. 預期看到什麼（具體輸出特徵，讓測試者能判斷對錯）
+    5. 是否呼叫模型（是／否）
+    限制：最多 2 步呼叫模型（透過書附 claude_cli_client 轉接層走 claude -p），其他步一律離線；不需要互動輸入；要動手改或產出的檔案寫到 practice/{unit}/interactive/，不碰 fable5/；第 8 步是本章總結。{common_rules}
+  write: |-
+    你是 K143 第 {num} 章互動演練的寫手。依規劃 {plan} 寫兩個檔案：
+    1. {script}：bash 腳本，格式完全照 {INTER}/ch01.sh 與 {INTER}/ch03.sh——開頭註解（章名、用法 bash {unit}.sh <步驟 1-8>、是否呼叫模型）、set -u、STEP／HERE／PRACTICE／LAB／WORK 變數、相同的 banner／tip／show／done_step／sh_run／py_run 函式、case 1)～8) 加 *) 預設分支；banner 寫「K143 第 {num} 章｜<短章名>」。有步驟呼叫模型就照 ch03.sh 加 export K143_CLI_MAX_CALLS=6。WORK 指到 practice/{unit}/interactive。每步只執行規劃中的指令，不可讀互動輸入。
+    2. {coach}：教練稿。第一行「K143 第 {num} 章互動演練：<章名>（教練稿）」，空一行後每步一段：「【第 N 步：標題】」換行接 3～5 句白話教練稿（口語、念得出來，說明要做什麼、會看到什麼），每段最後一句以「目的，是…」開頭；段與段之間空一行。不要寫「🆕 現況」內容（那由別人寫）。{feedback}{common_rules}
+  now: |-
+    你負責 K143 第 {num} 章的「🆕 現況」補充檔 {now}。
+    格式範本：{INTER}/now-ch02.txt。完整對照表：{NOW_TABLE}。本章提示詞：{prompt_md}。規劃：{plan}（看每步在做什麼，決定現況掛在哪一步）。
+    對照表中本章那一列：{now_row}
+    有差異時：第一行「K143 第 {num} 章「🆕 現況」補充（書是 Fable 5，2026-11-09 已推出 Fable 5.2）」，第二行照範本寫說明行，空一行後每個相關步驟一段「【第 N 步 🆕 現況】」換行接 2～4 句白話說明；只寫對照表有根據的內容，不可自己編新功能。
+    沒有差異時：只寫兩行——同樣的標題、「本章沒有 Fable 5.2 差異」。{common_rules}
+  judge: |-
+    你是 K143 第 {num} 章互動演練的測試判定者。讀規劃 {plan} 與實際執行紀錄 {raw}（含 bash -n 結果、bash {unit}.sh 1..8 每步的 exit code、耗時、輸出）。
+    逐步對照規劃的「預期看到什麼」判斷每步 PASS 或 FAIL，寫到 {testlog}：
+    - 一張表：步驟｜標題｜exit code｜判定｜理由（一句話）
+    - FAIL 的步驟寫具體原因與建議怎麼修（給寫手看）
+    - 判定原則：exit code 非 0、逾時、出現 Traceback／command not found／No such file、輸出明顯與預期不符 → FAIL；數字或措辭的小差異不算 FAIL
+    - 檔案最後一行必須單獨是 `VERDICT: PASS`（8 步全過）或 `VERDICT: FAIL`{common_rules}
+  review: |-
+    你是 K143 第 {num} 章互動演練的審查者（做的人不當審的人）。審查成品：腳本 {script}、教練稿 {coach}、現況 {now}；參考規劃 {plan}、測試紀錄 {testlog}、本章提示詞 {prompt_md}、範本 {INTER}/ch01.sh 與 {INTER}/coach-ch01.txt。
+    審查項目：1. 8 步是否涵蓋本章重點、順序合理；2. 腳本格式與範本一致、不寫入 fable5/、不需互動輸入；3. 教練稿每步 3～5 句白話、結尾「目的，是…」、與腳本步驟一一對應；4. 現況檔只寫對照表有根據的內容；5. 呼叫模型的步驟不超過 2 步。
+    寫到 {review}：每項 OK 或問題、必改清單（若有）。最後一行必須單獨是 `VERDICT: PASS` 或 `VERDICT: REJECT`（有任何必改就 REJECT）。{common_rules}
+
+# 假模型模式（LH_FAKE_MODEL=1）各角色要寫的假檔案；判定檔由引擎依站型自動產生
+fake:
+  planner:
+    "{plan}": |
+      # {unit} 假規劃
+
+      ## 第 1 步：假步驟 1
+      - 目的：測試
+      - 指令：echo
+      - 預期：印出一行
+      - 呼叫模型：否
+  writer:
+    "{script}": |
+      #!/bin/bash
+      # {unit} 假腳本
+      set -u
+      STEP="${1:-1}"
+      case "$STEP" in
+      1) echo "{unit} 第 1 步（假）" ;;
+      2) echo "{unit} 第 2 步（假）" ;;
+      3) echo "{unit} 第 3 步（假）" ;;
+      4) echo "{unit} 第 4 步（假）" ;;
+      5) echo "{unit} 第 5 步（假）" ;;
+      6) echo "{unit} 第 6 步（假）" ;;
+      7) echo "{unit} 第 7 步（假）" ;;
+      8) echo "{unit} 第 8 步（假）" ;;
+      *) echo "步驟要 1～8" ;;
+      esac
+    "{coach}": |
+      K143 第 {num} 章互動演練（假教練稿）
+
+      【第 1 步：假步驟 1】
+      這是假教練稿。目的，是測試。
+  now-updater:
+    "{now}": |
+      K143 第 {num} 章「🆕 現況」補充
+      本章沒有 Fable 5.2 差異

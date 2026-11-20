@@ -19,3 +19,9 @@ capstone/.runtime/
 capstone/.fake-practice/
 stage3/approvals.json
 stage3/pending-approvals.jsonl
+
+# 通用引擎（engine/lhf）的專案執行期檔案
+projects/*/run/.runtime/
+projects/*/run/.fake-*
+projects/*/run/*.tmp
+projects/*/run/approvals/*.tmp

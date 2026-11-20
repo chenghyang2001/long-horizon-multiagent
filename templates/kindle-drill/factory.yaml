@@ -1,0 +1,149 @@
+# =====================================================================
+# 範本：Kindle 書籍互動演練備課工廠（type: kindle-drill）
+# 用法：複製整個資料夾到 projects/<專案名>/，改下面標「★」的地方，再改 agents/*.md。
+#   PYTHONUTF8=1 PYTHONPATH=engine python -m lhf projects/<專案名> dry-run
+#   PYTHONUTF8=1 PYTHONPATH=engine python -m lhf projects/<專案名> init
+#   PYTHONUTF8=1 PYTHONPATH=engine python -m lhf projects/<專案名> run
+#
+# 佔位符（任何字串欄位都可用，{{ }} 是字面大括號）：
+#   {WORK} 工作目錄（workdir；假模式自動換成 run/.fake-work）  {RUN} 本專案 run/ 資料夾
+#   {PROJECT} 本專案資料夾  {HOME} 家目錄  {unit} 工作單位 id  {round} 輪次
+#   {step} command 站 steps 的步數  {feedback} 退回意見（只在 prompt 裡有值）
+#   以及下面 vars／files／units.vars／extracts 定義的名稱
+# 路徑欄位開頭的 ~ 會展開成家目錄；不要寫死 C:\Users\<名字>。
+#
+# 🔴 鐵律站鏈（引擎強制，缺一環就拒絕啟動，沒有任何「略過」設定）：
+#   chain: plan（可省略）→ producer（撰寫）→ verify（command 站客觀驗證）
+#          → qa（判 PASS／FAIL）→ review（判 PASS／REJECT）→ finish（commit／approve）
+#   - producer、qa、review 必須是不同角色；qa／review 的 write 不可涵蓋 producer 的 write
+#   - verify／qa／review 的 on_fail.goto 只能指向 producer 站：REJECT 後一定重跑 verify＋qa
+#   - 上限：verify＋qa 共用 rewrites（預設 2）、review 用 review_retries（預設 1）；
+#     超過 → failed／rejected，寫進 run/alerts.jsonl，下一輪不自動重做（人看過後 reset <id>）
+#   - 判定檔最後一行必須是 `VERDICT: <值>`，讀不到＝失敗
+# =====================================================================
+name: my-book                  # ★ 專案 id（英數字、底線、連字號）
+type: kindle-drill
+description: 每一輪備好一章互動演練
+workdir: ~/workspace/<書的 repo>   # ★ 模型要改的 git worktree（commit 也在這裡）
+branch: factory/drills         # ★ commit 前會確認 workdir 在這個分支，不同就拒絕
+agent_cwd: "{PRACTICE}"        # claude -p 的工作目錄
+read_dirs:                     # 額外給代理讀的資料夾（--add-dir）；run/ 永遠會加
+  - "{WORK}/prompts"
+
+vars:                          # 全域變數（不可用 {unit}；與單位有關的放 files）
+  PRACTICE: "{WORK}/practice"
+  INTER: "{PRACTICE}/interactive"
+  common_rules: "\n\n規則：全程使用繁體中文。只寫入本任務指定的檔案。不要執行 git。"
+
+env: {}                        # 額外給代理與 command 站的環境變數（值一律加引號）；不要放金鑰
+
+units:
+  ids: [ch04, ch05]            # ★ 工作單位（任意 id）；init 不給 id 時就是全部
+  depends_on: {}               # 例：{ch05: [ch04]}：ch04 完成前不會挑 ch05
+  vars:
+    num: '^ch0*(\d+)$'         # 從 id 抽出變數（取第 1 群組）；別用 no／yes 當名稱（YAML 會變布林）
+
+files:                         # 每個單位的檔案位置（可用 {unit}）
+  prompt_md: "{WORK}/prompts/{unit}.md"
+  plan: "{RUN}/plans/{unit}.md"
+  script: "{INTER}/{unit}.sh"
+  coach: "{INTER}/coach-{unit}.txt"
+  now: "{INTER}/now-{unit}.txt"
+  raw: "{RUN}/test-logs/{unit}-raw.log"
+  testlog: "{RUN}/test-logs/{unit}.md"
+  review: "{RUN}/reviews/{unit}.md"
+
+extracts: {}                   # 例：{row: {file: "...", regex: "^\\|\\s*{unit}\\s*\\|.*$", default: "無"}}
+
+stations:
+  # kind：agent（一個角色）／parallel（多角色平行，jobs）／command（引擎自己跑指令）
+  #       commit（只 commit paths，不 push）／approve（停下等 approve <id>）
+  # requires：真模式下必須先存在的輸入檔；outputs：代理必須寫出的檔（缺＝本站錯誤，下次重試）
+  # clear：呼叫前刪除（避免讀到上一版判定）；mkdirs：先建好的資料夾
+  - id: plan
+    kind: agent
+    chain: plan
+    label: 1 規劃
+    role: planner
+    prompt: plan
+    requires: ["{prompt_md}"]
+    outputs: ["{plan}"]
+  - id: write
+    kind: parallel
+    chain: producer
+    label: 2 撰寫
+    mkdirs: ["{INTER}"]
+    jobs:
+      - {role: writer, prompt: write}
+      - {role: now-updater, prompt: now, once: true, outputs: ["{now}"]}   # once：成功一次後退回重做時不再跑
+  - id: run
+    kind: command
+    chain: verify
+    label: 3 實跑
+    cwd: "{INTER}"
+    timeout: 180               # 每個指令的逾時秒數
+    require: ["{script}", "{coach}"]   # 缺檔直接判失敗並退回（不呼叫 QA）
+    log: "{raw}"               # 所有指令的輸出寫這裡，給 QA 讀
+    fail_report: "{testlog}"   # 自動判失敗時寫的報告（也是退回意見）
+    cmds:
+      - {title: "bash -n 語法檢查", cmd: "bash -n {unit}.sh", fail_on_error: true}
+      - {title: "第 {step} 步", cmd: "bash {unit}.sh {step}", steps: [1, 8]}
+    on_fail: {goto: write, max: 2, label: 測試}
+  - id: judge
+    kind: agent
+    chain: qa
+    label: 4 QA 判定
+    role: tester
+    prompt: judge
+    clear: ["{testlog}"]
+    verdict: {file: "{testlog}"}   # 固定 PASS／FAIL
+    on_fail: {goto: write, max: 2, label: 測試}
+  - id: review
+    kind: agent
+    chain: review
+    label: 5 審查
+    role: reviewer
+    prompt: review
+    clear: ["{review}"]
+    verdict: {file: "{review}"}    # 固定 PASS／REJECT
+    on_fail: {goto: write, max: 1, label: 審查}
+  - id: commit
+    kind: commit
+    chain: finish
+    label: 6 commit
+    paths:                     # workdir 底下的相對路徑
+      - "practice/interactive/{unit}.sh"
+      - "practice/interactive/coach-{unit}.txt"
+      - "practice/interactive/now-{unit}.txt"
+    message: "工廠：新增 {unit} 互動演練（第 {round} 輪）"
+
+roles:                         # 意圖合約：tools 白名單、write 可寫路徑（glob，** 任意層）、budget 每次呼叫工具次數上限
+  planner: {tools: [Read, Glob, Grep, Write], write: ["{RUN}/plans/**"], budget: 40}
+  writer: {tools: [Read, Glob, Grep, Write, Edit], write: ["{script}", "{coach}"], budget: 40}
+  now-updater: {tools: [Read, Grep, Write], write: ["{now}"], budget: 15}
+  tester: {tools: [Read, Write], write: ["{RUN}/test-logs/**"], budget: 15}
+  reviewer: {tools: [Read, Glob, Grep, Write], write: ["{RUN}/reviews/**"], budget: 30}
+  # 要給某角色 Bash：tools 加 Bash，並加 bash_allow: ["^pytest "]（regex，只放行符合的指令）
+
+forbidden:                     # 任何角色都不行（路徑比對不分大小寫、\ 與 / 視同）
+  paths: ["practice/<書附原始碼>"]   # ★
+  commands: ["rm -rf", "git push", ".claude/", "ANTHROPIC_API_KEY"]
+approval_commands: []          # regex；命中的 Bash 指令先擋下、寫 run/approvals/pending.jsonl，approve 後才放行
+
+limits:                        # 都可省略
+  calls_per_unit: 10           # 每單位 claude -p 次數上限（超過＝failed）
+  agent_timeout: 900           # 每次 claude -p 逾時秒數
+  feedback_max_chars: 6000     # 退回意見最多取檔尾幾字
+
+# 退回意見範本（可省略）：{feedback_label} {feedback_path} {feedback_content}
+feedback_template: "\n\n這是重寫。上一版沒有通過{feedback_label}，原因如下（來自 {feedback_path}）：\n-----\n{feedback_content}\n-----\n請只修正以上問題。"
+
+prompts:                       # ★ 每站給代理的工作指示（經 stdin 傳入，可多行）
+  plan: "規劃第 {num} 章（{unit}），讀 {prompt_md}，寫到 {plan}。{common_rules}"
+  write: "依規劃 {plan} 寫 {script} 與 {coach}。{feedback}{common_rules}"
+  now: "寫第 {num} 章的現況補充到 {now}。{common_rules}"
+  judge: "讀 {plan} 與 {raw}，判斷每步是否成功，寫到 {testlog}，最後一行 `VERDICT: PASS` 或 `VERDICT: FAIL`。{common_rules}"
+  review: "審查 {script}、{coach}、{now}，寫到 {review}，最後一行 `VERDICT: PASS` 或 `VERDICT: REJECT`。{common_rules}"
+
+fake: {}                       # 假模式（LH_FAKE_MODEL=1）各角色要寫的假檔：{角色: {"{檔案}": "內容"}}
+notify: {}                     # 預留（B 階段）：{on_alert: [...], on_finish: [...]}
