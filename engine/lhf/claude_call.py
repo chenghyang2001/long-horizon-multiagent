@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 
 from lhf import fake, proc
-from lhf.common import now_str, stamp
+from lhf.common import IN_ENGINE_ENV, now_str, stamp
 from lhf.config import ENGINE_DIR, is_fake, posix, render, render_path
 from lhf.errors import RoundError
 from lhf.state import file_offset, read_jsonl_since, run_path, trace_path
@@ -115,6 +115,7 @@ def base_env(cfg, rt):
     mapping = cfg.vars(unit=rt["unit"], round_no=rt["round"])
     env.update({key: render(value, mapping) for key, value in (cfg.data.get("env") or {}).items()})
     env["PYTHONUTF8"] = "1"
+    env[IN_ENGINE_ENV] = "1"  # 第一道快速檢查：CLI 看到就拒絕人工指令（可被 env -u 清掉，所以另有祖先鏈檢查）
     return env
 
 

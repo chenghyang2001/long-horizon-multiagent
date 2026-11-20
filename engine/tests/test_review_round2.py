@@ -60,8 +60,8 @@ def test_agent_and_command_env_have_no_lock_token(demo_dir, monkeypatch):
     assert {k for k in agent if k.startswith("LH_")} == gate_keys  # 代理：只給 gate 需要的
 
 
-def test_approve_from_agent_env_goes_to_queue(tmp_path, monkeypatch):
-    """就算代理（或撰寫者腳本）自己跑 approve，也拿不到鎖，只會排進佇列等人看。"""
+def test_approve_from_engine_env_is_refused(tmp_path, monkeypatch):
+    """代理或撰寫者腳本自己跑 approve：拿不到鎖，而且引擎環境旗標會直接拒絕（不會排進佇列）。"""
     project = project_with(
         tmp_path, lambda d: d["stations"].insert(4, {"id": "pub", "kind": "approve", "chain": "finish"})
     )
@@ -86,8 +86,9 @@ def test_approve_from_agent_env_goes_to_queue(tmp_path, monkeypatch):
         env = claude_call.command_env(cfg, {"cfg": cfg, "state": {}, "unit": "a", "round": 1})
         env["PYTHONPATH"] = str(ENGINE_DIR)
         result = cli([str(project), "approve", "a"], env)
-        assert result.returncode == 0 and "已排入" in result.stdout
-        assert load_state(cfg)["units"]["a"]["status"] == "pending_approval"  # state 沒被直接改
+        assert result.returncode == 5 and "引擎底下的程序不可下人工指令" in result.stderr
+        assert load_state(cfg)["units"]["a"]["status"] == "pending_approval"  # state 沒被改
+        assert not commands_path(cfg).exists()  # 也沒排進佇列
     finally:
         holder.kill()
 
@@ -233,7 +234,7 @@ def test_leftover_processing_file_is_recovered(tmp_path, monkeypatch):
     """上次在「認領之後、存檔之前」當機：殘留的 processing 檔下一輪會被讀回來套用，然後才刪除。"""
     cfg = approve_ready(tmp_path, monkeypatch)
     leftover = cfg.run_dir / "commands.processing-999-1.jsonl"
-    append_jsonl(leftover, {"id": "x1", "command": "approve", "unit": "a"})
+    append_jsonl(leftover, {"id": "x1", "command": "approve", "unit": "a", "ancestry_checked": True})
     state = load_state(cfg)
     round_mod.apply_queued({"cfg": cfg, "state": state, "unit": "b", "round": 2})
     assert load_state(cfg)["units"]["a"]["status"] == "in_progress" and not leftover.exists()
@@ -241,11 +242,12 @@ def test_leftover_processing_file_is_recovered(tmp_path, monkeypatch):
 
 def test_duplicate_command_applied_once(tmp_path, monkeypatch):
     cfg = approve_ready(tmp_path, monkeypatch)
-    append_jsonl(commands_path(cfg), {"id": "dup", "command": "reset-calls", "unit": "a"})
-    append_jsonl(cfg.run_dir / "commands.processing-1-1.jsonl", {"id": "dup", "command": "reset-calls", "unit": "a"})
+    record = {"id": "dup", "command": "reset-calls", "unit": "a", "ancestry_checked": True}
+    append_jsonl(commands_path(cfg), record)
+    append_jsonl(cfg.run_dir / "commands.processing-1-1.jsonl", record)
     state = load_state(cfg)
     round_mod.apply_queued({"cfg": cfg, "state": state, "unit": "b", "round": 2})
-    events = [h["event"] for h in load_state(cfg)["history"] if "reset-calls" in h["event"]]
+    events = [h["event"] for h in load_state(cfg)["history"] if "手動歸零" in h["event"]]
     assert len(events) == 1 and "dup" in load_state(cfg)["applied_commands"]
 
 
@@ -265,6 +267,8 @@ try:
     lock.release(cfg, info)
 except lock.LockBusy:
     print("BUSY", flush=True)
+except Exception as exc:  # 任何其他例外都算失敗（Windows 刪除中的檔案曾丟 PermissionError）
+    print("ERR", repr(exc), flush=True)
 """
 
 
@@ -283,10 +287,11 @@ def test_stale_lock_race_has_single_winner(demo_dir, tmp_path):
             text=True,
             stdin=subprocess.DEVNULL,
         )
-        for _ in range(6)
+        for _ in range(8)
     ]
     outputs = [r.communicate(timeout=60)[0] for r in racers]
     assert sum("WIN" in out for out in outputs) == 1, outputs
+    assert sum("BUSY" in out for out in outputs) == 7 and not any("ERR" in out for out in outputs), outputs
 
 
 def test_lock_file_never_half_written(demo_dir):
@@ -346,7 +351,7 @@ def test_k143_tester_write_is_only_its_report(k143_dir):
 
 @pytest.mark.parametrize(
     "allow, fragment",
-    [(None, "必須設 fetch_allow"), ([".*"], "錨定"), (["^https?://"], "太寬"), (["^https://"], "太寬")],
+    [(None, "必須設 fetch_allow"), ([".*"], "錨定"), (["^https?://"], "邊界"), (["^https://"], "邊界")],
 )
 def test_webfetch_requires_fetch_allow(tmp_path, allow, fragment):
     def mutate(data):

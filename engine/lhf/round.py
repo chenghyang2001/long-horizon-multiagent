@@ -14,14 +14,23 @@ import shlex
 import sys
 import time
 
-from lhf import claude_call, lock, stations
-from lhf.common import EXIT_ENGINE_ERROR, EXIT_INTERRUPTED, EXIT_OK, EXIT_UNIT_FAILED, USD_TO_TWD, now_str
+from lhf import ancestry, claude_call, lock, stations
+from lhf.common import (
+    EXIT_ENGINE_ERROR,
+    EXIT_INTERRUPTED,
+    EXIT_OK,
+    EXIT_UNIT_FAILED,
+    IN_ENGINE_ENV,
+    USD_TO_TWD,
+    now_str,
+)
 from lhf.config import FINAL_STATUSES, posix, render, render_path
-from lhf.errors import CallBudgetExceeded, RoundError
+from lhf.errors import CallBudgetExceeded, EngineDescendant, RoundError
 from lhf.snapshot import write_snapshot
 from lhf.state import (
     IN_PROGRESS,
     PENDING_APPROVAL,
+    add_alert,
     alerts_path,
     append_jsonl,
     approved_path,
@@ -100,8 +109,20 @@ def precheck(cfg, command, unit):
         raise RoundError(f"{unit} 目前是 {state['units'][unit]['status']}，沒有在等待核准")
 
 
+def guard_human(cfg, command):
+    """人工指令只能由人發出：兩層檢查。
+    1. 環境旗標（引擎子程序都帶）：快，但可被 env -u 清掉
+    2. 祖先鏈：持鎖的引擎程序在我的祖先裡＝我是引擎底下的程序（指令站腳本、代理的 Bash），清不掉"""
+    if os.environ.get(IN_ENGINE_ENV) == "1":
+        raise EngineDescendant(f"引擎底下的程序不可下人工指令（{command}）：偵測到 {IN_ENGINE_ENV}")
+    owner = lock.read_lock(cfg)
+    if owner and lock.lock_alive(owner) and ancestry.is_descendant_of(owner.get("pid")):
+        raise EngineDescendant(f"引擎底下的程序不可下人工指令（{command}）：引擎 PID {owner.get('pid')} 在祖先程序鏈上")
+
+
 def cmd_mutate(cfg, command, unit):
-    """引擎在跑 → 排進 commands.jsonl；沒在跑 → 拿鎖後直接讀改寫。"""
+    """引擎在跑 → 排進 commands.jsonl；沒在跑 → 拿鎖後直接讀改寫。兩種都先確認是人下的指令。"""
+    guard_human(cfg, command)
     owner = lock.held_by_other(cfg)
     if owner:
         precheck(cfg, command, unit)
@@ -137,6 +158,12 @@ def apply_queued(rt):
 
 def apply_one(cfg, state, record):
     command, unit = record.get("command"), record.get("unit")
+    if not record.get("ancestry_checked"):
+        # 不是經由 CLI（已做祖先鏈檢查）排入的：可能是引擎底下的程序直接寫佇列檔，不套用並發 ALERT
+        reason = f"可疑的佇列指令未套用（沒有提交者檢查紀錄）：{command} {unit}（PID {record.get('pid')}）"
+        add_alert(cfg, unit or "-", "suspicious", reason)
+        log_event(cfg, state, unit or "-", reason)
+        return
     try:
         if command not in MUTATIONS or unit not in state["units"]:
             raise RoundError(f"無法套用 {command} {unit}")
@@ -308,6 +335,7 @@ def cmd_init(cfg, unit_ids, force):
     unknown = [unit for unit in unit_ids if unit not in cfg.unit_ids]
     if unknown:
         raise RoundError(f"這些單位不在 factory.yaml 的 units.ids：{unknown}")
+    guard_human(cfg, "init")
     with lock.holding(cfg, "init"):
         state = load_state(cfg) or new_state()
         state["queue"] = unit_ids

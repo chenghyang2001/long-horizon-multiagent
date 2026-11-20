@@ -22,9 +22,9 @@ import sys
 from lhf import hours, legacy
 from lhf import round as round_mod
 from lhf.claude_call import ALLOW_PROJECT_PERMISSIONS_ENV
-from lhf.common import EXIT_CONFIG, EXIT_LOCKED
+from lhf.common import EXIT_CONFIG, EXIT_LOCKED, EXIT_REFUSED
 from lhf.config import ID_RE, load_config
-from lhf.errors import ConfigError, RoundError
+from lhf.errors import ConfigError, EngineDescendant, RoundError
 from lhf.lock import LockBusy
 
 
@@ -132,6 +132,9 @@ def run_dispatch(cfg, args):
     except LockBusy as exc:
         print(f"錯誤：{exc}", file=sys.stderr)
         return EXIT_LOCKED
+    except EngineDescendant as exc:
+        print(f"拒絕：{exc}；請從獨立的終端機執行", file=sys.stderr)
+        return EXIT_REFUSED
     except (RoundError, ConfigError) as exc:
         print(f"錯誤：{exc}", file=sys.stderr)
         return 1

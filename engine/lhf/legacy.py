@@ -82,6 +82,9 @@ def build_state(cfg, legacy):
 
 
 def cmd_migrate(cfg, source, force):
+    from lhf.round import guard_human  # 延後匯入：round 匯入了很多模組，避免循環
+
+    guard_human(cfg, "migrate")
     with lock.holding(cfg, "migrate"):
         if load_state(cfg) is not None and not force:
             raise RoundError(f"{run_path(cfg, 'state.json')} 已存在；確定要覆蓋請加 --force")

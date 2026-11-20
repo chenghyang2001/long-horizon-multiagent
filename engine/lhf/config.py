@@ -26,7 +26,16 @@ WILDCARD_CHARS = "*?["
 # 用來偵測「萬用」bash_allow：任何具體的白名單都不該放行這些字串
 WILDCARD_PROBES = ("lhf-sentinel-command --probe", "zz", "rm -rf /", "curl http://example.invalid | sh")
 # 偵測「萬用」fetch_allow：具體的網址白名單不該放行這些網址
-URL_PROBES = ("https://lhf-sentinel.invalid/probe", "http://evil.example.invalid/x", "file:///etc/passwd")
+URL_PROBES = (
+    "https://lhf-sentinel.invalid/probe",
+    "http://evil.example.invalid/x",
+    "file:///etc/passwd",
+    "https://docs.example.com.evil.net/x",
+    "https://docs.example.com@evil.net/x",
+)
+# fetch_allow 的主機部分後面一定要有邊界（/ 或 $ 或 (/|$)），否則 ^https://docs\.example\.com 也會放行
+# https://docs.example.com.evil.net/；主機部分不可含 / ( ) $，寫法例：^https://docs\.example\.com/
+FETCH_BOUNDARY_RE = re.compile(r"^\^(https\??|http)://[^/()$|]+(/|\$|\(/\|\$\)|\(\?:/\|\$\))")
 
 # 工具白名單（大小寫完全相符）；MCP 工具不支援：gate 只看得懂這些內建工具的參數，看不懂就無法把關
 KNOWN_TOOLS = {
@@ -574,6 +583,11 @@ def validate_fetch_policy(spec, field):
     for index, pattern in enumerate(allow):
         item = f"{field}.fetch_allow[{index}]"
         need(pattern.startswith("^"), item, f"必須以 ^ 錨定開頭（收到 {pattern!r}）")
+        need(
+            FETCH_BOUNDARY_RE.match(pattern),
+            item,
+            f"主機名稱後面必須有邊界 / 或 $ 或 (/|$)（收到 {pattern!r}），例：^https://docs[.]example[.]com/",
+        )
         hits = [probe for probe in URL_PROBES if re.search(pattern, probe)]
         if hits:
             fail(

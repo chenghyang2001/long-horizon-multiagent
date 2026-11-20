@@ -19,7 +19,10 @@ LOCK_NAME = "run.lock"
 TOKEN_ENV = "LH_LOCK_TOKEN"
 CLEANUP_STALE_SEC = 30  # 清舊鎖的互斥檔超過這麼久還在＝清理者當掉了
 YOUNG_LOCK_SEC = 10  # 讀不懂但剛建立的鎖檔＝別人正在寫，不可當成舊鎖
-ATTEMPTS = 5
+ATTEMPTS = 20
+# Windows：檔案在「刪除中」狀態時，開啟／建立／連結會回 PermissionError（拒絕存取）而不是「已存在」。
+# 這是暫時狀態，視同「現在有人在動這把鎖」，稍等再試，不可讓例外往外丟。
+TRANSIENT_WAIT_SEC = 0.05
 
 
 class LockBusy(RoundError):
@@ -145,18 +148,26 @@ def clear_stale(cfg, stale):
     mutex = lock_path(cfg).with_name(LOCK_NAME + ".cleanup")
     try:
         os.close(os.open(mutex, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
-    except FileExistsError:
+    except (FileExistsError, PermissionError):
         if (file_age(mutex) or 0) > CLEANUP_STALE_SEC:
-            mutex.unlink(missing_ok=True)
+            safe_unlink(mutex)
         time.sleep(0.1)
         return
     try:
         current = read_lock(cfg)
         if current == stale and not lock_alive(current):
             print(f"    （清除殘留的舊鎖：PID {(stale or {}).get('pid', '?')} 已不存在）")
-            lock_path(cfg).unlink(missing_ok=True)
+            safe_unlink(lock_path(cfg))
     finally:
-        mutex.unlink(missing_ok=True)
+        safe_unlink(mutex)
+
+
+def safe_unlink(path):
+    """刪不掉（別人正開著或也在刪）就算了：下一輪重試會再確認狀態。"""
+    try:
+        path.unlink(missing_ok=True)
+    except PermissionError:
+        pass
 
 
 def acquire(cfg, purpose):
@@ -170,6 +181,9 @@ def acquire(cfg, purpose):
             return _create(cfg, purpose), True
         except FileExistsError:
             current = read_lock(cfg)
+        except PermissionError:
+            time.sleep(TRANSIENT_WAIT_SEC)  # 鎖檔正在被刪：稍後再看
+            continue
         if lock_alive(current) or young_unreadable(cfg, current):
             raise busy(current)
         clear_stale(cfg, current)

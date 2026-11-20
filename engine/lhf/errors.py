@@ -17,5 +17,9 @@ class RoundError(Exception):
     """可預期的本輪錯誤（模型呼叫失敗、檔案缺漏等）；單位維持原站，下次執行重試該站。"""
 
 
+class EngineDescendant(RoundError):
+    """人工指令從引擎底下的程序發出（撰寫者的腳本或代理想自己核准自己）。"""
+
+
 class CallBudgetExceeded(RoundError):
     """本單位 claude -p 次數超過上限；直接標 failed，避免無止境重試燒額度。"""

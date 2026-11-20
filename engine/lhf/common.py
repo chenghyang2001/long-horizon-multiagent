@@ -10,6 +10,9 @@ EXIT_UNIT_FAILED = 1  # 有單位被判 failed／rejected（品質問題，不�
 EXIT_CONFIG = 2  # 設定錯誤拒絕啟動；hours 用它表示「引擎錯誤連發而停止」
 EXIT_ENGINE_ERROR = 3  # run：本輪遇到引擎錯誤（模型呼叫失敗、檔案缺漏…），單位停在原站下次重試
 EXIT_LOCKED = 4  # 已有另一個 run／hours 在跑
+EXIT_REFUSED = 5  # 人工指令（approve／reset…）從引擎底下的程序發出，拒絕
+# 所有引擎啟動的子程序（指令站、claude -p）都帶這個旗標；不用 LH_ 開頭，維持「指令站沒有任何 LH_*」的約定
+IN_ENGINE_ENV = "LHF_IN_ENGINE"
 EXIT_INTERRUPTED = 130
 
 # 只為了讓摘要好讀的概略匯率；走 Max 訂閱不實扣，這是「等值成本」

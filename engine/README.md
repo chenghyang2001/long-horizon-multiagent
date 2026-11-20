@@ -38,6 +38,7 @@ python -m pytest tests -q                              # 假模型模式回歸�
 | 2 | 設定錯誤，拒絕啟動 | 引擎錯誤連發（連續 `max_engine_errors`＋1 輪），或 state.json 損毀；寫 ALERT.txt |
 | 3 | 引擎錯誤（模型呼叫失敗、gate 沒生效…），停在原站下次重試 | — |
 | 4 | 已有另一個 run／hours 在跑 | 同左 |
+| 5 | approve／reset／reset-calls／init／migrate 從引擎底下的程序發出，拒絕 | — |
 | 130 | Ctrl+C（進度已存） | Ctrl+C |
 
 同一單位連續 3 次引擎錯誤（`limits.max_engine_errors`）會標 failed＋ALERT，換下一個單位。
@@ -51,6 +52,7 @@ python -m pytest tests -q                              # 假模型模式回歸�
 - **逾時殺整棵程序樹**：Windows 用 Job Object（Git Bash 的背景孫程序 taskkill /T 殺不到），輸出寫暫存檔不用管線。
 - **執行鎖** `run/.runtime/run.lock`：PID＋程序啟動時間，殘留舊鎖用互斥檔安全清除；鎖 token 只交給 hours 自己啟動的
   run 子程序，代理與指令站拿不到（它們執行 approve／reset 只會排進佇列）。
+- **人工指令只能由人下**：approve／reset／reset-calls／init／migrate 兩層檢查——引擎子程序都帶 `LHF_IN_ENGINE=1`（快速擋下），加上祖先程序鏈檢查（持鎖的引擎 PID 在祖先鏈上就拒絕；`env -u` 清掉旗標也擋得住）。佇列裡沒有提交者檢查紀錄的指令不套用並發 ALERT。限制：指令站跑的撰寫者腳本目前沒有沙箱，理論上能直接改 run/ 底下的檔案（verify 站沙箱排在後續階段）。
 - **指令佇列** `run/commands.jsonl`：每筆有 id，套用結果存進 state.json 後才刪認領檔，當機後重讀也不會重複套用。
 - **子程序環境**：claude -p 只拿到 gate 需要的 `LH_PROJECT_DIR／LH_UNIT／LH_ROUND／LH_ROLE／LH_STATION／LH_TRACE_OFFSET`；
   指令站一個 `LH_*` 都沒有。gate 也拒絕 Bash 指令呼叫引擎本身（`-m lhf`、`lhf/`、引擎路徑）。

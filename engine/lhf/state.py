@@ -255,10 +255,18 @@ def commands_path(cfg):
 
 
 def queue_command(cfg, command, unit):
-    """引擎執行中：把 approve／reset／reset-calls 排進佇列，由引擎下一站開始時套用。每筆帶唯一 id。"""
+    """引擎執行中：把 approve／reset／reset-calls 排進佇列，由引擎下一站開始時套用。每筆帶唯一 id。
+    ancestry_checked＝排入前已確認提交者不是引擎的子孫（呼叫端 round.guard_human 負責檢查）。"""
     append_jsonl(
         commands_path(cfg),
-        {"id": secrets.token_hex(8), "ts": now_str(), "command": command, "unit": unit, "pid": os.getpid()},
+        {
+            "id": secrets.token_hex(8),
+            "ts": now_str(),
+            "command": command,
+            "unit": unit,
+            "pid": os.getpid(),
+            "ancestry_checked": True,
+        },
     )
 
 

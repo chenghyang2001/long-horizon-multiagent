@@ -128,7 +128,8 @@ stations:
 #     不支援 MCP 工具（gate 看不懂它的參數，無法把關）
 #   - QA（qa 站）與審查（review 站）角色只能用 Read Glob Grep Write Edit，write 也不可涵蓋 command 站的 log
 #   - 有 WebFetch 的角色必須設 fetch_allow: ["^https://docs[.]example[.]com/"]（網址 regex，^ 開頭、不可萬用），
-#     gate 逐筆比對 url；WebSearch 不受此限
+#     gate 逐筆比對 url；WebSearch 不受此限。主機名稱後面一定要接 / 或 $（否則 docs.example.com.evil.net 也會符合）；
+#     url 含空白、換行、控制字元一律拒絕
 #   - 工作目錄（workdir 與 agent_cwd）底下的 .claude/、.mcp.json、.git/ 任何角色都不可寫：
 #     write 明確指向它們會被拒絕啟動；{WORK}/** 這種寬寫法可以用，但 gate 會逐筆擋掉這些位置
 #   - 任何角色的 write 都不可碰引擎內部檔：factory.yaml、agents/、run/state.json、run/approvals/、

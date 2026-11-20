@@ -137,14 +137,23 @@ def norm_command(command):
     return " ".join(text.split())
 
 
-# 代理不可呼叫引擎本身（例如自己執行 approve 來核准自己）；路徑以正規化後的子字串比對
-ENGINE_COMMAND_MARKERS = ("-m lhf", "lhf/", norm_text(ENGINE_DIR.as_posix()))
+# 代理不可呼叫引擎本身（例如自己執行 approve 來核准自己）。比對對象是 norm_command 之後的字串
+# （小寫、反斜線轉 /、去引號、空白壓成一格），所以 -mlhf、-Im lhf、l''hf、全形空白都會落到同一個樣子。
+ENGINE_COMMAND_PATTERNS = (
+    (re.compile(r"(^|[\s;&|(])-\w*m\s*lhf\b"), "python -m lhf"),  # -m lhf、-mlhf、-Im lhf、-m lhf.gate
+    (re.compile(r"\bimport\s+lhf\b"), "import lhf"),
+    (re.compile(r"\bfrom\s+lhf\b"), "from lhf"),
+    (re.compile(r"\blhf[/.]"), "lhf/ 或 lhf."),  # 引擎檔案路徑或模組名
+    (re.compile(r"(runpy|importlib|__import__)"), "動態匯入"),  # 用字串拼出模組名繞過；-mrunpy 前面沒有字界
+)
 
 
 def check_engine_command(normalized):
-    for marker in ENGINE_COMMAND_MARKERS:
-        if marker in normalized:
-            return f"不可在代理中呼叫引擎（指令含「{marker}」）：核准、重設等只能由人執行"
+    for pattern, label in ENGINE_COMMAND_PATTERNS:
+        if pattern.search(normalized):
+            return f"不可在代理中呼叫引擎（指令含「{label}」）：核准、重設等只能由人執行"
+    if norm_text(ENGINE_DIR.as_posix()) in normalized:
+        return "不可在代理中呼叫引擎（指令含引擎目錄路徑）：核准、重設等只能由人執行"
     return None
 
 
@@ -190,6 +199,8 @@ def check_fetch(role_policy, role, url):
     """WebFetch 只放行 fetch_allow 白名單裡的網址；沒有網址或不符合一律拒絕。"""
     if not isinstance(url, str) or not url:
         return "WebFetch 缺少 url"
+    if any(ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in url):
+        return "WebFetch 的 url 含空白、換行或控制字元，一律拒絕"
     if any(re.search(pattern, url) for pattern in role_policy.get("fetch_allow") or []):
         return None
     return f"{role} 的 fetch_allow 不允許這個網址：{url[:120]}"
