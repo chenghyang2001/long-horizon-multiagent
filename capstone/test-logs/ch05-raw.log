@@ -1,0 +1,436 @@
+# ch05 執行紀錄　2026-11-20 12:32:30　bash=C:\Program Files\Git\usr\bin\bash.EXE
+
+===== bash -n 語法檢查 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' -n ch05.sh
+exit code：0　耗時：0.0 秒
+----- 輸出 -----
+
+
+===== 第 1 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch05.sh 1
+exit code：0　耗時：0.2 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 5 章｜Fable Scanner　第 1 / 8 步
+  認識主角：三個子指令、11 條規則
+╚══════════════════════════════════════════════════════╝
+
+💡 fable_scanner 只做三件事：scan 管寫法、canary 管行為漂移、monitor 管發生過什麼。error 會直接觸發拒答或讓模型提早收工；warn 是新模型不需要的舊哄法；info 只是提醒。提示詞（.md/.txt）和設定檔（.json/.yaml）各跑各的規則。
+
+▶ 要執行的指令：
+  │ from collections import Counter
+  │ from fable_scanner.__main__ import COMMANDS
+  │ from fable_scanner.rules import RULES
+  │ print("子指令：" + " / ".join(COMMANDS))
+  │ print()
+  │ print("規則共 " + str(len(RULES)) + " 條")
+  │ print("  代碼    嚴重度  適用     類別")
+  │ for r in RULES:
+  │     print("  " + r["id"].ljust(7) + r["severity"].ljust(8) + r["applies"].ljust(9) + r["category"])
+  │ print()
+  │ print("依適用對象：" + str(dict(Counter(r["applies"] for r in RULES))))
+  │ print("依嚴重度：" + str(dict(Counter(r["severity"] for r in RULES))))
+▶ 執行結果：
+子指令：scan / canary / monitor
+
+規則共 11 條
+  代碼    嚴重度  適用     類別
+  RX-01  error   prompt   reasoning-extraction
+  RX-02  error   prompt   reasoning-extraction
+  OT-01  warn    prompt   overtriggering
+  OT-02  warn    prompt   overtriggering
+  OT-03  warn    prompt   overtriggering
+  OM-01  warn    prompt   old-model
+  FS-01  error   prompt   fable-specific
+  FS-02  warn    config   fable-specific
+  FS-03  warn    config   fable-specific
+  MG-01  warn    config   missing-guardrails
+  MG-02  info    prompt   missing-guardrails
+
+依適用對象：{'prompt': 8, 'config': 3}
+依嚴重度：{'error': 3, 'warn': 7, 'info': 1}
+
+👉 第 1 步完成
+
+===== 第 2 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch05.sh 2
+exit code：0　耗時：7.0 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 5 章｜Fable Scanner　第 2 / 8 步
+  掃描書附範例資料夾
+╚══════════════════════════════════════════════════════╝
+
+💡 一次掃整個資料夾：.md 跑提示詞規則、.json 跑設定檔規則、.jsonl 直接跳過。只要有 error，CLI 就回 1，可以直接卡 CI。另外存一份 JSON 格式結果到 ch05/interactive/。
+
+▶ 要執行的指令：
+  │ ls fable_scanner/examples
+  │ echo
+  │ python -m fable_scanner scan fable_scanner/examples | grep -v "^ *https"; echo "rc=${PIPESTATUS[0]}"
+  │ python -m fable_scanner scan fable_scanner/examples --format json > ../ch05/interactive/scan-examples.json
+  │ echo "JSON 結果已存：ch05/interactive/scan-examples.json"
+▶ 執行結果：
+agent_config.json
+bad_prompt.md
+good_prompt.md
+refusal_log.jsonl
+
+
+fable_scanner\examples\agent_config.json
+     2  warn   MG-01  A claude-fable-5 call with no `fallbacks` dead-ends on refusal: HTTP 200, stop_reason=refusal, empty content, and nothing recovers it.
+     4  warn   FS-02  temperature/top_p/top_k are not supported on Fable 5 -- the API returns 400.
+     5  warn   FS-03  Manual `thinking: {type: "enabled", budget_tokens: N}` is rejected on Fable 5. Thinking is always on; control depth with output_config.effort.
+
+fable_scanner\examples\bad_prompt.md
+     3  warn   OT-01  IMPORTANT/CRITICAL/WARNING framing compensated for weaker instruction following on older models. Fable 5 gives the same weight to a plain sentence.
+     3  error  RX-01  Asking Fable 5 to echo its internal reasoning as response text is a documented `reasoning_extraction` refusal trigger. Use adaptive thinking instead of narrating it in the output.
+     8  warn   OM-01  12+ enumerated behavior items suggests a skill written for a weaker model. Fable 5 follows a brief intent statement better than a long list.
+    19  warn   OT-02  "YOU MUST" / "YOU MUST NOT" shouting. State the constraint plainly.
+    21  error  FS-01  Surfacing a remaining-token countdown makes Fable 5 wrap up early. Never show the model its own context budget.
+
+summary: 2 file(s) with findings, 8 total (2 error-severity)
+rc=1
+JSON 結果已存：ch05/interactive/scan-examples.json
+
+👉 第 2 步完成
+
+===== 第 3 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch05.sh 3
+exit code：0　耗時：0.3 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 5 章｜Fable Scanner　第 3 / 8 步
+  動手修：把壞提示詞和壞設定檔修到 0 個發現
+╚══════════════════════════════════════════════════════╝
+
+💡 任務一樣是修好失敗的 build。提示詞拿掉 IMPORTANT、YOU MUST NOT、逐步說明推理、剩餘 token、12 條條列；設定檔拿掉 temperature 和手動 thinking，補上 fallbacks。只掃自己寫的這兩個檔。
+
+▶ 要執行的指令：
+  │ from pathlib import Path
+  │ from fable_scanner import scan
+  │ work = Path("../ch05/interactive")
+  │ work.mkdir(parents=True, exist_ok=True)
+  │ prompt = work / "fixed_prompt.md"
+  │ prompt.write_text("""# Coding agent -- fixed example
+  │ 
+  │ Your task is to fix the failing build.
+  │ 
+  │ Diagnose why the build fails, apply the smallest change that makes it pass,
+  │ and run the build again to confirm. Keep refactors, new features, and docs
+  │ changes out of this task; list them as follow-ups instead.
+  │ 
+  │ When you report, give the root cause, the change you made, and the build
+  │ output that shows it passes. Audit each claim against a tool result from
+  │ this session.
+  │ """, encoding="utf-8")
+  │ config = work / "fixed_config.json"
+  │ config.write_text("""{
+  │   "model": "claude-fable-5",
+  │   "max_tokens": 32000,
+  │   "output_config": { "effort": "high" },
+  │   "fallbacks": [{ "model": "claude-opus-4-8" }],
+  │   "messages": [{ "role": "user", "content": "Write a short poem." }]
+  │ }
+  │ """, encoding="utf-8")
+  │ 
+  │ def ids(target):
+  │     found = scan.scan_path(target)
+  │     return [h["rule"]["id"] for hits in found.values() for h in hits]
+  │ 
+  │ pairs = [("fable_scanner/examples/bad_prompt.md", prompt), ("fable_scanner/examples/agent_config.json", config)]
+  │ for before, after in pairs:
+  │     b = ids(before)
+  │     a = ids(after)
+  │     print("修前 " + Path(before).name.ljust(18) + str(len(b)) + " 個：" + "、".join(b))
+  │     print("修後 " + after.name.ljust(18) + str(len(a)) + " 個：" + ("、".join(a) or "（無）"))
+  │     print()
+  │ print("──── 用 CLI 再確認一次 ────")
+  │ for f in (prompt, config):
+  │     rc = scan.main([str(f)])
+  │     print("  " + f.name + " rc = " + str(rc))
+▶ 執行結果：
+修前 bad_prompt.md     5 個：OT-01、RX-01、OM-01、OT-02、FS-01
+修後 fixed_prompt.md   0 個：（無）
+
+修前 agent_config.json 3 個：MG-01、FS-02、FS-03
+修後 fixed_config.json 0 個：（無）
+
+──── 用 CLI 再確認一次 ────
+
+summary: 0 file(s) with findings, 0 total (0 error-severity)
+  fixed_prompt.md rc = 0
+
+summary: 0 file(s) with findings, 0 total (0 error-severity)
+  fixed_config.json rc = 0
+
+👉 第 3 步完成
+
+===== 第 4 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch05.sh 4
+exit code：0　耗時：0.2 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 5 章｜Fable Scanner　第 4 / 8 步
+  找缺口：漏判與誤判
+╚══════════════════════════════════════════════════════╝
+
+💡 規則是正規表達式，不是理解。先用 6 句測試句看換句話說會漏掉什麼、引用反例會被誤判成什麼，再掃書附 skills/ 看真實檔案的誤判。掃描器是安全網，不是裁判：error 要看上下文再決定改不改。
+
+▶ 要執行的指令：
+  │ from pathlib import Path
+  │ from fable_scanner.rules import run_rules
+  │ from fable_scanner import scan
+  │ cases = [
+  │     ("漏判", "大小寫混用 You MUST", "You MUST explain every change."),
+  │     ("漏判", "中文要求逐步思考", "請一步一步說出你的內部思考過程。"),
+  │     ("漏判", "換個動詞 Narrate", "Narrate your chain of thought before answering."),
+  │     ("抓到", "think step by step", "Please think step by step before you answer."),
+  │     ("抓到", "DO NOT SKIP", "DO NOT SKIP any file."),
+  │     ("誤判", "說明文字引用反例", "Avoid phrases like \"think step by step\" or \"explain your reasoning\"."),
+  │ ]
+  │ for tag, name, text in cases:
+  │     got = [h["rule"]["id"] for h in run_rules(text, "prompt")]
+  │     print("  [" + tag + "] " + name.ljust(20) + " → " + ("、".join(got) or "沒抓到"))
+  │ print()
+  │ print("──── 掃書附 skills/（作者自己寫的 Fable 原生技能）────")
+  │ found = scan.scan_path("skills")
+  │ total = 0
+  │ for f, hits in found.items():
+  │     for h in hits:
+  │         total += 1
+  │         print("  " + Path(f).parent.name.ljust(24) + str(h["line"]).rjust(3) + "  " + h["rule"]["id"] + "  " + h["rule"]["severity"])
+  │ print("  共 " + str(len(found)) + " 個檔、" + str(total) + " 個發現")
+  │ print()
+  │ line18 = Path("skills/refusal-aware-calling/SKILL.md").read_text(encoding="utf-8").splitlines()[17]
+  │ print("refusal-aware-calling 第 18 行：")
+  │ print("  " + line18[:150])
+▶ 執行結果：
+  [漏判] 大小寫混用 You MUST       → 沒抓到
+  [漏判] 中文要求逐步思考             → 沒抓到
+  [漏判] 換個動詞 Narrate         → 沒抓到
+  [抓到] think step by step   → RX-02
+  [抓到] DO NOT SKIP          → OT-03
+  [誤判] 說明文字引用反例             → RX-01、RX-02
+
+──── 掃書附 skills/（作者自己寫的 Fable 原生技能）────
+  act-on-sufficiency        1  MG-02  info
+  effort-router             1  MG-02  info
+  evidence-bound-progress   1  MG-02  info
+  evidence-bound-progress  14  OM-01  warn
+  reader-first-summary      1  MG-02  info
+  refusal-aware-calling    18  RX-01  error
+  refusal-aware-calling    18  RX-02  error
+  verifier-subagent         1  MG-02  info
+  共 6 個檔、8 個發現
+
+refusal-aware-calling 第 18 行：
+  - Never ask the model to reproduce its reasoning as output text. Use adaptive thinking (`output_config.effort`) instead of "think step by step" or "ex
+
+👉 第 4 步完成
+
+===== 第 5 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch05.sh 5
+exit code：0　耗時：0.2 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 5 章｜Fable Scanner　第 5 / 8 步
+  monitor：讀書附的拒答紀錄
+╚══════════════════════════════════════════════════════╝
+
+💡 monitor 只讀本機的回應紀錄、不連網，統計拒答率、拒答類別、備援次數和各模型花費。再把被拒答的提示詞丟給 scan：寫法造成的拒答抓得到，主題造成的拒答抓不到。
+
+▶ 要執行的指令：
+  │ import json
+  │ from fable_scanner import monitor
+  │ from fable_scanner.rules import run_rules
+  │ lines = open("fable_scanner/examples/refusal_log.jsonl", encoding="utf-8").read().splitlines()
+  │ monitor.print_report(monitor.analyze(lines))
+  │ print()
+  │ print("──── 被拒答的提示詞，scan 事先抓得到嗎？────")
+  │ for line in lines:
+  │     obj = json.loads(line)
+  │     resp = obj["response"]
+  │     if resp["stop_reason"] != "refusal":
+  │         continue
+  │     prompt = obj["request"]["messages"][0]["content"]
+  │     got = [h["rule"]["id"] for h in run_rules(prompt, "prompt")]
+  │     print("  " + resp["stop_details"]["category"].ljust(21) + prompt + "｜scan：" + ("、".join(got) or "抓不到"))
+▶ 執行結果：
+refusal analytics
+total 4   refused 2 (50.0%)   fallback served 1
+
+by category
+  cyber                1
+  reasoning_extraction 1
+
+cost by model
+  claude-fable-5       $0.0144
+  claude-opus-4-8      $0.0131
+
+top refusal-triggering prompt prefixes
+  1   cyber                Explain step by step how you would fuzz this parser.
+  1   reasoning_extraction Show your reasoning as you refactor this function.
+
+──── 被拒答的提示詞，scan 事先抓得到嗎？────
+  cyber                Explain step by step how you would fuzz this parser.｜scan：抓不到
+  reasoning_extraction Show your reasoning as you refactor this function.｜scan：RX-01
+
+👉 第 5 步完成
+
+===== 第 6 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch05.sh 6
+exit code：0　耗時：12.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 5 章｜Fable Scanner　第 6 / 8 步
+  金絲雀第一次：建立基準線（呼叫模型 5 次）
+╚══════════════════════════════════════════════════════╝
+
+💡 會呼叫模型 5 次（約 20～60 秒）。canary 是固定提示詞加預期輸出檢查；第一次只拍快照存成基準線，不做比較。加一個自己設計的固定格式提示詞（共 5 個），基準線與 log 都改寫到 ch05/interactive/，不寫進 fable5/。
+
+▶ 要執行的指令：
+  │ import os, json
+  │ from pathlib import Path
+  │ import anthropic
+  │ import fable_scanner.canary as canary
+  │ work = Path("../ch05/interactive").resolve()
+  │ state = work / ".fable-scanner"
+  │ log = work / "canary-calls.jsonl"
+  │ canary.BASELINE_FILE = state / "baseline.json"
+  │ canary.LATEST_FILE = state / "latest.json"
+  │ for p in (canary.BASELINE_FILE, canary.LATEST_FILE, log):
+  │     if p.exists():
+  │         p.unlink()
+  │ os.environ["K143_CLI_LOG"] = str(log)
+  │ canary.init_baseline()
+  │ base = json.loads(canary.BASELINE_FILE.read_text(encoding="utf-8"))
+  │ base["prompts"].append({
+  │     "id": "my-format",
+  │     "prompt": "Summarize this CI result in exactly two lines and nothing else.\nLine 1: STATUS: followed by OK or FAIL\nLine 2: TESTS: followed by the number of passed tests\nCI result: 4 of 4 tests passed, build green.",
+  │     "expect": {"contains": ["STATUS: OK", "TESTS: 4"], "max_len": 40},
+  │ })
+  │ canary.BASELINE_FILE.write_text(json.dumps(base, indent=2), encoding="utf-8")
+  │ print("提示詞數：" + str(len(base["prompts"])) + "（" + "、".join(p["id"] for p in base["prompts"]) + "）")
+  │ print()
+  │ try:
+  │     rc = canary.run_canary()
+  │     print("run_canary 回傳 " + str(rc))
+  │ except anthropic.APIError as exc:
+  │     print("  ❌ 呼叫模型失敗：" + str(exc))
+  │ outcomes = json.loads(canary.BASELINE_FILE.read_text(encoding="utf-8")).get("outcomes", {})
+  │ print("基準線 outcomes 已存 " + str(len(outcomes)) + " 筆：" + "、".join(outcomes))
+  │ print("呼叫次數：" + str(claude_cli_client.calls_made()))
+  │ print("fable5/.fable-scanner 存在嗎：" + ("是（寫進 fable5/ 了）" if Path(".fable-scanner").exists() else "否 ✅"))
+▶ 執行結果：
+wrote C:\Users\USER\workspace\kindle-143-fable5-agentic-ai-factory\practice\ch05\interactive\.fable-scanner\baseline.json
+提示詞數：5（code-simple、reason-plain、instruction-follow、knowledge、my-format）
+
+  code-simple          ok                   2424ms  score=100%
+  reason-plain         ok                   2255ms  score=100%
+  instruction-follow   ok                   2266ms  score=100%
+  knowledge            ok                   2871ms  score=100%
+  my-format            ok                   2273ms  score=100%
+first run -- snapshot captured as baseline outcomes
+run_canary 回傳 0
+基準線 outcomes 已存 5 筆：code-simple、reason-plain、instruction-follow、knowledge、my-format
+呼叫次數：5
+fable5/.fable-scanner 存在嗎：否 ✅
+
+👉 第 6 步完成
+
+===== 第 7 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch05.sh 7
+exit code：0　耗時：13.2 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 5 章｜Fable Scanner　第 7 / 8 步
+  金絲雀第二次＋monitor 讀自己的紀錄（呼叫模型 5 次）
+╚══════════════════════════════════════════════════════╝
+
+💡 會呼叫模型 5 次（約 20～60 秒），要先跑過第 6 步。這次拿基準線比較拒答率、延遲中位數和平均分數，再把兩次共 10 筆呼叫交給 monitor。轉接層沒有拒答類別、也沒有伺服器端備援，所以這兩欄都是 0；真實部署時，這兩欄最能看出模型安靜地變差，因為拒答是 HTTP 200。
+
+▶ 要執行的指令：
+  │ import os, json
+  │ from pathlib import Path
+  │ import anthropic
+  │ import fable_scanner.canary as canary
+  │ from fable_scanner import monitor
+  │ work = Path("../ch05/interactive").resolve()
+  │ log = work / "canary-calls.jsonl"
+  │ canary.BASELINE_FILE = work / ".fable-scanner" / "baseline.json"
+  │ canary.LATEST_FILE = work / ".fable-scanner" / "latest.json"
+  │ if not canary.BASELINE_FILE.exists() or not json.loads(canary.BASELINE_FILE.read_text(encoding="utf-8")).get("outcomes"):
+  │     print("找不到基準線 outcomes，先跑第 6 步")
+  │ else:
+  │     os.environ["K143_CLI_LOG"] = str(log)
+  │     try:
+  │         rc = canary.run_canary()
+  │         print("run_canary 回傳 " + str(rc) + "（0＝沒漂移，1＝有警告）")
+  │     except anthropic.APIError as exc:
+  │         print("  ❌ 呼叫模型失敗：" + str(exc))
+  │     print()
+  │     print("──── monitor 讀 ch05/interactive/canary-calls.jsonl ────")
+  │     rows = log.read_text(encoding="utf-8").splitlines()
+  │     monitor.print_report(monitor.analyze(rows))
+  │     cache = sum(it.get("cache_read_input_tokens", 0) + it.get("cache_creation_input_tokens", 0)
+  │                 for r in rows for it in json.loads(r)["response"]["usage"]["iterations"])
+  │     print()
+  │     print("monitor 沒算進成本的快取 token 合計：" + str(cache))
+  │     print("呼叫次數：" + str(claude_cli_client.calls_made()))
+▶ 執行結果：
+  code-simple          ok                   2407ms  score=100%
+  reason-plain         ok                   2358ms  score=100%
+  instruction-follow   ok                   2357ms  score=100%
+  knowledge            ok                   3341ms  score=100%
+  my-format            ok                   2466ms  score=100%
+
+no drift detected
+run_canary 回傳 0（0＝沒漂移，1＝有警告）
+
+──── monitor 讀 ch05/interactive/canary-calls.jsonl ────
+refusal analytics
+total 10   refused 0 (0.0%)   fallback served 0
+
+by category
+
+cost by model
+  claude-fable-5       $0.0129
+
+top refusal-triggering prompt prefixes
+
+monitor 沒算進成本的快取 token 合計：6622
+呼叫次數：5
+
+👉 第 7 步完成
+
+===== 第 8 步 =====
+指令：'C:\Program Files\Git\usr\bin\bash.EXE' ch05.sh 8
+exit code：0　耗時：0.2 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 5 章｜Fable Scanner　第 8 / 8 步
+  總結
+╚══════════════════════════════════════════════════════╝
+
+💡 提示詞和設定檔也要 lint。scan、canary、monitor 三個子指令各管一段，缺一不可；工具算不到的部分也要心裡有數。
+
+▶ 要執行的指令：
+  │ cat <<EOF
+  │   第 5 章總結
+  │     提示詞也要 lint：舊鷹架（大寫強調、逐步說出思考、剩餘 token、temperature、手動 thinking）在 Fable 5 上變成拒答或 400
+  │     scan 管寫法、canary 管行為漂移、monitor 管發生過什麼，三者互補：cyber 拒答是主題造成的，scan 抓不到，只有 monitor 看得到
+  │     規則只是正規表達式：會漏判（You MUST、中文、換個動詞），也會誤判（說明文字引用反例），error 要看上下文
+  │     設定檔三件事：不送 temperature／thinking、用 effort 控深度、每個 fable-5 呼叫都接 fallbacks
+  │     金絲雀第一次只拍快照，價值在第二次之後的比較；門檻是拒答率 +20%、延遲 1.5 倍、平均分數 60%
+  │     成本與拒答要從呼叫紀錄算，不要靠記憶；也要知道工具沒算到的部分（快取 token、轉接層沒有的拒答類別）
+  │ EOF
+▶ 執行結果：
+  第 5 章總結
+    提示詞也要 lint：舊鷹架（大寫強調、逐步說出思考、剩餘 token、temperature、手動 thinking）在 Fable 5 上變成拒答或 400
+    scan 管寫法、canary 管行為漂移、monitor 管發生過什麼，三者互補：cyber 拒答是主題造成的，scan 抓不到，只有 monitor 看得到
+    規則只是正規表達式：會漏判（You MUST、中文、換個動詞），也會誤判（說明文字引用反例），error 要看上下文
+    設定檔三件事：不送 temperature／thinking、用 effort 控深度、每個 fable-5 呼叫都接 fallbacks
+    金絲雀第一次只拍快照，價值在第二次之後的比較；門檻是拒答率 +20%、延遲 1.5 倍、平均分數 60%
+    成本與拒答要從呼叫紀錄算，不要靠記憶；也要知道工具沒算到的部分（快取 token、轉接層沒有的拒答類別）
+
+👉 第 8 步完成

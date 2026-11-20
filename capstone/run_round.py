@@ -56,6 +56,8 @@ MAX_REVIEW_RETRIES = 1
 # 只為了讓摘要好讀的概略匯率；實際走 Max 訂閱不扣錢，這是「等值成本」
 USD_TO_TWD = 32.0
 FEEDBACK_MAX_CHARS = 6000
+CLAUDE_RETRY_WAIT_SEC = 5
+LAUNCH_FAIL_HINTS = ("not found", "not recognized")
 CHAPTER_RE = re.compile(r"^ch\d{2}$")
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]|\x1b[()][A-Za-z0-9]")
 
@@ -248,6 +250,33 @@ def build_claude_cmd(role, claude_path, hook_path, system_prompt):
             "--output-format", "json"]
 
 
+def is_launch_failure(proc):
+    """結束碼非 0 且 stderr 像「找不到指令」，才算啟動類失敗；其他錯誤不重試。"""
+    stderr = (proc.stderr or "").lower()
+    return proc.returncode != 0 and any(hint in stderr for hint in LAUNCH_FAIL_HINTS)
+
+
+def run_claude_with_retry(role, cmd, prompt, env):
+    """i5 的 npm 版 claude 第一次在管線呼叫曾偶發 command not found：啟動類失敗等 5 秒重試一次。
+    重試不另外扣 claude -p 次數（reserve_calls 已在呼叫前扣過一次）。"""
+    for attempt in (1, 2):
+        try:
+            proc = subprocess.run(cmd, input=prompt, capture_output=True, text=True, encoding="utf-8",
+                                  errors="replace", timeout=AGENT_TIMEOUT_SEC, env=env,
+                                  cwd=practice_dir(), check=False)
+        except OSError as exc:
+            if attempt == 2:
+                raise
+            print(f"    （{role} 的 claude 啟動失敗：{exc}，{CLAUDE_RETRY_WAIT_SEC} 秒後重試一次）")
+        else:
+            if attempt == 2 or not is_launch_failure(proc):
+                return proc
+            print(f"    （{role} 的 claude 疑似找不到指令（結束碼 {proc.returncode}），"
+                  f"{CLAUDE_RETRY_WAIT_SEC} 秒後重試一次）")
+        time.sleep(CLAUDE_RETRY_WAIT_SEC)
+    raise AssertionError("unreachable")
+
+
 def call_agent(role, prompt, ctx):
     """所有 claude -p 呼叫集中在這裡。回傳 dict：result、session_id、cost、turns。"""
     if is_fake():
@@ -257,9 +286,7 @@ def call_agent(role, prompt, ctx):
         raise RoundError("找不到 claude 執行檔（shutil.which('claude') 為 None）")
     cmd = build_claude_cmd(role, claude_path, write_hook_settings(), read_agent_prompt(role))
     try:
-        proc = subprocess.run(cmd, input=prompt, capture_output=True, text=True, encoding="utf-8",
-                              errors="replace", timeout=AGENT_TIMEOUT_SEC, env=build_env(ctx, role),
-                              cwd=practice_dir(), check=False)
+        proc = run_claude_with_retry(role, cmd, prompt, build_env(ctx, role))
     except subprocess.TimeoutExpired as exc:
         raise RoundError(f"{role} 的 claude -p 逾時（超過 {AGENT_TIMEOUT_SEC} 秒）") from exc
     except OSError as exc:

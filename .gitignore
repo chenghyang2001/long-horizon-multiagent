@@ -17,3 +17,5 @@ state.json.tmp
 # 工廠執行期檔案
 capstone/.runtime/
 capstone/.fake-practice/
+stage3/approvals.json
+stage3/pending-approvals.jsonl

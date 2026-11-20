@@ -1,8 +1,21 @@
 {
-  "round": 1,
+  "round": 2,
   "queue": [
     "ch04",
-    "ch05"
+    "ch05",
+    "ch06",
+    "ch07",
+    "ch08",
+    "ch09",
+    "ch10",
+    "ch11",
+    "ch12",
+    "ch13",
+    "ch14",
+    "ch15",
+    "ch16",
+    "ch17",
+    "ch18"
   ],
   "chapters": {
     "ch04": {
@@ -106,6 +119,232 @@
       ]
     },
     "ch05": {
+      "status": "done",
+      "rewrites": 0,
+      "review_retries": 0,
+      "verdicts": [
+        {
+          "ts": "2026-11-20 12:33:07",
+          "station": "judge",
+          "verdict": "PASS",
+          "note": ""
+        },
+        {
+          "ts": "2026-11-20 12:34:21",
+          "station": "review",
+          "verdict": "PASS",
+          "note": ""
+        }
+      ],
+      "calls": 5,
+      "started": "2026-11-20 12:22:33",
+      "finished": "2026-11-20 12:34:21",
+      "round": 2,
+      "now_done": true,
+      "feedback": null,
+      "cost_usd": 5.782692,
+      "sessions": [
+        {
+          "role": "planner",
+          "session_id": "ac14e232-34e7-4b75-8885-dc7812a6eb04",
+          "cost_usd": 1.8997612000000001,
+          "turns": 29
+        },
+        {
+          "role": "writer",
+          "session_id": "7a72ddfe-78c2-4d96-b35d-989859e549f5",
+          "cost_usd": 1.1535632,
+          "turns": 8
+        },
+        {
+          "role": "now-updater",
+          "session_id": "db866b97-d8e2-4256-93d3-5bd16d37a5af",
+          "cost_usd": 0.7855674,
+          "turns": 5
+        },
+        {
+          "role": "tester",
+          "session_id": "139b26b8-0712-41ac-b892-0d36817d7f15",
+          "cost_usd": 0.8632198,
+          "turns": 4
+        },
+        {
+          "role": "reviewer",
+          "session_id": "2cb8b9a7-6132-4095-b3cf-d3964f1e58f3",
+          "cost_usd": 1.080581,
+          "turns": 12
+        }
+      ]
+    },
+    "ch06": {
+      "status": "pending",
+      "rewrites": 0,
+      "review_retries": 0,
+      "verdicts": [],
+      "calls": 0,
+      "started": null,
+      "finished": null,
+      "round": null,
+      "now_done": false,
+      "feedback": null,
+      "cost_usd": 0.0,
+      "sessions": []
+    },
+    "ch07": {
+      "status": "pending",
+      "rewrites": 0,
+      "review_retries": 0,
+      "verdicts": [],
+      "calls": 0,
+      "started": null,
+      "finished": null,
+      "round": null,
+      "now_done": false,
+      "feedback": null,
+      "cost_usd": 0.0,
+      "sessions": []
+    },
+    "ch08": {
+      "status": "pending",
+      "rewrites": 0,
+      "review_retries": 0,
+      "verdicts": [],
+      "calls": 0,
+      "started": null,
+      "finished": null,
+      "round": null,
+      "now_done": false,
+      "feedback": null,
+      "cost_usd": 0.0,
+      "sessions": []
+    },
+    "ch09": {
+      "status": "pending",
+      "rewrites": 0,
+      "review_retries": 0,
+      "verdicts": [],
+      "calls": 0,
+      "started": null,
+      "finished": null,
+      "round": null,
+      "now_done": false,
+      "feedback": null,
+      "cost_usd": 0.0,
+      "sessions": []
+    },
+    "ch10": {
+      "status": "pending",
+      "rewrites": 0,
+      "review_retries": 0,
+      "verdicts": [],
+      "calls": 0,
+      "started": null,
+      "finished": null,
+      "round": null,
+      "now_done": false,
+      "feedback": null,
+      "cost_usd": 0.0,
+      "sessions": []
+    },
+    "ch11": {
+      "status": "pending",
+      "rewrites": 0,
+      "review_retries": 0,
+      "verdicts": [],
+      "calls": 0,
+      "started": null,
+      "finished": null,
+      "round": null,
+      "now_done": false,
+      "feedback": null,
+      "cost_usd": 0.0,
+      "sessions": []
+    },
+    "ch12": {
+      "status": "pending",
+      "rewrites": 0,
+      "review_retries": 0,
+      "verdicts": [],
+      "calls": 0,
+      "started": null,
+      "finished": null,
+      "round": null,
+      "now_done": false,
+      "feedback": null,
+      "cost_usd": 0.0,
+      "sessions": []
+    },
+    "ch13": {
+      "status": "pending",
+      "rewrites": 0,
+      "review_retries": 0,
+      "verdicts": [],
+      "calls": 0,
+      "started": null,
+      "finished": null,
+      "round": null,
+      "now_done": false,
+      "feedback": null,
+      "cost_usd": 0.0,
+      "sessions": []
+    },
+    "ch14": {
+      "status": "pending",
+      "rewrites": 0,
+      "review_retries": 0,
+      "verdicts": [],
+      "calls": 0,
+      "started": null,
+      "finished": null,
+      "round": null,
+      "now_done": false,
+      "feedback": null,
+      "cost_usd": 0.0,
+      "sessions": []
+    },
+    "ch15": {
+      "status": "pending",
+      "rewrites": 0,
+      "review_retries": 0,
+      "verdicts": [],
+      "calls": 0,
+      "started": null,
+      "finished": null,
+      "round": null,
+      "now_done": false,
+      "feedback": null,
+      "cost_usd": 0.0,
+      "sessions": []
+    },
+    "ch16": {
+      "status": "pending",
+      "rewrites": 0,
+      "review_retries": 0,
+      "verdicts": [],
+      "calls": 0,
+      "started": null,
+      "finished": null,
+      "round": null,
+      "now_done": false,
+      "feedback": null,
+      "cost_usd": 0.0,
+      "sessions": []
+    },
+    "ch17": {
+      "status": "pending",
+      "rewrites": 0,
+      "review_retries": 0,
+      "verdicts": [],
+      "calls": 0,
+      "started": null,
+      "finished": null,
+      "round": null,
+      "now_done": false,
+      "feedback": null,
+      "cost_usd": 0.0,
+      "sessions": []
+    },
+    "ch18": {
       "status": "pending",
       "rewrites": 0,
       "review_retries": 0,
@@ -210,6 +449,66 @@
       "round": 1,
       "chapter": "ch04",
       "event": "完成並 commit：工廠：新增 K143 ch04 互動演練腳本（第 1 輪）"
+    },
+    {
+      "ts": "2026-11-20 12:22:33",
+      "round": 2,
+      "chapter": "ch05",
+      "event": "第 2 輪開始"
+    },
+    {
+      "ts": "2026-11-20 12:27:35",
+      "round": 2,
+      "chapter": "ch05",
+      "event": "規劃完成 → ch05.md"
+    },
+    {
+      "ts": "2026-11-20 12:29:12",
+      "round": 2,
+      "chapter": "ch05",
+      "event": "寫手完成（writer、now-updater）"
+    },
+    {
+      "ts": "2026-11-20 12:29:18",
+      "round": 2,
+      "chapter": "ch05",
+      "event": "使用者中斷（停在站 written）"
+    },
+    {
+      "ts": "2026-11-20 12:31:56",
+      "round": 2,
+      "chapter": "ch05",
+      "event": "接續第 2 輪（目前站：written，已呼叫 3 次）"
+    },
+    {
+      "ts": "2026-11-20 12:32:30",
+      "round": 2,
+      "chapter": "ch05",
+      "event": "腳本執行完成 → ch05-raw.log"
+    },
+    {
+      "ts": "2026-11-20 12:33:07",
+      "round": 2,
+      "chapter": "ch05",
+      "event": "測試判定 PASS"
+    },
+    {
+      "ts": "2026-11-20 12:34:21",
+      "round": 2,
+      "chapter": "ch05",
+      "event": "審查 PASS"
+    },
+    {
+      "ts": "2026-11-20 12:34:21",
+      "round": 2,
+      "chapter": "ch05",
+      "event": "完成並 commit：工廠：新增 K143 ch05 互動演練腳本（第 2 輪）"
+    },
+    {
+      "ts": "2026-11-20 12:43:29",
+      "round": 2,
+      "chapter": "-",
+      "event": "建立 queue：ch04 ch05 ch06 ch07 ch08 ch09 ch10 ch11 ch12 ch13 ch14 ch15 ch16 ch17 ch18"
     }
   ]
 }
