@@ -1,1 +1,2 @@
 {"ts": "2026-11-21 14:06:55", "unit": "ch01", "status": "failed", "reason": "3 執行腳本：指令站執行期間受保護檔被改動（c:\\users\\user\\workspace\\kindle-145-swarm-intelligence-factory\\practice\\.claude\\session-state.md），已還原 0 個引擎檔；本站期間新增的佇列指令與核准不套用；工作目錄控制檔被改動：c:\\users\\user\\workspace\\kindle-145-swarm-intelligence-factory\\practice\\.claude\\session-state.md；引擎停止，不再做下一個單位"}
+{"ts": "2026-11-21 16:41:22", "unit": "ch09", "status": "rejected", "reason": "5 審查 REJECT，已退回 1 次（上限 1）仍不過"}

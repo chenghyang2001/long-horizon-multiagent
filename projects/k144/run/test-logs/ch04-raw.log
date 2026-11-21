@@ -1,0 +1,999 @@
+# ch04 執行紀錄　2026-11-21 15:25:19
+
+===== bash -n 語法檢查 =====
+指令：bash -n ch04.sh
+exit code：0　耗時：0.2 秒
+----- 輸出 -----
+
+
+===== 第 1 步 =====
+指令：bash ch04.sh 1
+exit code：0　耗時：0.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K144 第 4 章｜自組織與集體湧現　第 1 / 8 步
+  調度停擺 20 分鐘：機器人自己重分配
+╚══════════════════════════════════════════════════════╝
+
+💡 倉庫 23 台機器人、300 件包裹，約 7 成堆在靠近出貨口的 5 台身上。中央調度系統當機不發指令。左邊：每台只做自己佇列裡的；右邊：每台每步看隨機 4 個鄰居，自己的佇列比鄰居平均少 3 成以上，就從最忙的鄰居拉 1 件。每步 = 15 秒，出貨窗口是第 24 步（6 分鐘）。
+
+▶ 要執行的程式：
+  │ import random
+  │ 
+  │ random.seed(144)
+  │ R, P, HOT, OK, DEADLINE = 23, 300, 5, 0.95, 24
+  │ 
+  │ def initial():
+  │     q = [0] * R
+  │     for _ in range(P):
+  │         if random.random() < 0.7:
+  │             q[random.randrange(HOT)] += 1
+  │         else:
+  │             q[random.randrange(HOT, R)] += 1
+  │     return q
+  │ 
+  │ START = initial()
+  │ 
+  │ def simulate(local):
+  │     q = list(START)
+  │     done, t, idle, pulls = 0, 0, 0, 0
+  │     curve = {}
+  │     while done < P and t < 200:
+  │         t += 1
+  │         if local:
+  │             for i in range(R):
+  │                 nb = random.sample([j for j in range(R) if j != i], 4)
+  │                 avg = sum(q[j] for j in nb) / 4
+  │                 busiest = max(nb, key=lambda j: q[j])
+  │                 if q[i] < 0.7 * avg and q[busiest] > q[i] + 1:
+  │                     q[busiest] -= 1
+  │                     q[i] += 1
+  │                     pulls += 1
+  │         for i in range(R):
+  │             if q[i] == 0:
+  │                 idle += 1
+  │             elif random.random() < OK:
+  │                 q[i] -= 1
+  │                 done += 1
+  │         curve[t] = done
+  │     return t, curve, idle, pulls
+  │ 
+  │ hot = START[:HOT]
+  │ rest = START[HOT:]
+  │ print(f"倉庫：{R} 台機器人、{P} 件包裹；中央調度系統 20 分鐘沒發指令（每步 = 15 秒）")
+  │ print(f"包裹約 7 成堆在靠近出貨口的 {HOT} 台身上：{hot}；其餘 {R - HOT} 台平均 {sum(rest) / len(rest):.1f} 件")
+  │ print(f"出貨窗口：第 {DEADLINE} 步（6 分鐘）前要出完")
+  │ print()
+  │ rows = (("等中央派工：各做各的", False), ("三條本地規則：閒的主動去拉", True))
+  │ print(" 做法                       | 第6步 | 第12步 | 第18步 | 第24步 | 全部出完 | 閒置台·步 | 拉取次數")
+  │ print("-" * 92)
+  │ result = {}
+  │ for name, local in rows:
+  │     t, curve, idle, pulls = simulate(local)
+  │     cells = [curve.get(s, P) for s in (6, 12, 18, 24)]
+  │     result[local] = cells[3]
+  │     print(f" {name:<22} | {cells[0]:>5} | {cells[1]:>6} | {cells[2]:>6} | {cells[3]:>6} | 第 {t:>3} 步 | {idle:>9} | {pulls:>8}")
+  │ print()
+  │ miss = P - result[False]
+  │ print(f"等中央派工：窗口前只出了 {result[False]} 件，{miss} 件錯過出貨；本地規則：出了 {result[True]} 件。")
+  │ print("沒有任何一條規則寫「要變高效」——只是「閒的去拉最忙鄰居的工作」，負載平衡就自己長出來了。")
+▶ 執行結果：
+倉庫：23 台機器人、300 件包裹；中央調度系統 20 分鐘沒發指令（每步 = 15 秒）
+包裹約 7 成堆在靠近出貨口的 5 台身上：[45, 46, 42, 43, 41]；其餘 18 台平均 4.6 件
+出貨窗口：第 24 步（6 分鐘）前要出完
+
+ 做法                       | 第6步 | 第12步 | 第18步 | 第24步 | 全部出完 | 閒置台·步 | 拉取次數
+--------------------------------------------------------------------------------------------
+ 等中央派工：各做各的             |   104 |    141 |    170 |    199 | 第  47 步 |       761 |        0
+ 三條本地規則：閒的主動去拉          |   132 |    266 |    300 |    300 | 第  14 步 |        12 |      174
+
+等中央派工：窗口前只出了 199 件，101 件錯過出貨；本地規則：出了 300 件。
+沒有任何一條規則寫「要變高效」——只是「閒的去拉最忙鄰居的工作」，負載平衡就自己長出來了。
+
+👉 第 1 步完成
+
+===== 第 2 步 =====
+指令：bash ch04.sh 2
+exit code：0　耗時：0.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K144 第 4 章｜自組織與集體湧現　第 2 / 8 步
+  規則 a：重複度門檻為什麼是 80% 左右
+╚══════════════════════════════════════════════════════╝
+
+💡 3,000 對任務兩兩比對：900 對其實是同一種任務（相似度 0.72～1.0），600 對是同類但不同任務（0.45～0.82，最容易誤判），1,500 對無關（0～0.45）。正確合併省 1 單位工時，誤合併要返工賠 3 單位。
+
+▶ 要執行的程式：
+  │ import random
+  │ 
+  │ random.seed(144)
+  │ PAIRS = [("同一種任務", 900), ("同類但不同任務", 600), ("無關任務", 1500)]
+  │ RANGE = {"同一種任務": (0.72, 1.0), "同類但不同任務": (0.45, 0.82), "無關任務": (0.0, 0.45)}
+  │ SAVE, REWORK = 1.0, 3.0
+  │ pairs = []
+  │ for kind, n in PAIRS:
+  │     lo, hi = RANGE[kind]
+  │     for _ in range(n):
+  │         pairs.append((kind, random.uniform(lo, hi)))
+  │ 
+  │ print(f"{len(pairs):,} 對任務兩兩比對；相似度 ≥ 門檻就合併給同一節點")
+  │ for kind, n in PAIRS:
+  │     vals = [s for k, s in pairs if k == kind]
+  │     print(f"  {kind:<8}：{n:>5} 對，平均相似度 {sum(vals) / n:.2f}（最低 {min(vals):.2f}、最高 {max(vals):.2f}）")
+  │ print(f"正確合併（同一種任務）省 {SAVE:g} 單位工時；誤合併（其實不同）要返工，賠 {REWORK:g} 單位")
+  │ print()
+  │ print(" 門檻 | 合併數 | 正確合併 | 誤合併 | 漏合併 | 淨效益")
+  │ print("-" * 54)
+  │ table = []
+  │ for t in (0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95):
+  │     good = sum(1 for k, s in pairs if s >= t and k == "同一種任務")
+  │     bad = sum(1 for k, s in pairs if s >= t and k != "同一種任務")
+  │     miss = 900 - good
+  │     net = SAVE * good - REWORK * bad
+  │     table.append((t, good + bad, good, bad, miss, net))
+  │ best = max(table, key=lambda r: r[5])
+  │ for t, m, good, bad, miss, net in table:
+  │     mark = " ←最佳" if t == best[0] else ""
+  │     print(f" {t:.2f} | {m:>6} | {good:>8} | {bad:>6} | {miss:>6} | {net:>7.0f}{mark}")
+  │ print()
+  │ print(f"淨效益最高的門檻是 {best[0]:.2f}。門檻太低：把「長得像但不同」的任務誤合併，返工吃掉省下的時間；")
+  │ print("門檻太高：該合併的沒合併。書中「相似度約 80%」就是這個權衡的經驗值——要依返工成本調，不是常數。")
+▶ 執行結果：
+3,000 對任務兩兩比對；相似度 ≥ 門檻就合併給同一節點
+  同一種任務   ：  900 對，平均相似度 0.86（最低 0.72、最高 1.00）
+  同類但不同任務 ：  600 對，平均相似度 0.63（最低 0.45、最高 0.82）
+  無關任務    ： 1500 對，平均相似度 0.22（最低 0.00、最高 0.45）
+正確合併（同一種任務）省 1 單位工時；誤合併（其實不同）要返工，賠 3 單位
+
+ 門檻 | 合併數 | 正確合併 | 誤合併 | 漏合併 | 淨效益
+------------------------------------------------------
+ 0.60 |   1255 |      900 |    355 |      0 |    -165
+ 0.65 |   1170 |      900 |    270 |      0 |      90
+ 0.70 |   1088 |      900 |    188 |      0 |     336
+ 0.75 |    925 |      801 |    124 |     99 |     429
+ 0.80 |    652 |      626 |     26 |    274 |     548 ←最佳
+ 0.85 |    464 |      464 |      0 |    436 |     464
+ 0.90 |    291 |      291 |      0 |    609 |     291
+ 0.95 |    128 |      128 |      0 |    772 |     128
+
+淨效益最高的門檻是 0.80。門檻太低：把「長得像但不同」的任務誤合併，返工吃掉省下的時間；
+門檻太高：該合併的沒合併。書中「相似度約 80%」就是這個權衡的經驗值——要依返工成本調，不是常數。
+
+👉 第 2 步完成
+
+===== 第 3 步 =====
+指令：bash ch04.sh 3
+exit code：0　耗時：0.6 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K144 第 4 章｜自組織與集體湧現　第 3 / 8 步
+  規則 b＋c：負載梯度、懲罰冷卻，與「偷看全域」的陷阱
+╚══════════════════════════════════════════════════════╝
+
+💡 30 個節點、200 步，每步 22 件任務，一半從 5 個入口節點進來。第 50 步起節點 10～13 劣化，成功率從 95% 掉到 20%。四種設定共用同一串亂數，只差規則。
+
+▶ 要執行的程式：
+  │ import random
+  │ 
+  │ random.seed(144)
+  │ N, STEPS, OK, BAD_OK, BAD_FROM = 30, 200, 0.95, 0.2, 50
+  │ HOT = list(range(5))
+  │ BAD = {10, 11, 12, 13}
+  │ 
+  │ def build_world():
+  │     rng = random.Random(3030)
+  │     arrivals = []
+  │     for t in range(STEPS):
+  │         arrivals.append([rng.choice(HOT) if rng.random() < 0.5 else rng.randrange(5, N) for _ in range(22)])
+  │     draws = [[rng.random() for _ in range(N)] for _ in range(STEPS)]
+  │     nbrs = [[[j + (j >= i) for j in rng.sample(range(N - 1), 4)] for i in range(N)] for _ in range(STEPS)]
+  │     return arrivals, draws, nbrs
+  │ 
+  │ ARR, DRAWS, NBRS = build_world()
+  │ 
+  │ def run(pull, penalty, global_view=False):
+  │     q = [0] * N
+  │     fails = [0] * N
+  │     cool = [0] * N
+  │     done = wasted = moved = reads = 0
+  │     for t in range(STEPS):
+  │         for node in ARR[t]:
+  │             if cool[node] > 0:
+  │                 node = NBRS[t][node][0]          # 冷卻中不接單：轉給鄰居
+  │             q[node] += 1
+  │         if pull:
+  │             for i in range(N):
+  │                 if cool[i] > 0:
+  │                     continue
+  │                 nb = [j for j in range(N) if j != i] if global_view else NBRS[t][i]
+  │                 reads += len(nb)
+  │                 avg = sum(q[j] for j in nb) / len(nb)
+  │                 busiest = max(nb, key=lambda j: q[j])
+  │                 if q[i] < 0.7 * avg and q[busiest] > q[i] + 1:
+  │                     q[busiest] -= 1
+  │                     q[i] += 1
+  │                     moved += 1
+  │         for i in range(N):
+  │             if cool[i] > 0:
+  │                 cool[i] -= 1
+  │                 continue
+  │             if q[i] == 0:
+  │                 continue
+  │             p = BAD_OK if (i in BAD and t >= BAD_FROM) else OK
+  │             if DRAWS[t][i] < p:
+  │                 q[i] -= 1
+  │                 done += 1
+  │                 fails[i] = 0
+  │             else:
+  │                 wasted += 1
+  │                 fails[i] += 1
+  │                 if penalty and fails[i] >= 3:
+  │                     cool[i] = 5
+  │                     fails[i] = 0
+  │     arrived = sum(len(b) for b in ARR)
+  │     return done, arrived, sum(q), max(q), wasted, moved, reads / STEPS
+  │ 
+  │ print(f"{N} 個節點、{STEPS} 步；每步 22 件任務，一半從 5 個入口節點進來；第 {BAD_FROM} 步起節點 10～13 劣化（成功率 95% → 20%）")
+  │ print("b 負載梯度：自己的佇列 < 鄰居平均 × 0.7，就從最忙的鄰居拉 1 件；c 懲罰：連續失敗 3 次 → 冷卻 5 步，不接單")
+  │ print()
+  │ print(" 設定                         | 完成數 | 完成率 | 最終積壓 | 結束時最長佇列 | 失敗嘗試 | 搬運次數 | 每步讀取節點數")
+  │ print("-" * 110)
+  │ configs = [("沒有規則：任務留在進貨節點", False, False, False), ("只開 b 負載梯度", True, False, False),
+  │            ("b ＋ c 懲罰冷卻", True, True, False), ("b ＋ c，但改看全域資訊", True, True, True)]
+  │ out = {}
+  │ for name, pull, pen, gv in configs:
+  │     r = run(pull, pen, gv)
+  │     out[name] = r
+  │     done, arrived, left, peak, wasted, moved, reads = r
+  │     print(f" {name:<24} | {done:>6,} | {done / arrived:>6.1%} | {left:>8,} | {peak:>14} | {wasted:>8} | {moved:>8,} | {reads:>14.0f}")
+  │ print()
+  │ w_b = out["只開 b 負載梯度"][4]
+  │ w_bc = out["b ＋ c 懲罰冷卻"][4]
+  │ r_l = out["b ＋ c 懲罰冷卻"][6]
+  │ r_g = out["b ＋ c，但改看全域資訊"][6]
+  │ print(f"懲罰冷卻讓失敗嘗試從 {w_b} 降到 {w_bc}（少 {1 - w_bc / w_b:.0%}）：劣化節點不再一直接單、一直失敗。")
+  │ print(f"改看全域資訊，完成率差不多，但每步要讀 {r_g:.0f} 筆節點資訊，是本地的 {r_g / r_l:.1f} 倍——規則一旦依賴全域資訊，就又退回中央排程。")
+▶ 執行結果：
+30 個節點、200 步；每步 22 件任務，一半從 5 個入口節點進來；第 50 步起節點 10～13 劣化（成功率 95% → 20%）
+b 負載梯度：自己的佇列 < 鄰居平均 × 0.7，就從最忙的鄰居拉 1 件；c 懲罰：連續失敗 3 次 → 冷卻 5 步，不接單
+
+ 設定                         | 完成數 | 完成率 | 最終積壓 | 結束時最長佇列 | 失敗嘗試 | 搬運次數 | 每步讀取節點數
+--------------------------------------------------------------------------------------------------------------
+ 沒有規則：任務留在進貨節點            |  2,938 |  66.8% |    1,462 |            280 |      612 |        0 |              0
+ 只開 b 負載梯度                |  4,387 |  99.7% |       13 |              4 |      678 |    2,158 |            120
+ b ＋ c 懲罰冷卻               |  4,383 |  99.6% |       17 |              6 |      461 |    2,088 |            114
+ b ＋ c，但改看全域資訊            |  4,396 |  99.9% |        4 |              1 |      456 |    2,008 |            827
+
+懲罰冷卻讓失敗嘗試從 678 降到 461（少 32%）：劣化節點不再一直接單、一直失敗。
+改看全域資訊，完成率差不多，但每步要讀 827 筆節點資訊，是本地的 7.3 倍——規則一旦依賴全域資訊，就又退回中央排程。
+
+👉 第 3 步完成
+
+===== 第 4 步 =====
+指令：bash ch04.sh 4
+exit code：0　耗時：2.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K144 第 4 章｜自組織與集體湧現　第 4 / 8 步
+  練習 1：中央排程 vs 三條本地規則（η、T90、敏感度）
+╚══════════════════════════════════════════════════════╝
+
+💡 N = 20、60、120、200，每種跑 300 步。每步到達 Poisson(0.4N) 件、20 種類型，60% 從 20% 的入口節點進來。central：每步最多派 40 件、每 50 個節點多延遲 1 步。local：三條本地規則（同類合併、負載梯度、懲罰冷卻），每個節點只看隨機 4 個鄰居。第 150 步 15% 節點故障 30 步，central 的排程器另外停擺 10 步。T90 拿「同一組亂數、沒有故障」的對照跑法當基準，用 10 步移動平均，避免把到達量的隨機波動誤當成故障。結果寫到 ch04/interactive/self_org_warehouse.csv。
+
+▶ 要執行的程式：
+  │ import csv
+  │ import math
+  │ import os
+  │ import random
+  │ 
+  │ random.seed(144)
+  │ OUT = "ch04/interactive"
+  │ os.makedirs(OUT, exist_ok=True)
+  │ CSV_PATH = OUT + "/self_org_warehouse.csv"
+  │ STEPS, TYPES, OK, C_MAX = 300, 20, 0.95, 40
+  │ FAIL_AT, FAIL_LEN, STALL = 150, 30, 10
+  │ SIZES = [20, 60, 120, 200]
+  │ 
+  │ def poisson(rng, lam):
+  │     limit, k, p = math.exp(-lam), 0, 1.0
+  │     while True:
+  │         p *= rng.random()
+  │         if p <= limit:
+  │             return k
+  │         k += 1
+  │ 
+  │ def make_world(n):
+  │     rng = random.Random(1440 + n)
+  │     entries = rng.sample(range(n), n // 5)
+  │     failed = set(rng.sample(range(n), round(n * 0.15)))
+  │     arrivals = []
+  │     for t in range(STEPS):
+  │         batch = []
+  │         for _ in range(poisson(rng, 0.4 * n)):
+  │             node = rng.choice(entries) if rng.random() < 0.6 else rng.randrange(n)
+  │             batch.append((rng.randrange(TYPES), node))
+  │         arrivals.append(batch)
+  │     act = random.Random(2880 + n)
+  │     draws = [[act.random() for _ in range(n)] for _ in range(STEPS)]
+  │     nbrs = [[[j + (j >= i) for j in act.sample(range(n - 1), 4)] for i in range(n)] for _ in range(STEPS)]
+  │     return failed, arrivals, draws, nbrs
+  │ 
+  │ def run_local(n, world, extra=0, fail=True):
+  │     failed, arrivals, draws, nbrs = world
+  │     if not fail:
+  │         failed = set()
+  │     q = [[i % TYPES] for i in range(n)]
+  │     for _ in range(extra):
+  │         q[0].append(TYPES - 1)
+  │     fails, cool = [0] * n, [0] * n
+  │     done = [0] * STEPS
+  │     arrived = n + extra
+  │     longest = 0
+  │     snaps = {}
+  │     for t in range(STEPS):
+  │         down = failed if FAIL_AT <= t < FAIL_AT + FAIL_LEN else set()
+  │         for typ, node in arrivals[t]:
+  │             if cool[node] > 0:
+  │                 node = nbrs[t][node][0]
+  │             q[node].append(typ)
+  │         arrived += len(arrivals[t])
+  │         for i in range(n):                                  # 規則 b：負載梯度
+  │             if i in down or cool[i] > 0:
+  │                 continue
+  │             nb = nbrs[t][i]
+  │             avg = sum(len(q[j]) for j in nb) / 4
+  │             busiest = max(nb, key=lambda j: len(q[j]))
+  │             if len(q[i]) < 0.7 * avg and len(q[busiest]) > len(q[i]) + 1:
+  │                 q[i].append(q[busiest].pop())
+  │         for i in range(n):
+  │             if cool[i] > 0:
+  │                 cool[i] -= 1
+  │                 continue
+  │             if i in down or not q[i]:
+  │                 continue
+  │             if draws[t][i] < OK:
+  │                 typ = q[i].pop(0)
+  │                 done[t] += 1
+  │                 fails[i] = 0
+  │                 if typ in q[i]:                             # 規則 a：同類型合併，第二件耗時減半
+  │                     q[i].remove(typ)
+  │                     done[t] += 1
+  │             else:
+  │                 fails[i] += 1
+  │                 if fails[i] >= 3:                           # 規則 c：連續失敗 3 次，冷卻 5 步
+  │                     cool[i] = 5
+  │                     fails[i] = 0
+  │         longest = max(longest, max(len(x) for x in q))
+  │         snaps[t] = [len(x) for x in q]
+  │     return done, arrived, longest, snaps
+  │ 
+  │ def run_central(n, world, fail=True):
+  │     failed, arrivals, draws, nbrs = world
+  │     if not fail:
+  │         failed = set()
+  │     delay = n // 50
+  │     backlog = n
+  │     nodeq = [0] * n
+  │     pending = []
+  │     done = [0] * STEPS
+  │     arrived = n
+  │     longest = 0
+  │     for t in range(STEPS):
+  │         down = failed if FAIL_AT <= t < FAIL_AT + FAIL_LEN else set()
+  │         backlog += len(arrivals[t])
+  │         arrived += len(arrivals[t])
+  │         if not (fail and FAIL_AT <= t < FAIL_AT + STALL):  # 排程器在第 150 步停擺 10 步
+  │             k = min(C_MAX, backlog)
+  │             backlog -= k
+  │             alive = sorted((i for i in range(n) if i not in down), key=lambda i: nodeq[i])
+  │             for m in range(k):
+  │                 pending.append((t + delay, alive[m % len(alive)]))
+  │         keep = []
+  │         for due, node in pending:
+  │             if due <= t:
+  │                 nodeq[node] += 1
+  │             else:
+  │                 keep.append((due, node))
+  │         pending = keep
+  │         for i in range(n):
+  │             if i in down or nodeq[i] == 0:
+  │                 continue
+  │             if draws[t][i] < OK:
+  │                 nodeq[i] -= 1
+  │                 done[t] += 1
+  │         longest = max(longest, backlog)
+  │     return done, arrived, longest
+  │ 
+  │ def rolling(done):
+  │     roll = []
+  │     for t in range(STEPS):
+  │         w = done[max(0, t - 9):t + 1]                       # 10 步移動平均
+  │         roll.append(sum(w) / len(w))
+  │     return roll
+  │ 
+  │ def t90(done, ref):
+  │     # ref：同一個世界、同一組亂數、但沒有故障的對照跑法；兩者相除，到達量的隨機波動會互相抵銷
+  │     rf, rr = rolling(done), rolling(ref)
+  │     low = [rf[t] < 0.9 * rr[t] for t in range(STEPS)]
+  │     dip = next((t for t in range(FAIL_AT, FAIL_AT + FAIL_LEN) if low[t]), None)   # 只在故障窗內找下探
+  │     if dip is None:
+  │         return 0
+  │     back = next((t for t in range(dip + 1, STEPS - 4) if not any(low[t:t + 5])), None)  # 連續 5 步回到 90% 以上
+  │     return None if back is None else back - FAIL_AT
+  │ 
+  │ worlds = {n: make_world(n) for n in SIZES}
+  │ rows = []
+  │ curves = {}
+  │ t90s = {}
+  │ print(f"{STEPS} 步；每步到達任務 ~ Poisson(0.4N)，{TYPES} 種類型，60% 從 20% 的入口節點進來；成功率 {OK:.0%}")
+  │ print(f"第 {FAIL_AT} 步：15% 節點故障 {FAIL_LEN} 步；central 的排程器另外停擺 {STALL} 步（每步最多派 {C_MAX} 件、每 50 節點多延遲 1 步）")
+  │ print("T90 = 故障後完成數（10 步移動平均）回到「同一組亂數、沒有故障的對照跑法」90% 以上並連續維持 5 步，所需的步數；故障窗內沒掉到 90% 以下記 0")
+  │ print("最長佇列：central 看中央待派佇列，local 看最長的節點佇列")
+  │ print()
+  │ print("    N | 策略    |     η | 完成率 |    T90 | 最長佇列")
+  │ print("-" * 56)
+  │ for n in SIZES:
+  │     for name in ("central", "local"):
+  │         if name == "central":
+  │             done, arrived, longest = run_central(n, worlds[n])
+  │             ref = run_central(n, worlds[n], fail=False)[0]
+  │         else:
+  │             done, arrived, longest, _ = run_local(n, worlds[n])
+  │             ref = run_local(n, worlds[n], fail=False)[0]
+  │         total = sum(done)
+  │         eta = total / (n * STEPS)
+  │         rate = total / arrived
+  │         tt = t90(done, ref)
+  │         t90s[(n, name)] = tt
+  │         ts = "未恢復" if tt is None else str(tt)
+  │         rows.append({"N": n, "strategy": name, "eta": round(eta, 4), "completion_rate": round(rate, 4),
+  │                      "t90": "" if tt is None else tt, "longest_queue": longest})
+  │         if n == 120:
+  │             curves[name] = done
+  │         print(f" {n:>4} | {name:<7} | {eta:.3f} | {rate:>6.1%} | {ts:>6} | {longest:>8,}")
+  │ 
+  │ with open(CSV_PATH, "w", encoding="utf-8", newline="") as f:
+  │     w = csv.DictWriter(f, fieldnames=["N", "strategy", "eta", "completion_rate", "t90", "longest_queue"])
+  │     w.writeheader()
+  │     w.writerows(rows)
+  │ print("已寫入", CSV_PATH, f"（{len(rows)} 列）")
+  │ 
+  │ print()
+  │ print("N=120 每步完成數（看故障前後的缺口；第 151 步起故障）")
+  │ marks = [140, 149, 152, 155, 158, 161, 164, 167, 170, 180]
+  │ print(" 第幾步  | " + " | ".join(f"{m + 1:>4}" for m in marks))
+  │ for name in ("central", "local"):
+  │     c = curves[name]
+  │     print(f" {name:<7} | " + " | ".join(f"{c[m]:>4}" for m in marks))
+  │ 
+  │ da, _, _, sa = run_local(120, worlds[120], 0)
+  │ db, _, _, sb = run_local(120, worlds[120], 1)
+  │ print()
+  │ print("【對初始條件的敏感度】N=120 local 跑兩次：第二次一開始多 1 件任務，其餘亂數完全相同")
+  │ print(" 第幾步 | 當步完成數差 | 累積完成數差 | 佇列狀態距離")
+  │ print("-" * 52)
+  │ dists = []
+  │ for t in (49, 149, 299):
+  │     dist = sum(abs(x - y) for x, y in zip(sa[t], sb[t]))
+  │     dists.append(dist)
+  │     cum = sum(db[:t + 1]) - sum(da[:t + 1])
+  │     print(f" {t + 1:>6} | {db[t] - da[t]:>+12} | {cum:>+12} | {dist:>12}")
+  │ verdict = "差異沒有被放大（穩定，接近書中「Lyapunov 指數很小」的狀態）" if max(dists) <= 5 else "差異被放大了（對初始條件敏感，要小心）"
+  │ print("判讀：" + verdict)
+  │ 
+  │ eta_map = {(r["N"], r["strategy"]): r["eta"] for r in rows}
+  │ lc = [eta_map[(n, "local")] for n in SIZES]
+  │ cc = [eta_map[(n, "central")] for n in SIZES]
+  │ lt = ["未恢復" if t90s[(n, "local")] is None else str(t90s[(n, "local")]) for n in SIZES]
+  │ ct = ["未恢復" if t90s[(n, "central")] is None else str(t90s[(n, "central")]) for n in SIZES]
+  │ ratio = lc[-1] / lc[0]
+  │ sup = "出現了超線性跳升" if ratio > 1.05 else "沒有超線性跳升"
+  │ print()
+  │ print(f"結論 1：central 的 η 從 {cc[0]:.3f}（N=20）掉到 {cc[-1]:.3f}（N=200）——派工上限與延遲把規模變成負擔。")
+  │ def tv(x):
+  │     return 10 ** 6 if x is None else x
+  │ faster = all(tv(t90s[(n, "local")]) <= tv(t90s[(n, "central")]) for n in SIZES)
+  │ cmp_s = "每個規模下 local 的 T90 都不比 central 長" if faster else "有些規模下 local 的 T90 反而比 central 長，照實記下"
+  │ print("結論 2：local 的 η 維持在 " + format(min(lc), ".3f") + "～" + format(max(lc), ".3f") + "；T90 local＝" + "/".join(lt) + "、central＝" + "/".join(ct) + "（N=20/60/120/200），" + cmp_s + "；排程器停擺在 central 曲線上留下缺口。")
+  │ print(f"結論 3：local η 在 N=200 是 N=20 的 {ratio:.2f} 倍，{sup}。書中「約 120 個節點出現拐點」是經驗觀察，不是定律；這個模擬的 η 被到達量（0.4）封頂，照實報告。")
+▶ 執行結果：
+300 步；每步到達任務 ~ Poisson(0.4N)，20 種類型，60% 從 20% 的入口節點進來；成功率 95%
+第 150 步：15% 節點故障 30 步；central 的排程器另外停擺 10 步（每步最多派 40 件、每 50 節點多延遲 1 步）
+T90 = 故障後完成數（10 步移動平均）回到「同一組亂數、沒有故障的對照跑法」90% 以上並連續維持 5 步，所需的步數；故障窗內沒掉到 90% 以下記 0
+最長佇列：central 看中央待派佇列，local 看最長的節點佇列
+
+    N | 策略    |     η | 完成率 |    T90 | 最長佇列
+--------------------------------------------------------
+   20 | central | 0.405 | 100.0% |     14 |       79
+   20 | local   | 0.405 |  99.9% |      0 |        3
+   60 | central | 0.405 |  99.7% |     16 |      218
+   60 | local   | 0.406 | 100.0% |      0 |        6
+  120 | central | 0.320 |  80.2% |     21 |    2,764
+  120 | local   | 0.399 | 100.0% |      0 |        5
+  200 | central | 0.191 |  47.5% |     23 |   12,445
+  200 | local   | 0.401 | 100.0% |      0 |        6
+已寫入 ch04/interactive/self_org_warehouse.csv （8 列）
+
+N=120 每步完成數（看故障前後的缺口；第 151 步起故障）
+ 第幾步  |  141 |  150 |  153 |  156 |  159 |  162 |  165 |  168 |  171 |  181
+ central |   42 |   43 |    5 |    0 |    0 |    0 |   39 |   42 |   38 |   45
+ local   |   51 |   47 |   50 |   40 |   47 |   42 |   49 |   51 |   55 |   78
+
+【對初始條件的敏感度】N=120 local 跑兩次：第二次一開始多 1 件任務，其餘亂數完全相同
+ 第幾步 | 當步完成數差 | 累積完成數差 | 佇列狀態距離
+----------------------------------------------------
+     50 |           +0 |           +1 |            0
+    150 |           +0 |           +1 |            0
+    300 |           +0 |           +1 |            0
+判讀：差異沒有被放大（穩定，接近書中「Lyapunov 指數很小」的狀態）
+
+結論 1：central 的 η 從 0.405（N=20）掉到 0.191（N=200）——派工上限與延遲把規模變成負擔。
+結論 2：local 的 η 維持在 0.399～0.406；T90 local＝0/0/0/0、central＝14/16/21/23（N=20/60/120/200），每個規模下 local 的 T90 都不比 central 長；排程器停擺在 central 曲線上留下缺口。
+結論 3：local η 在 N=200 是 N=20 的 0.99 倍，沒有超線性跳升。書中「約 120 個節點出現拐點」是經驗觀察，不是定律；這個模擬的 η 被到達量（0.4）封頂，照實報告。
+
+👉 第 4 步完成
+
+===== 第 5 步 =====
+指令：bash ch04.sh 5
+exit code：0　耗時：1.2 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K144 第 4 章｜自組織與集體湧現　第 5 / 8 步
+  反饋延遲與吸引子：湧現不是永遠都會發生
+╚══════════════════════════════════════════════════════╝
+
+💡 前半：40 個節點，每步 30 件任務全從 4 個入口進來（總處理能力約 36），每個節點把「自己佇列 − 看到的鄰居佇列」的一半推給看起來最閒的鄰居，但看到的是 d 步以前的數字。後半：佇列超過 8 件就會塞車，處理成功率從 95% 掉到 60%；負載 ρ = 0.4、0.7、0.9，各從空倉與每個節點 30 件開始跑 300 步。
+
+▶ 要執行的程式：
+  │ import random
+  │ 
+  │ random.seed(144)
+  │ N = 40
+  │ 
+  │ def run_delay(d, steps=200, arrive=30, entry=4, ok=0.9):
+  │     rng = random.Random(4040)
+  │     q = [0] * N
+  │     hist = []
+  │     moved = peak = 0
+  │     imbal = 0.0
+  │     for t in range(steps):
+  │         for _ in range(arrive):
+  │             q[rng.randrange(entry)] += 1
+  │         hist.append(list(q))
+  │         view = hist[max(0, len(hist) - 1 - d)]          # 看到的是 d 步以前的鄰居佇列
+  │         for i in rng.sample(range(N), N):
+  │             nb = [j + (j >= i) for j in rng.sample(range(N - 1), 4)]
+  │             light = min(nb, key=lambda j: view[j])
+  │             gap = q[i] - view[light]
+  │             if gap >= 2:
+  │                 k = gap // 2
+  │                 q[i] -= k
+  │                 q[light] += k
+  │                 moved += k
+  │         for i in range(N):
+  │             if q[i] > 0 and rng.random() < ok:
+  │                 q[i] -= 1
+  │         peak = max(peak, max(q))
+  │         if t >= 50:
+  │             m = sum(q) / N
+  │             imbal += (sum((x - m) ** 2 for x in q) / N) ** 0.5
+  │     return moved, peak, imbal / (steps - 50), sum(q)
+  │ 
+  │ print("【反饋延遲】40 個節點、200 步；每步 30 件從 4 個入口進來；把落差的一半推給「看起來」最閒的鄰居")
+  │ print(" 延遲 d | 搬運件數 | 最長佇列 | 平均不平衡度（標準差） | 結束時總積壓")
+  │ print("-" * 70)
+  │ res = {}
+  │ for d in (0, 2, 5, 10, 20):
+  │     moved, peak, imb, left = run_delay(d)
+  │     res[d] = (moved, peak, imb, left)
+  │     print(f" {d:>6} | {moved:>8,} | {peak:>8} | {imb:>22.2f} | {left:>12,}")
+  │ m0, m20 = res[0][0], res[20][0]
+  │ print(f"延遲 20 的搬運量是延遲 0 的 {m20 / max(1, m0):.1f} 倍：資訊過時，大家一起把工作推給「十幾步前很閒」的節點，推過去又推回來。")
+  │ print("環境變得比反饋還快時，本地規則就不夠用了——這時需要中央層補上（混合架構）。")
+  │ print()
+  │ 
+  │ def run_attractor(rho, start, steps=300):
+  │     rng = random.Random(5050)
+  │     q = [start] * N
+  │     tail = []
+  │     for t in range(steps):
+  │         for i in range(N):
+  │             if rng.random() < rho:
+  │                 q[i] += 1
+  │         for i in range(N):
+  │             nb = [j + (j >= i) for j in rng.sample(range(N - 1), 4)]
+  │             b = max(nb, key=lambda j: q[j])
+  │             if q[b] > q[i] + 1:
+  │                 q[b] -= 1
+  │                 q[i] += 1
+  │         for i in range(N):
+  │             cap = 0.95 if q[i] <= 8 else 0.6             # 佇列太長：通道互卡，效率掉到 6 成
+  │             if q[i] > 0 and rng.random() < cap:
+  │                 q[i] -= 1
+  │         if t >= steps - 50:
+  │             tail.append(sum(q) / N)
+  │     return sum(tail) / len(tail)
+  │ 
+  │ print("【吸引子】同樣的規則與負載，起點不同會落到哪裡？（佇列 > 8 就塞車，成功率 95% → 60%）")
+  │ print(" 負載 ρ | 起點         | 最後 50 步平均佇列 | 落入的吸引子")
+  │ print("-" * 62)
+  │ for rho in (0.4, 0.7, 0.9):
+  │     for start, label in ((0, "空倉"), (30, "每節點 30 件")):
+  │         avg = run_attractor(rho, start)
+  │         kind = "高效" if avg <= 8 else "擁堵"
+  │         print(f" {rho:>6.1f} | {label:<10} | {avg:>18.1f} | {kind}")
+  │ print("ρ=0.7、0.9 時，空倉起步留在高效吸引子，已經塞車的就一路塞下去——同一套規則有兩個穩定狀態。")
+  │ print("看自組織要看宏觀指標（η、T90、吸引子）；異常干預（例如中央出手清空擁堵）就是把系統推回高效盆地。")
+▶ 執行結果：
+【反饋延遲】40 個節點、200 步；每步 30 件從 4 個入口進來；把落差的一半推給「看起來」最閒的鄰居
+ 延遲 d | 搬運件數 | 最長佇列 | 平均不平衡度（標準差） | 結束時總積壓
+----------------------------------------------------------------------
+      0 |   11,163 |       20 |                   2.64 |           79
+      2 |   20,615 |       35 |                   4.88 |          169
+      5 |   37,116 |      114 |                  11.13 |          434
+     10 |   48,550 |      162 |                  15.29 |          716
+     20 |   39,874 |      134 |                  12.52 |          616
+延遲 20 的搬運量是延遲 0 的 3.6 倍：資訊過時，大家一起把工作推給「十幾步前很閒」的節點，推過去又推回來。
+環境變得比反饋還快時，本地規則就不夠用了——這時需要中央層補上（混合架構）。
+
+【吸引子】同樣的規則與負載，起點不同會落到哪裡？（佇列 > 8 就塞車，成功率 95% → 60%）
+ 負載 ρ | 起點         | 最後 50 步平均佇列 | 落入的吸引子
+--------------------------------------------------------------
+    0.4 | 空倉         |                0.0 | 高效
+    0.4 | 每節點 30 件   |                0.0 | 高效
+    0.7 | 空倉         |                0.0 | 高效
+    0.7 | 每節點 30 件   |               55.5 | 擁堵
+    0.9 | 空倉         |                0.2 | 高效
+    0.9 | 每節點 30 件   |              111.5 | 擁堵
+ρ=0.7、0.9 時，空倉起步留在高效吸引子，已經塞車的就一路塞下去——同一套規則有兩個穩定狀態。
+看自組織要看宏觀指標（η、T90、吸引子）；異常干預（例如中央出手清空擁堵）就是把系統推回高效盆地。
+
+👉 第 5 步完成
+
+===== 第 6 步 =====
+指令：bash ch04.sh 6
+exit code：0　耗時：0.6 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K144 第 4 章｜自組織與集體湧現　第 6 / 8 步
+  練習 2A：內容工廠的資訊級聯（三種策略）
+╚══════════════════════════════════════════════════════╝
+
+💡 500 個寫作代理、12 個話題，排成一圈，每人只看左右各 3 位。20 輪、每輪 25 人決定寫什麼。權重 =（鄰居中寫該話題人數 + 1）×（平台累積篇數 + 1）^1.5。每個話題每輪審稿台只收 4 篇，多的退稿——用來看負載震盪。三種策略共用同一個決策順序與同一串亂數。結果寫到 ch04/interactive/herding_state.json。
+
+▶ 要執行的程式：
+  │ import json
+  │ import os
+  │ import random
+  │ 
+  │ random.seed(144)
+  │ OUT = "ch04/interactive"
+  │ os.makedirs(OUT, exist_ok=True)
+  │ STATE = OUT + "/herding_state.json"
+  │ TOPICS = ["AI 代理治理", "電動車補貼", "房價走勢", "減肥飲食", "職場霸凌", "颱風動態",
+  │           "加密貨幣", "手搖飲漲價", "AI 取代工作", "旅遊攻略", "健保改革", "寵物醫療"]
+  │ A, K, ROUNDS, PER = 500, 12, 20, 25
+  │ QUOTA, DESK, OVER = 60, 4, 40
+  │ STRATS = ["follow", "local_diversity", "hybrid"]
+  │ 
+  │ def neighbors(i):
+  │     return [(i + d) % A for d in (-3, -2, -1, 1, 2, 3)]
+  │ 
+  │ def simulate(strategy):
+  │     rng = random.Random(144)
+  │     order = list(range(A))
+  │     rng.shuffle(order)
+  │     choice = [None] * A
+  │     counts = [0] * K
+  │     accepted = []
+  │     snap = None
+  │     for r in range(ROUNDS):
+  │         desk = [0] * K
+  │         ok = 0
+  │         for i in order[r * PER:(r + 1) * PER]:
+  │             nb = [choice[j] for j in neighbors(i) if choice[j] is not None]
+  │             w = []
+  │             for k in range(K):
+  │                 c = nb.count(k)
+  │                 x = (c + 1) * (counts[k] + 1) ** 1.5           # 跟風：鄰居在寫＋平台熱度
+  │                 if strategy != "follow" and c >= 3:
+  │                     x *= 0.1                                    # 本地剎車：鄰居已有 3 人寫
+  │                 if strategy == "hybrid" and counts[k] >= QUOTA:
+  │                     x = 0.0                                     # 中央邊界：全域配額 60 篇
+  │                 w.append(x)
+  │             k = rng.choices(range(K), weights=w)[0]
+  │             choice[i] = k
+  │             counts[k] += 1
+  │             desk[k] += 1
+  │             if desk[k] <= DESK:
+  │                 ok += 1
+  │         accepted.append(ok)
+  │         if r == 9:
+  │             snap = {"choice": list(choice), "counts": list(counts), "next": order[10 * PER:11 * PER]}
+  │     return counts, accepted, snap
+  │ 
+  │ def metrics(counts, accepted):
+  │     top = max(counts) / A
+  │     dup = sum(max(0, c - OVER) for c in counts) / A
+  │     mean = sum(accepted) / len(accepted)
+  │     sd = (sum((a - mean) ** 2 for a in accepted) / len(accepted)) ** 0.5
+  │     return top, dup, mean, sd / mean
+  │ 
+  │ results = {}
+  │ print(f"{A} 個寫作代理、{K} 個話題；環狀排列，每人只看左右各 3 位；{ROUNDS} 輪 × 每輪 {PER} 人決定寫什麼")
+  │ print(f"權重 =（鄰居中寫該話題人數 + 1）×（平台累積篇數 + 1）^1.5；每個話題每輪審稿台只收 {DESK} 篇")
+  │ print(f"重複率 = 超過 {OVER} 篇的話題多出來的篇數 / 總篇數；hybrid 每題全域配額 {QUOTA} 篇")
+  │ print()
+  │ print(" 策略             | 最大話題占比 | 重複率 | 每輪審稿通過 | 變異係數 | 前三名話題（篇數）")
+  │ print("-" * 104)
+  │ for s in STRATS:
+  │     counts, accepted, snap = simulate(s)
+  │     top, dup, mean, cv = metrics(counts, accepted)
+  │     rank = sorted(range(K), key=lambda k: -counts[k])[:3]
+  │     top3 = "、".join(TOPICS[k] + "(" + str(counts[k]) + ")" for k in rank)
+  │     results[s] = {"counts": counts, "snap": snap, "max_share": round(top, 4), "dup_rate": round(dup, 4),
+  │                   "accept_mean": round(mean, 2), "cv": round(cv, 4)}
+  │     print(f" {s:<16} | {top:>12.1%} | {dup:>6.1%} | {mean:>12.1f} | {cv:>8.3f} | {top3}")
+  │ 
+  │ fs = results["follow"]["snap"]
+  │ fc, fcnt = fs["choice"], fs["counts"]
+  │ agent = max(fs["next"], key=lambda i: sum(1 for j in neighbors(i) if fc[j] is not None))
+  │ nb_ids = [fc[j] for j in neighbors(agent) if fc[j] is not None]
+  │ nb_view = [TOPICS[fc[j]] if fc[j] is not None else "（還沒寫）" for j in neighbors(agent)]
+  │ heat = [[TOPICS[k], fcnt[k]] for k in sorted(range(K), key=lambda k: -fcnt[k])[:5]]
+  │ nb_top = TOPICS[max(sorted(set(nb_ids)), key=nb_ids.count)] if nb_ids else ""
+  │ hyb = results["hybrid"]["snap"]["counts"]
+  │ full = [TOPICS[k] for k in range(K) if hyb[k] >= QUOTA]
+  │ 
+  │ print()
+  │ print(f"【給第 7 步的本地視角】follow 策略第 10 輪結束時，第 11 輪要下筆的代理 #{agent}")
+  │ print("  左右各 3 位在寫：" + "、".join(nb_view))
+  │ print("  鄰居中最多人寫：" + (nb_top if nb_top else "（鄰居都還沒寫）"))
+  │ print("  平台熱度前 5：" + "；".join(h[0] + " " + str(h[1]) + " 篇" for h in heat))
+  │ print("  hybrid 在同一時間點已額滿的話題：" + ("、".join(full) if full else "（還沒有）"))
+  │ 
+  │ state = {"topics": TOPICS, "quota": QUOTA,
+  │          "metrics": {s: {"max_share": results[s]["max_share"], "dup_rate": results[s]["dup_rate"],
+  │                          "accept_mean": results[s]["accept_mean"], "cv": results[s]["cv"]} for s in STRATS},
+  │          "final_counts": {s: results[s]["counts"] for s in STRATS},
+  │          "agent": agent, "neighbors_view": nb_view, "neighbors_top": nb_top, "heat_top5": heat,
+  │          "hybrid_round10_counts": hyb}
+  │ with open(STATE, "w", encoding="utf-8") as f:
+  │     json.dump(state, f, ensure_ascii=False, indent=2)
+  │ print()
+  │ print("已寫入", STATE)
+  │ print("follow 沒有任何剎車：熱度越高越多人寫、越多人寫熱度越高。虛擬世界沒有「不能同占一格」，剎車只能靠規則或配額補上。")
+▶ 執行結果：
+500 個寫作代理、12 個話題；環狀排列，每人只看左右各 3 位；20 輪 × 每輪 25 人決定寫什麼
+權重 =（鄰居中寫該話題人數 + 1）×（平台累積篇數 + 1）^1.5；每個話題每輪審稿台只收 4 篇
+重複率 = 超過 40 篇的話題多出來的篇數 / 總篇數；hybrid 每題全域配額 60 篇
+
+ 策略             | 最大話題占比 | 重複率 | 每輪審稿通過 | 變異係數 | 前三名話題（篇數）
+--------------------------------------------------------------------------------------------------------
+ follow           |        90.8% |  82.8% |          6.2 |    0.589 | 職場霸凌(454)、健保改革(21)、AI 代理治理(11)
+ local_diversity  |        86.0% |  78.2% |          7.3 |    0.424 | 職場霸凌(430)、健保改革(41)、AI 代理治理(13)
+ hybrid           |        12.0% |  29.8% |         12.0 |    0.204 | AI 代理治理(60)、電動車補貼(60)、減肥飲食(60)
+
+【給第 7 步的本地視角】follow 策略第 10 輪結束時，第 11 輪要下筆的代理 #359
+  左右各 3 位在寫：（還沒寫）、職場霸凌、職場霸凌、職場霸凌、減肥飲食、職場霸凌
+  鄰居中最多人寫：職場霸凌
+  平台熱度前 5：職場霸凌 205 篇；健保改革 21 篇；AI 代理治理 11 篇；減肥飲食 7 篇；手搖飲漲價 2 篇
+  hybrid 在同一時間點已額滿的話題：AI 代理治理、職場霸凌、健保改革
+
+已寫入 ch04/interactive/herding_state.json
+follow 沒有任何剎車：熱度越高越多人寫、越多人寫熱度越高。虛擬世界沒有「不能同占一格」，剎車只能靠規則或配額補上。
+
+👉 第 6 步完成
+
+===== 第 7 步 =====
+指令：bash ch04.sh 7
+exit code：0　耗時：18.8 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K144 第 4 章｜自組織與集體湧現　第 7 / 8 步
+  練習 2B：真實寫作代理會不會跟風？
+╚══════════════════════════════════════════════════════╝
+
+💡 會呼叫模型 1 次（ask_json，走 claude -p，最多 180 秒）。判定規則：選的話題是「鄰居中最多人寫」或「熱度第一」→ 跟風；在 hybrid 第 10 輪的計數下已達 60 篇 → 會被中央邊界擋下。模型呼叫失敗時記錄錯誤，報告照樣寫出第 6 步的模擬結果。報告寫到 ch04/interactive/herding_writers.md。
+
+▶ 要執行的程式：
+  │ import json
+  │ import os
+  │ import sys
+  │ 
+  │ sys.path.insert(0, os.getcwd())
+  │ from llm_agent import ask_json
+  │ 
+  │ OUT = "ch04/interactive"
+  │ STATE = OUT + "/herding_state.json"
+  │ MD = OUT + "/herding_writers.md"
+  │ if not os.path.exists(STATE):
+  │     print("找不到 " + STATE + "，請先跑第 6 步")
+  │     raise SystemExit(0)
+  │ with open(STATE, encoding="utf-8") as f:
+  │     st = json.load(f)
+  │ TOPICS, QUOTA = st["topics"], st["quota"]
+  │ nb_view, heat, nb_top = st["neighbors_view"], st["heat_top5"], st["neighbors_top"]
+  │ hyb = st["hybrid_round10_counts"]
+  │ heat_top = heat[0][0]
+  │ 
+  │ view_nb = "、".join(nb_view)
+  │ view_heat = "；".join(str(i + 1) + ". " + h[0] + "（" + str(h[1]) + " 篇）" for i, h in enumerate(heat))
+  │ PROMPT = """你是內容平台上的一個寫作代理，目標是讓你下一篇文章的點閱數最大化。
+  │ 你看不到全平台的完整資料，只看得到兩個本地訊號：
+  │ 1. 左右各 3 位寫作夥伴目前寫的話題：""" + view_nb + """
+  │ 2. 平台熱度排行前 5（累積篇數）：""" + view_heat + """
+  │ 可選的 12 個話題：""" + "、".join(TOPICS) + """
+  │ 請決定你下一篇要寫哪個話題。
+  │ 輸出格式：{"topic": "12 個話題之一（照原字串）", "reason": "一兩句理由", "expected_duplicates": 你預估平台上同話題還會再出現幾篇（整數）}"""
+  │ 
+  │ err = None
+  │ print("呼叫 claude -p 中（最多 180 秒）……")
+  │ try:
+  │     raw = ask_json(PROMPT)
+  │     source = "claude -p"
+  │ except Exception as e:
+  │     err = type(e).__name__ + ": " + str(e)
+  │     raw = {}
+  │     source = "呼叫失敗"
+  │     print("模型呼叫失敗：" + err)
+  │ if not isinstance(raw, dict):
+  │     raw = {"raw": str(raw)}
+  │ print("【模型原始輸出】（來源：" + source + "）")
+  │ print(json.dumps(raw, ensure_ascii=False, indent=2))
+  │ print()
+  │ 
+  │ topic = str(raw.get("topic", "")).strip()
+  │ if topic not in TOPICS:
+  │     hit = [t for t in TOPICS if t in topic]
+  │     topic = hit[0] if hit else ""
+  │ try:
+  │     dup_guess = int(raw.get("expected_duplicates"))
+  │ except (TypeError, ValueError):
+  │     dup_guess = None
+  │ if not topic:
+  │     herd, blocked = None, None
+  │     verdict = "無法判定（模型沒給出 12 個話題之一，或呼叫失敗）"
+  │     quota_s = "—"
+  │ else:
+  │     why = []
+  │     if topic == nb_top:
+  │         why.append("是鄰居中最多人寫的話題")
+  │     if topic == heat_top:
+  │         why.append("是熱度第一")
+  │     herd = bool(why)
+  │     verdict = ("跟風（" + "、".join(why) + "）") if herd else "沒有跟風（避開了鄰居最多與熱度第一）"
+  │     used = hyb[TOPICS.index(topic)]
+  │     blocked = used >= QUOTA
+  │     quota_s = str(used) + "/" + str(QUOTA) + "，" + ("會被中央邊界擋下" if blocked else "還在配額內")
+  │ 
+  │ print("【程式判定】")
+  │ print("  鄰居中最多人寫：" + (nb_top if nb_top else "（無）"))
+  │ print("  熱度第一：" + heat_top)
+  │ print("  模型選擇：" + (topic if topic else "（無效）") + "；模型預估同題還會有：" + ("（沒給整數）" if dup_guess is None else str(dup_guess)) + " 篇")
+  │ print("  判定：" + verdict)
+  │ print("  hybrid 配額（第 10 輪結束時）：" + quota_s)
+  │ print()
+  │ 
+  │ m = st["metrics"]
+  │ fm, lm, hm = m["follow"], m["local_diversity"], m["hybrid"]
+  │ c1 = ("follow 的最大話題占比 " + format(fm["max_share"], ".1%") + "、重複率 " + format(fm["dup_rate"], ".1%")
+  │       + "；local_diversity 降到 " + format(lm["max_share"], ".1%") + "、" + format(lm["dup_rate"], ".1%")
+  │       + "；hybrid 把最大占比壓在 " + format(hm["max_share"], ".1%") + "（配額上限 12%）。")
+  │ if err:
+  │     c2 = "本次模型呼叫失敗（" + err + "），只完成模擬部分。"
+  │ elif herd is None:
+  │     c2 = "模型的回覆無法對應到 12 個話題之一，判定為無法判定。"
+  │ elif herd:
+  │     c2 = "真實模型只拿到本地熱度訊號、目標是點閱時，選了「" + topic + "」——也跟風了，和模擬裡的 follow 代理一樣。"
+  │ else:
+  │     c2 = "真實模型這次選了「" + topic + "」，避開了最熱門的題；但這只是一次抽樣，一千個代理裡只要多數跟風，級聯照樣發生。"
+  │ c3 = ("在 hybrid 的配額下，這個選擇" + ("會被中央邊界擋下。" if blocked else "還在配額內。")) if topic else ""
+  │ c4 = "內容工廠沒有「不能穿牆、不能同占一格」這種物理剎車，跟風會一路放大；所以要用本地規則（鄰居已多就降權）踩剎車，再由中央只設邊界（配額），執行仍交給各代理——這就是混合架構。"
+  │ 
+  │ lines = ["# 第 4 章練習 2：真實寫作代理會不會跟風？資訊級聯與混合架構", "",
+  │          "## A. 三種策略的模擬指標", "",
+  │          "| 策略 | 最大話題占比 | 重複率 | 每輪審稿通過 | 變異係數 |", "|---|---|---|---|---|"]
+  │ for s in ("follow", "local_diversity", "hybrid"):
+  │     x = m[s]
+  │     lines.append("| " + s + " | " + format(x["max_share"], ".1%") + " | " + format(x["dup_rate"], ".1%")
+  │                  + " | " + format(x["accept_mean"], ".1f") + " | " + format(x["cv"], ".3f") + " |")
+  │ lines += ["", "## B. 模型看到的本地視角", "", "- 左右各 3 位在寫：" + view_nb, "- 熱度前 5：" + view_heat, "",
+  │           "## C. 模型原始輸出（來源：" + source + "）", "", "~~~json", json.dumps(raw, ensure_ascii=False, indent=2), "~~~", ""]
+  │ if err:
+  │     lines += ["呼叫失敗：" + err, ""]
+  │ lines += ["## D. 程式判定", "", "| 項目 | 值 |", "|---|---|",
+  │           "| 鄰居中最多人寫 | " + (nb_top if nb_top else "（無）") + " |",
+  │           "| 熱度第一 | " + heat_top + " |",
+  │           "| 模型選擇 | " + (topic if topic else "（無效）") + " |",
+  │           "| 判定 | " + verdict + " |",
+  │           "| hybrid 配額 | " + quota_s + " |", "",
+  │           "## E. 結論", "", c1 + c2 + c3 + c4]
+  │ with open(MD, "w", encoding="utf-8") as f:
+  │     f.write("\n".join(lines) + "\n")
+  │ print("結論：" + c1 + c2 + c3)
+  │ print("已寫入", MD)
+▶ 執行結果：
+呼叫 claude -p 中（最多 180 秒）……
+【模型原始輸出】（來源：claude -p）
+{
+  "topic": "健保改革",
+  "reason": "職場霸凌已有205篇，鄰居也多半在寫，流量會被大量同質文章瓜分；健保改革熱度排第二，有實際讀者需求，競爭卻少很多，每篇能分到的點閱較高。",
+  "expected_duplicates": 4
+}
+
+【程式判定】
+  鄰居中最多人寫：職場霸凌
+  熱度第一：職場霸凌
+  模型選擇：健保改革；模型預估同題還會有：4 篇
+  判定：沒有跟風（避開了鄰居最多與熱度第一）
+  hybrid 配額（第 10 輪結束時）：60/60，會被中央邊界擋下
+
+結論：follow 的最大話題占比 90.8%、重複率 82.8%；local_diversity 降到 86.0%、78.2%；hybrid 把最大占比壓在 12.0%（配額上限 12%）。真實模型這次選了「健保改革」，避開了最熱門的題；但這只是一次抽樣，一千個代理裡只要多數跟風，級聯照樣發生。在 hybrid 的配額下，這個選擇會被中央邊界擋下。
+已寫入 ch04/interactive/herding_writers.md
+
+👉 第 7 步完成
+
+===== 第 8 步 =====
+指令：bash ch04.sh 8
+exit code：0　耗時：0.8 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K144 第 4 章｜自組織與集體湧現　第 8 / 8 步
+  總結：自組織與集體湧現
+╚══════════════════════════════════════════════════════╝
+
+💡 問自己四件事：我的規則只用本地資訊嗎？反饋夠快嗎？我看的是 η、T90、吸引子這些宏觀指標，還是只盯單一代理？我的環境有沒有天然的剎車——沒有的話，中央要守住哪條邊界？
+
+▶ 要執行的程式：
+  │ import csv
+  │ import os
+  │ 
+  │ OUT = "ch04/interactive"
+  │ CSV_PATH = OUT + "/self_org_warehouse.csv"
+  │ p3 = "看宏觀指標：central 的 η 被派工上限拖垮（約 0.40 → 0.19），排程器一停擺就留下缺口；local 的 η 穩在約 0.40。T90 請以第 4 步實際輸出為準。這個模擬沒有重現「120 節點拐點」，經驗值要照實檢驗。"
+  │ if os.path.isfile(CSV_PATH):
+  │     with open(CSV_PATH, encoding="utf-8") as f:
+  │         rows = list(csv.DictReader(f))
+  │     eta = {(r["N"], r["strategy"]): float(r["eta"]) for r in rows}
+  │     t9 = {(r["N"], r["strategy"]): (r["t90"] if r["t90"] != "" else "未恢復") for r in rows}
+  │     ns = sorted({r["N"] for r in rows}, key=int)
+  │     if ns:
+  │         lo, hi = ns[0], ns[-1]
+  │         p3 = ("看宏觀指標：central 的 η 被派工上限拖垮（" + format(eta[(lo, "central")], ".2f") + " → " + format(eta[(hi, "central")], ".2f")
+  │               + "），故障後 T90＝" + "/".join(t9[(n, "central")] for n in ns) + " 步；local 的 η 穩在約 " + format(eta[(hi, "local")], ".2f")
+  │               + "，T90＝" + "/".join(t9[(n, "local")] for n in ns) + " 步（N=" + "/".join(ns) + "）。這個模擬沒有重現「120 節點拐點」，經驗值要照實檢驗。")
+  │ points = [
+  │     "複雜行為不一定要複雜設計：中央停擺時，23 台機器人只靠「閒的去拉最忙鄰居」，準時出完 300 件；等派工的只出了約 200 件。",
+  │     "三條本地規則都是權衡：重複度門檻約 0.8 是誤合併與漏合併的平衡點；懲罰冷卻讓劣化節點少浪費一大截嘗試；規則一旦改看全域資訊（讀取量約 7 倍），就又退回中央排程。",
+  │     p3,
+  │     "湧現並非完全不可預測：只差 1 件任務的兩次跑法差異沒有被放大（穩定）；但反饋延遲變大會讓工作推來推去，同一套規則從不同起點會落入高效或擁堵兩個吸引子。",
+  │     "虛擬世界沒有物理剎車：只看熱度的寫作代理會一窩蜂寫同一題；本地剎車降低重複，中央配額把任何話題壓在 12% 以內——真實模型在點閱目標下也可能跟風，判定要交給程式規則。",
+  │     "混合架構：中央保留全域目標、規則邊界與異常干預，執行層的協調才下放給自組織——先守住底線，再談優化空間。",
+  │ ]
+  │ print("【第 4 章重點】")
+  │ for i, p in enumerate(points, 1):
+  │     print(f"  {i}. {p}")
+  │ print()
+  │ print("【本章產出的檔案】")
+  │ if os.path.isdir(OUT) and os.listdir(OUT):
+  │     for name in sorted(os.listdir(OUT)):
+  │         size = os.path.getsize(OUT + "/" + name)
+  │         print(f"  - {OUT}/{name}（{size:,} bytes）")
+  │ else:
+  │     print("  （還沒有檔案，請先跑第 4、6、7 步）")
+▶ 執行結果：
+【第 4 章重點】
+  1. 複雜行為不一定要複雜設計：中央停擺時，23 台機器人只靠「閒的去拉最忙鄰居」，準時出完 300 件；等派工的只出了約 200 件。
+  2. 三條本地規則都是權衡：重複度門檻約 0.8 是誤合併與漏合併的平衡點；懲罰冷卻讓劣化節點少浪費一大截嘗試；規則一旦改看全域資訊（讀取量約 7 倍），就又退回中央排程。
+  3. 看宏觀指標：central 的 η 被派工上限拖垮（0.40 → 0.19），故障後 T90＝14/16/21/23 步；local 的 η 穩在約 0.40，T90＝0/0/0/0 步（N=20/60/120/200）。這個模擬沒有重現「120 節點拐點」，經驗值要照實檢驗。
+  4. 湧現並非完全不可預測：只差 1 件任務的兩次跑法差異沒有被放大（穩定）；但反饋延遲變大會讓工作推來推去，同一套規則從不同起點會落入高效或擁堵兩個吸引子。
+  5. 虛擬世界沒有物理剎車：只看熱度的寫作代理會一窩蜂寫同一題；本地剎車降低重複，中央配額把任何話題壓在 12% 以內——真實模型在點閱目標下也可能跟風，判定要交給程式規則。
+  6. 混合架構：中央保留全域目標、規則邊界與異常干預，執行層的協調才下放給自組織——先守住底線，再談優化空間。
+
+【本章產出的檔案】
+  - ch04/interactive/herding_state.json（1,806 bytes）
+  - ch04/interactive/herding_writers.md（1,977 bytes）
+  - ch04/interactive/self_org_warehouse.csv（297 bytes）
+
+👉 第 8 步完成

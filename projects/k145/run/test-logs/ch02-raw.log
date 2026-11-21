@@ -1,0 +1,887 @@
+# ch02 執行紀錄　2026-11-21 14:40:09
+
+===== bash -n 語法檢查 =====
+指令：bash -n ch02.sh
+exit code：0　耗時：0.2 秒
+----- 輸出 -----
+
+
+===== 第 1 步 =====
+指令：bash ch02.sh 1
+exit code：0　耗時：1.0 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K145 第 2 章｜結構語法：角色、任務、介面　第 1 / 8 步
+  三個角色的契約：錯誤找得到是哪一環
+╚══════════════════════════════════════════════════════╝
+
+💡 每個角色只交自己的產出、只用自己的工具。出錯時沿著契約一關一關檢查，第一個不合格的就是兇手。
+
+▶ 要執行的程式：
+  │ import random
+  │ random.seed(202)
+  │ ROLES = {
+  │     "planner": {"in": "任務描述", "out": "DAG（節點＋依賴）", "tools": ["write_dag"]},
+  │     "executor": {"in": "DAG 的單一節點", "out": "節點結果（含 rows 欄位）", "tools": ["run_sql", "call_api", "write_file"]},
+  │     "monitor": {"in": "執行日誌＋節點結果", "out": "警告紀錄", "tools": ["read_logs", "raise_alert"]},
+  │ }
+  │ print("{:<9} | {:<14} | {:<20} | {}".format("角色", "輸入", "輸出", "工具箱"))
+  │ print("-" * 76)
+  │ for r, spec in ROLES.items():
+  │     print("{:<9} | {:<14} | {:<20} | {}".format(r, spec["in"], spec["out"], ", ".join(spec["tools"])))
+  │ print()
+  │ print("工具層：每個角色只能用自己的工具")
+  │ for role, tool in (("executor", "run_sql"), ("executor", "write_dag"), ("monitor", "call_api"), ("planner", "write_dag")):
+  │     print("  {:<9} 呼叫 {:<10} -> {}".format(role, tool, "ALLOW" if tool in ROLES[role]["tools"] else "DENY"))
+  │ print()
+  │ 
+  │ DAG = {"A": [], "B": ["A"], "C": ["B"], "D": ["C"], "E": ["D"], "F": ["B"], "G": ["D", "E", "F"], "H": ["G"]}
+  │ REDO = {"planner": 40, "executor": 5, "monitor": 1}
+  │ 
+  │ def has_cycle(dag):
+  │     indeg = {n: len(ps) for n, ps in dag.items()}
+  │     q = [n for n in dag if indeg[n] == 0]
+  │     seen = 0
+  │     while q:
+  │         n = q.pop()
+  │         seen += 1
+  │         for c, ps in dag.items():
+  │             if n in ps:
+  │                 indeg[c] -= 1
+  │                 if indeg[c] == 0:
+  │                     q.append(c)
+  │     return seen < len(dag)
+  │ 
+  │ def one_run(fault):
+  │     plan = {n: list(ps) for n, ps in DAG.items()}
+  │     if fault == "planner":
+  │         plan["B"].append("H")
+  │     results = {n: {"node": n, "rows": random.randint(100, 999)} for n in DAG}
+  │     results["C"]["growth"] = {"戶外": 5.0, "家電": 0.12}
+  │     if fault == "executor":
+  │         del results[random.choice(sorted(DAG))]["rows"]
+  │     alerts = [k for k, g in results["C"]["growth"].items() if g > 3.0]
+  │     if fault == "monitor":
+  │         alerts = []
+  │     if has_cycle(plan):
+  │         found = "planner"
+  │     elif any("rows" not in r for r in results.values()):
+  │         found = "executor"
+  │     elif any(g > 3.0 for g in results["C"]["growth"].values()) and not alerts:
+  │         found = "monitor"
+  │     else:
+  │         found = None
+  │     return found
+  │ 
+  │ faults = [random.choice(("planner", "executor", "monitor")) for _ in range(20)]
+  │ hits = sum(1 for f in faults if one_run(f) == f)
+  │ cnt = {r: faults.count(r) for r in REDO}
+  │ print("注入 20 次錯誤，各角色被注入次數：", cnt)
+  │ print("{:<12} | {:>8} | {:>14}".format("架構", "定位成功", "平均重做(分鐘)"))
+  │ print("-" * 42)
+  │ print("{:<12} | {:>5}/20 | {:>14.1f}".format("單一黑盒模型", 0, 40.0))
+  │ print("{:<12} | {:>5}/20 | {:>14.1f}".format("三角色", hits, sum(REDO[f] for f in faults) / 20))
+  │ print()
+  │ print("黑盒只看得到「最後報告錯了」，只能 8 個節點（40 分鐘）全部重做。")
+▶ 執行結果：
+角色        | 輸入             | 輸出                   | 工具箱
+----------------------------------------------------------------------------
+planner   | 任務描述           | DAG（節點＋依賴）           | write_dag
+executor  | DAG 的單一節點      | 節點結果（含 rows 欄位）      | run_sql, call_api, write_file
+monitor   | 執行日誌＋節點結果      | 警告紀錄                 | read_logs, raise_alert
+
+工具層：每個角色只能用自己的工具
+  executor  呼叫 run_sql    -> ALLOW
+  executor  呼叫 write_dag  -> DENY
+  monitor   呼叫 call_api   -> DENY
+  planner   呼叫 write_dag  -> ALLOW
+
+注入 20 次錯誤，各角色被注入次數： {'planner': 6, 'executor': 9, 'monitor': 5}
+架構           |     定位成功 |       平均重做(分鐘)
+------------------------------------------
+單一黑盒模型       |     0/20 |           40.0
+三角色          |    20/20 |           14.5
+
+黑盒只看得到「最後報告錯了」，只能 8 個節點（40 分鐘）全部重做。
+
+👉 第 1 步完成
+
+===== 第 2 步 =====
+指令：bash ch02.sh 2
+exit code：0　耗時：0.8 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K145 第 2 章｜結構語法：角色、任務、介面　第 2 / 8 步
+  書中電商 DAG：拓撲排序、關鍵路徑、並行寬度與四種錯
+╚══════════════════════════════════════════════════════╝
+
+💡 E 和 F 互不依賴，所以「可以」並行；但 executor 從 2 個加到 3 個，總時間不會再變短。
+
+▶ 要執行的程式：
+  │ from collections import Counter
+  │ DAG = {"A": [], "B": ["A"], "C": ["B"], "D": ["C"], "E": ["D"], "F": ["B"], "G": ["D", "E", "F"], "H": ["G"]}
+  │ EST = {n: 5.0 for n in DAG}
+  │ 
+  │ def check(dag):
+  │     probs = []
+  │     for n, ps in dag.items():
+  │         for p in ps:
+  │             if p not in dag:
+  │                 probs.append("可執行：{} 依賴不存在的 {}".format(n, p))
+  │     if probs:
+  │         return probs, None
+  │     indeg = {n: len(ps) for n, ps in dag.items()}
+  │     kids = {n: [] for n in dag}
+  │     for n, ps in dag.items():
+  │         for p in ps:
+  │             kids[p].append(n)
+  │     q = sorted(n for n in dag if indeg[n] == 0)
+  │     order = []
+  │     while q:
+  │         n = q.pop(0)
+  │         order.append(n)
+  │         for c in kids[n]:
+  │             indeg[c] -= 1
+  │             if indeg[c] == 0:
+  │                 q.append(c)
+  │         q.sort()
+  │     if len(order) < len(dag):
+  │         probs.append("可執行：有循環，卡住的節點 " + ",".join(sorted(set(dag) - set(order))))
+  │         return probs, None
+  │     sinks = sorted(n for n in dag if not kids[n])
+  │     if len(sinks) > 1:
+  │         probs.append("完整：終點不只一個（" + ",".join(sinks) + "），有中間產出沒人接")
+  │     return probs, order
+  │ 
+  │ cases = [
+  │     ("原圖", DAG),
+  │     ("B 多依賴 H（循環）", dict(DAG, B=["A", "H"])),
+  │     ("G 的依賴打錯成 E2", dict(DAG, G=["D", "E2", "F"])),
+  │     ("拿掉 G 對 E 的依賴", dict(DAG, G=["D", "F"])),
+  │ ]
+  │ print("DAG 驗證：")
+  │ for name, dag in cases:
+  │     probs, _ = check(dag)
+  │     print("  {:<16} -> {}".format(name, "；".join(probs) if probs else "PASS"))
+  │ print()
+  │ 
+  │ _, order = check(DAG)
+  │ level, anc = {}, {}
+  │ for n in order:
+  │     level[n] = 1 + max((level[p] for p in DAG[n]), default=0)
+  │     anc[n] = set(DAG[n]).union(*[anc[p] for p in DAG[n]])
+  │ by_level = Counter(level.values())
+  │ width = max(by_level.values())
+  │ groups = [sorted(n for n in DAG if level[n] == L) for L in sorted(by_level) if by_level[L] > 1]
+  │ pairs = [(u, v) for i, u in enumerate(order) for v in order[i + 1:] if u not in anc[v] and v not in anc[u]]
+  │ fin, prev = {}, {}
+  │ for n in order:
+  │     p = max(DAG[n], key=lambda x: fin[x], default=None)
+  │     fin[n] = (fin[p] if p else 0.0) + EST[n]
+  │     prev[n] = p
+  │ end = max(fin, key=fin.get)
+  │ length = fin[end]
+  │ path = []
+  │ while end:
+  │     path.append(end)
+  │     end = prev[end]
+  │ print("拓撲順序：", " ".join(order))
+  │ print("層級：", "  ".join("{}={}".format(n, level[n]) for n in order))
+  │ print("最大並行寬度：", width, "；同層可並行的組：", groups)
+  │ print("互不依賴（可並行）的節點對：", " ".join("({},{})".format(u, v) for u, v in pairs))
+  │ print("關鍵路徑：", "→".join(reversed(path)), "，長度 {:.0f} 分鐘".format(length))
+  │ print()
+  │ 
+  │ def simulate(n_exec, dur):
+  │     done, log, running = {}, {}, []
+  │     free = list(range(n_exec))
+  │     pending = set(DAG)
+  │     t = 0.0
+  │     while pending or running:
+  │         ready = sorted(n for n in pending if all(p in done for p in DAG[n]))
+  │         while ready and free:
+  │             n = ready.pop(0)
+  │             e = free.pop(0)
+  │             pending.discard(n)
+  │             running.append((t + dur[n], n, e, t))
+  │         running.sort()
+  │         end_t, n, e, s = running.pop(0)
+  │         t = end_t
+  │         done[n] = end_t
+  │         log[n] = (e, s, end_t)
+  │         free.append(e)
+  │         free.sort()
+  │     return t, log
+  │ 
+  │ print("{:>9} | {:>9}".format("executor", "總時間"))
+  │ print("-" * 22)
+  │ for k in (1, 2, 3):
+  │     t, log = simulate(k, EST)
+  │     print("{:>9} | {:>7.1f} 分".format(k, t))
+  │ t, log = simulate(2, EST)
+  │ print()
+  │ print("2 個 executor 時：C 在 executor{} {:.0f}～{:.0f}，F 在 executor{} {:.0f}～{:.0f}".format(log["C"][0], log["C"][1], log["C"][2], log["F"][0], log["F"][1], log["F"][2]))
+▶ 執行結果：
+DAG 驗證：
+  原圖               -> PASS
+  B 多依賴 H（循環）      -> 可執行：有循環，卡住的節點 B,C,D,E,F,G,H
+  G 的依賴打錯成 E2      -> 可執行：G 依賴不存在的 E2
+  拿掉 G 對 E 的依賴     -> 完整：終點不只一個（E,H），有中間產出沒人接
+
+拓撲順序： A B C D E F G H
+層級： A=1  B=2  C=3  D=4  E=5  F=3  G=6  H=7
+最大並行寬度： 2 ；同層可並行的組： [['C', 'F']]
+互不依賴（可並行）的節點對： (C,F) (D,F) (E,F)
+關鍵路徑： A→B→C→D→E→G→H ，長度 35 分鐘
+
+ executor |       總時間
+----------------------
+        1 |    40.0 分
+        2 |    35.0 分
+        3 |    35.0 分
+
+2 個 executor 時：C 在 executor0 10～15，F 在 executor1 10～15
+
+👉 第 2 步完成
+
+===== 第 3 步 =====
+指令：bash ch02.sh 3
+exit code：0　耗時：0.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K145 第 2 章｜結構語法：角色、任務、介面　第 3 / 8 步
+  練習 1 前半：實際排程，可並行不等於實際重疊
+╚══════════════════════════════════════════════════════╝
+
+💡 「圖上可以並行」說的是依賴關係；「實際有沒有重疊」要看時間軸。觀察重點問的是後者，所以要照實記錄。
+
+▶ 要執行的程式：
+  │ import random
+  │ random.seed(202)
+  │ DAG = {"A": [], "B": ["A"], "C": ["B"], "D": ["C"], "E": ["D"], "F": ["B"], "G": ["D", "E", "F"], "H": ["G"]}
+  │ EST = {n: 5.0 for n in DAG}
+  │ ORDER = ["A", "B", "C", "F", "D", "E", "G", "H"]
+  │ dur = {n: EST[n] * random.uniform(0.8, 1.3) for n in sorted(DAG)}
+  │ 
+  │ def simulate(n_exec, dur):
+  │     done, log, running = {}, {}, []
+  │     free = list(range(n_exec))
+  │     pending = set(DAG)
+  │     t = 0.0
+  │     while pending or running:
+  │         ready = sorted(n for n in pending if all(p in done for p in DAG[n]))
+  │         while ready and free:
+  │             n = ready.pop(0)
+  │             e = free.pop(0)
+  │             pending.discard(n)
+  │             running.append((t + dur[n], n, e, t))
+  │         running.sort()
+  │         end, n, e, s = running.pop(0)
+  │         t = end
+  │         done[n] = end
+  │         log[n] = (e, s, end)
+  │         free.append(e)
+  │         free.sort()
+  │     return t, log
+  │ 
+  │ def critical(dur):
+  │     fin, prev = {}, {}
+  │     for n in ORDER:
+  │         p = max(DAG[n], key=lambda x: fin[x], default=None)
+  │         fin[n] = (fin[p] if p else 0.0) + dur[n]
+  │         prev[n] = p
+  │     end = max(fin, key=fin.get)
+  │     length = fin[end]
+  │     path = []
+  │     while end:
+  │         path.append(end)
+  │         end = prev[end]
+  │     return "→".join(reversed(path)), length
+  │ 
+  │ def overlap(log):
+  │     _, se, ee = log["E"]
+  │     _, sf, ef = log["F"]
+  │     return se < ef and sf < ee
+  │ 
+  │ t1, _ = simulate(1, dur)
+  │ t2, log2 = simulate(2, dur)
+  │ print("{:<4} | {:>8} | {:>4} | {:>6} | {:>6} | {:>6}".format("節點", "executor", "預估", "實際", "開始", "結束"))
+  │ print("-" * 50)
+  │ for n in sorted(log2, key=lambda x: (log2[x][1], x)):
+  │     e, s, en = log2[n]
+  │     print("{:<4} | {:>8} | {:>4.0f} | {:>6.2f} | {:>6.2f} | {:>6.2f}".format(n, e, EST[n], dur[n], s, en))
+  │ path, length = critical(dur)
+  │ print()
+  │ print("1 個 executor 總時間：{:.2f} 分鐘".format(t1))
+  │ print("2 個 executor 總時間：{:.2f} 分鐘（快 {:.2f} 倍，省下的約等於 F 的 {:.2f} 分鐘）".format(t2, t1 / t2, dur["F"]))
+  │ print("關鍵路徑：{}，長度 {:.2f} 分鐘".format(path, length))
+  │ print("E 與 F 在圖上互不依賴（可並行），實際重疊執行：{}".format("是" if overlap(log2) else "否"))
+  │ print("  F 在 {:.2f}～{:.2f}，E 在 {:.2f}～{:.2f}".format(log2["F"][1], log2["F"][2], log2["E"][1], log2["E"][2]))
+  │ print()
+  │ slow = dict(dur, F=20.0)
+  │ t3, log3 = simulate(2, slow)
+  │ path3, len3 = critical(slow)
+  │ print("假設 F（宏觀分析）變慢成 20 分鐘：")
+  │ print("  總時間 {:.2f} 分鐘；關鍵路徑 {}；E 與 F 實際重疊：{}".format(t3, path3, "是" if overlap(log3) else "否"))
+▶ 執行結果：
+節點   | executor |   預估 |     實際 |     開始 |     結束
+--------------------------------------------------
+A    |        0 |    5 |   5.91 |   0.00 |   5.91
+B    |        0 |    5 |   5.61 |   5.91 |  11.52
+C    |        0 |    5 |   5.02 |  11.52 |  16.55
+F    |        1 |    5 |   6.42 |  11.52 |  17.94
+D    |        0 |    5 |   4.50 |  16.55 |  21.04
+E    |        0 |    5 |   5.69 |  21.04 |  26.73
+G    |        0 |    5 |   5.07 |  26.73 |  31.80
+H    |        0 |    5 |   6.13 |  31.80 |  37.93
+
+1 個 executor 總時間：44.35 分鐘
+2 個 executor 總時間：37.93 分鐘（快 1.17 倍，省下的約等於 F 的 6.42 分鐘）
+關鍵路徑：A→B→C→D→E→G→H，長度 37.93 分鐘
+E 與 F 在圖上互不依賴（可並行），實際重疊執行：否
+  F 在 11.52～17.94，E 在 21.04～26.73
+
+假設 F（宏觀分析）變慢成 20 分鐘：
+  總時間 42.72 分鐘；關鍵路徑 A→B→F→G→H；E 與 F 實際重疊：是
+
+👉 第 3 步完成
+
+===== 第 4 步 =====
+指令：bash ch02.sh 4
+exit code：0　耗時：0.6 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K145 第 2 章｜結構語法：角色、任務、介面　第 4 / 8 步
+  練習 1 後半：注入三種異常，比較被動與主動 Monitor
+╚══════════════════════════════════════════════════════╝
+
+💡 passive 的每個警告都卡 60 分鐘（下班沒人回）；active 能修的只有「規則明確」的兩種，結論互相矛盾要人判斷。
+
+▶ 要執行的程式：
+  │ import json, random
+  │ from pathlib import Path
+  │ random.seed(202)
+  │ DAG = {"A": [], "B": ["A"], "C": ["B"], "D": ["C"], "E": ["D"], "F": ["B"], "G": ["D", "E", "F"], "H": ["G"]}
+  │ EST = {n: 5.0 for n in DAG}
+  │ ORDER = ["A", "B", "C", "F", "D", "E", "G", "H"]
+  │ HUMAN, STUCK, LIMIT = 60.0, 30.0, 3.0
+  │ base = {n: EST[n] * random.uniform(0.8, 1.3) for n in sorted(DAG)}
+  │ c_rerun = EST["C"] * random.uniform(0.8, 1.3)
+  │ d_rerun = EST["D"] * random.uniform(0.8, 1.3)
+  │ C_OUT = {"growth": {"家電": 0.12, "美妝": 3.5, "戶外": 5.0, "寵物": 0.8}, "promo": {"美妝": True}}
+  │ D_OUT = {"category": "戶外", "claim": "成長最高"}
+  │ F_OUT = {"category": "戶外", "claim": "宏觀負面"}
+  │ out = Path("ch02/interactive")
+  │ out.mkdir(parents=True, exist_ok=True)
+  │ (out / "triad_result.json").unlink(missing_ok=True)
+  │ 
+  │ def simulate(n_exec, dur):
+  │     done, log, running = {}, {}, []
+  │     free = list(range(n_exec))
+  │     pending = set(DAG)
+  │     t = 0.0
+  │     while pending or running:
+  │         ready = sorted(n for n in pending if all(p in done for p in DAG[n]))
+  │         while ready and free:
+  │             n = ready.pop(0)
+  │             e = free.pop(0)
+  │             pending.discard(n)
+  │             running.append((t + dur[n], n, e, t))
+  │         running.sort()
+  │         end, n, e, s = running.pop(0)
+  │         t = end
+  │         done[n] = end
+  │         log[n] = (e, s, end)
+  │         free.append(e)
+  │         free.sort()
+  │     return t, log
+  │ 
+  │ def critical(dur):
+  │     fin, prev = {}, {}
+  │     for n in ORDER:
+  │         p = max(DAG[n], key=lambda x: fin[x], default=None)
+  │         fin[n] = (fin[p] if p else 0.0) + dur[n]
+  │         prev[n] = p
+  │     end = max(fin, key=fin.get)
+  │     length = fin[end]
+  │     path = []
+  │     while end:
+  │         path.append(end)
+  │         end = prev[end]
+  │     return "→".join(reversed(path)), length
+  │ 
+  │ def overlap(log):
+  │     _, se, ee = log["E"]
+  │     _, sf, ef = log["F"]
+  │     return se < ef and sf < ee
+  │ 
+  │ data = [k for k, g in C_OUT["growth"].items() if g > LIMIT and not C_OUT["promo"].get(k)]
+  │ progress = STUCK > EST["D"] * 3
+  │ logic = D_OUT["category"] == F_OUT["category"] and D_OUT["claim"] == "成長最高" and F_OUT["claim"] == "宏觀負面"
+  │ print("Monitor 規則檢查：")
+  │ print("  數據異常（月增 > 300% 且無促銷）：", data, "；美妝月增 350% 但有促銷標記，不算")
+  │ print("  進度異常（實際 > 預估 × 3 =", EST["D"] * 3, "分鐘）：D 實際 30 分鐘 ->", progress)
+  │ print("  邏輯異常（同品類結論相反）：", logic)
+  │ print()
+  │ 
+  │ def build(mode):
+  │     dur = dict(base)
+  │     alerts = []
+  │     if mode == "none":
+  │         return dur, alerts
+  │     if data:
+  │         if mode == "passive":
+  │             dur["C"] = base["C"] + HUMAN
+  │             act = "等人類 60 分鐘"
+  │         else:
+  │             dur["C"] = base["C"] + c_rerun
+  │             act = "自動重跑 C 一次"
+  │         alerts.append(("C", "數據異常：" + ",".join(data) + " 月增 500% 無促銷", act, base["C"]))
+  │     if progress:
+  │         if mode == "passive":
+  │             dur["D"] = STUCK + HUMAN
+  │             act = "等人類 60 分鐘"
+  │         else:
+  │             dur["D"] = EST["D"] * 3 + d_rerun
+  │             act = "換 executor 重跑 D"
+  │         alerts.append(("D", "進度異常：超過預估×3", act, EST["D"] * 3))
+  │     if logic:
+  │         dur["G"] = base["G"] + HUMAN
+  │         alerts.append(("G", "邏輯異常：D 與 F 對戶外結論相反", "等人類 60 分鐘", 0.0))
+  │     return dur, alerts
+  │ 
+  │ runs = []
+  │ for name, n_exec, mode in (("基準 1 executor 無異常", 1, "none"), ("基準 2 executor 無異常", 2, "none"), ("passive Monitor", 2, "passive"), ("active Monitor", 2, "active")):
+  │     dur, alerts = build(mode)
+  │     total, log = simulate(n_exec, dur)
+  │     path, _ = critical(dur)
+  │     table = [{"time": round(log[n][1] + off, 1), "node": n, "kind": kind, "action": act} for n, kind, act, off in alerts]
+  │     runs.append({
+  │         "name": name, "executors": n_exec, "mode": mode, "total": round(total, 2),
+  │         "critical_path": path, "ef_overlap": overlap(log),
+  │         "human": sum(1 for a in table if "人類" in a["action"]), "alerts": table,
+  │         "timeline": {n: {"executor": e, "start": round(s, 2), "end": round(en, 2)} for n, (e, s, en) in log.items()},
+  │     })
+  │ 
+  │ print("{:<22} | {:>8} | {:<16} | {:>7} | {:>8}".format("執行", "總時間", "關鍵路徑", "E/F重疊", "人類介入"))
+  │ print("-" * 78)
+  │ for r in runs:
+  │     print("{:<22} | {:>8.1f} | {:<16} | {:>7} | {:>8}".format(r["name"], r["total"], r["critical_path"], "是" if r["ef_overlap"] else "否", r["human"]))
+  │ for r in runs[2:]:
+  │     print()
+  │     print(r["name"], "警告表：")
+  │     print("  {:>7} | {:<4} | {:<28} | {}".format("時間", "節點", "異常類型", "處置"))
+  │     for a in r["alerts"]:
+  │         print("  {:>7.1f} | {:<4} | {:<28} | {}".format(a["time"], a["node"], a["kind"], a["action"]))
+  │ print()
+  │ print("passive / active 總時間比：{:.2f}".format(runs[2]["total"] / runs[3]["total"]))
+  │ (out / "triad_result.json").write_text(json.dumps({"seed": 202, "runs": runs}, ensure_ascii=False, indent=2), encoding="utf-8")
+  │ print("已寫入", out / "triad_result.json")
+▶ 執行結果：
+Monitor 規則檢查：
+  數據異常（月增 > 300% 且無促銷）： ['戶外'] ；美妝月增 350% 但有促銷標記，不算
+  進度異常（實際 > 預估 × 3 = 15.0 分鐘）：D 實際 30 分鐘 -> True
+  邏輯異常（同品類結論相反）： True
+
+執行                     |      總時間 | 關鍵路徑             |   E/F重疊 |     人類介入
+------------------------------------------------------------------------------
+基準 1 executor 無異常      |     44.4 | A→B→C→D→E→G→H    |       否 |        0
+基準 2 executor 無異常      |     37.9 | A→B→C→D→E→G→H    |       否 |        0
+passive Monitor        |    243.4 | A→B→C→D→E→G→H    |       否 |        3
+active Monitor         |    117.8 | A→B→C→D→E→G→H    |       否 |        1
+
+passive Monitor 警告表：
+       時間 | 節點   | 異常類型                         | 處置
+     16.5 | C    | 數據異常：戶外 月增 500% 無促銷          | 等人類 60 分鐘
+     91.5 | D    | 進度異常：超過預估×3                  | 等人類 60 分鐘
+    172.2 | G    | 邏輯異常：D 與 F 對戶外結論相反           | 等人類 60 分鐘
+
+active Monitor 警告表：
+       時間 | 節點   | 異常類型                         | 處置
+     16.5 | C    | 數據異常：戶外 月增 500% 無促銷          | 自動重跑 C 一次
+     35.6 | D    | 進度異常：超過預估×3                  | 換 executor 重跑 D
+     46.6 | G    | 邏輯異常：D 與 F 對戶外結論相反           | 等人類 60 分鐘
+
+passive / active 總時間比：2.07
+已寫入 ch02\interactive\triad_result.json
+
+👉 第 4 步完成
+
+===== 第 5 步 =====
+指令：bash ch02.sh 5
+exit code：0　耗時：0.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K145 第 2 章｜結構語法：角色、任務、介面　第 5 / 8 步
+  陷阱：Monitor 授權越大，過度修正越多
+╚══════════════════════════════════════════════════════╝
+
+💡 高風險只報警、低風險可自動重跑；自動修正前多看一個證據（例如促銷紀錄），能把過度修正壓下來。
+
+▶ 要執行的程式：
+  │ import random
+  │ random.seed(202)
+  │ N = 300
+  │ alerts = []
+  │ for _ in range(N):
+  │     alerts.append({"high": random.random() < 0.3, "real": random.random() < 0.7, "u_fix": random.random(), "u_check": random.random()})
+  │ 
+  │ def run(policy):
+  │     human = over = severe = low_fail = 0
+  │     for a in alerts:
+  │         if policy == "全部被動":
+  │             mode = "human"
+  │         elif policy == "全部主動":
+  │             mode = "auto"
+  │         elif policy == "依風險分級":
+  │             mode = "human" if a["high"] else "auto"
+  │         else:
+  │             if a["high"] or (not a["real"] and a["u_check"] < 0.8):
+  │                 mode = "human"
+  │             else:
+  │                 mode = "auto"
+  │         if mode == "human":
+  │             human += 1
+  │             continue
+  │         if not a["real"]:
+  │             over += 1
+  │         elif a["high"] and a["u_fix"] >= 0.6:
+  │             severe += 1
+  │         elif not a["high"] and a["u_fix"] >= 0.9:
+  │             low_fail += 1
+  │     return human, over, severe, low_fail
+  │ 
+  │ print("警報 {} 筆：高風險 {} 筆、真問題 {} 筆、誤報 {} 筆".format(N, sum(a["high"] for a in alerts), sum(a["real"] for a in alerts), sum(not a["real"] for a in alerts)))
+  │ print()
+  │ print("{:<14} | {:>8} | {:>10} | {:>8} | {:>10} | {:>12}".format("授權策略", "人類介入", "等待(小時)", "過度修正", "嚴重事故", "低風險修失敗"))
+  │ print("-" * 82)
+  │ for p in ("全部被動", "全部主動", "依風險分級", "分級＋第二證據"):
+  │     h, o, s, f = run(p)
+  │     print("{:<14} | {:>8} | {:>10} | {:>8} | {:>10} | {:>12}".format(p, h, h, o, s, f))
+  │ print()
+  │ print("過度修正 = 把誤報當真問題自動修掉；嚴重事故 = 高風險真問題自動處置失敗。")
+▶ 執行結果：
+警報 300 筆：高風險 93 筆、真問題 229 筆、誤報 71 筆
+
+授權策略           |     人類介入 |     等待(小時) |     過度修正 |       嚴重事故 |       低風險修失敗
+----------------------------------------------------------------------------------
+全部被動           |      300 |        300 |        0 |          0 |            0
+全部主動           |        0 |          0 |       71 |         30 |           16
+依風險分級          |       93 |         93 |       51 |          0 |           16
+分級＋第二證據        |      133 |        133 |       11 |          0 |           16
+
+過度修正 = 把誤報當真問題自動修掉；嚴重事故 = 高風險真問題自動處置失敗。
+
+👉 第 5 步完成
+
+===== 第 6 步 =====
+指令：bash ch02.sh 6
+exit code：0　耗時：0.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K145 第 2 章｜結構語法：角色、任務、介面　第 6 / 8 步
+  介面層：Schema 版本、寬容的接收者，與 YAML 地獄
+╚══════════════════════════════════════════════════════╝
+
+💡 鬆耦合（寬容接收）與強一致性（欄位多、檢查嚴）是一條光譜，要依場景調，不是越嚴越好。
+
+▶ 要執行的程式：
+  │ REQUIRED = ("type", "sender", "receiver", "payload", "timestamp", "msg_id")
+  │ 
+  │ def strict_v1(msg):
+  │     miss = [k for k in REQUIRED if k not in msg]
+  │     extra = sorted(k for k in msg if k not in REQUIRED)
+  │     if miss:
+  │         return "拒收：缺 " + ",".join(miss)
+  │     if extra:
+  │         return "拒收：不認識 " + ",".join(extra)
+  │     return "收下"
+  │ 
+  │ def tolerant_v1(msg):
+  │     miss = [k for k in REQUIRED if k not in msg]
+  │     if miss:
+  │         return "拒收：缺 " + ",".join(miss)
+  │     extra = sorted(k for k in msg if k not in REQUIRED)
+  │     return "收下（忽略 " + ",".join(extra) + "）" if extra else "收下"
+  │ 
+  │ base = {"type": "task_result", "sender": "executor_C", "receiver": "monitor", "payload": {"rows": 1200}, "timestamp": "2026-01-01T00:05:00Z", "msg_id": "m-001"}
+  │ v2 = dict(base, schema_version="2.0")
+  │ msgs = [
+  │     ("v1 正常訊息", base),
+  │     ("v2 多 schema_version", v2),
+  │     ("v2 再多 priority", dict(v2, priority="high")),
+  │     ("v2 少了 msg_id", {k: v for k, v in v2.items() if k != "msg_id"}),
+  │ ]
+  │ print("{:<20} | {:<32} | {}".format("訊息", "嚴格 v1 接收者", "寬容 v1 接收者"))
+  │ print("-" * 92)
+  │ for name, m in msgs:
+  │     print("{:<20} | {:<32} | {}".format(name, strict_v1(m), tolerant_v1(m)))
+  │ print()
+  │ print("玩具模型：必要欄位數 k 的取捨（可偵測錯誤 = 1 - 0.5^(k/3)；改版對不上 = 1 - 0.99^k；寫設定 = 3k 分鐘）")
+  │ print("{:>6} | {:>10} | {:>14} | {:>12} | {:>8}".format("欄位k", "可偵測錯誤", "改版對不上機率", "寫設定(分鐘)", "淨分數"))
+  │ print("-" * 64)
+  │ best = None
+  │ for k in (3, 6, 12, 24, 48, 96):
+  │     cov = 1 - 0.5 ** (k / 3)
+  │     brk = 1 - 0.99 ** k
+  │     score = cov - brk
+  │     if best is None or score > best[1]:
+  │         best = (k, score)
+  │     print("{:>6} | {:>10.3f} | {:>14.3f} | {:>12} | {:>8.3f}".format(k, cov, brk, 3 * k, score))
+  │ print()
+  │ print("淨分數最高的欄位數 k =", best[0], "；再往上加欄位就是 YAML 地獄：寫設定比寫程式還久，而且更容易對不上。")
+▶ 執行結果：
+訊息                   | 嚴格 v1 接收者                        | 寬容 v1 接收者
+--------------------------------------------------------------------------------------------
+v1 正常訊息              | 收下                               | 收下
+v2 多 schema_version  | 拒收：不認識 schema_version            | 收下（忽略 schema_version）
+v2 再多 priority       | 拒收：不認識 priority,schema_version   | 收下（忽略 priority,schema_version）
+v2 少了 msg_id         | 拒收：缺 msg_id                      | 拒收：缺 msg_id
+
+玩具模型：必要欄位數 k 的取捨（可偵測錯誤 = 1 - 0.5^(k/3)；改版對不上 = 1 - 0.99^k；寫設定 = 3k 分鐘）
+   欄位k |      可偵測錯誤 |        改版對不上機率 |      寫設定(分鐘) |      淨分數
+----------------------------------------------------------------
+     3 |      0.500 |          0.030 |            9 |    0.470
+     6 |      0.750 |          0.059 |           18 |    0.691
+    12 |      0.938 |          0.114 |           36 |    0.824
+    24 |      0.996 |          0.214 |           72 |    0.782
+    48 |      1.000 |          0.383 |          144 |    0.617
+    96 |      1.000 |          0.619 |          288 |    0.381
+
+淨分數最高的欄位數 k = 12 ；再往上加欄位就是 YAML 地獄：寫設定比寫程式還久，而且更容易對不上。
+
+👉 第 6 步完成
+
+===== 第 7 步 =====
+指令：bash ch02.sh 7
+exit code：0　耗時：33.8 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K145 第 2 章｜結構語法：角色、任務、介面　第 7 / 8 步
+  練習 2：真實模型當 Planner，程式檢查 a～f
+╚══════════════════════════════════════════════════════╝
+
+💡 這一步會呼叫模型 1 次（claude -p），最多等 180 秒；每次結果可能不同，照實記錄。失敗時改用內建範例（書中電商 DAG）繼續。
+
+▶ 要執行的程式：
+  │ import json
+  │ from collections import Counter
+  │ from pathlib import Path
+  │ from llm_agent import ask_json
+  │ 
+  │ out = Path("ch02/interactive")
+  │ out.mkdir(parents=True, exist_ok=True)
+  │ for name in ("planner_raw.json", "planner_report.md"):
+  │     (out / name).unlink(missing_ok=True)
+  │ REQUIRED = ("type", "sender", "receiver", "payload", "timestamp", "msg_id")
+  │ WORDS = ("並且", "然後", "以及")
+  │ PROMPT = """你是 Agent Swarm 的 Planner。任務：「分析一家電商過去一年銷售數據，找出三個最有潛力的新品類，撰寫建議報告」。
+  │ 請只輸出一則訊息，格式如下：
+  │ {"schema_version": "2.0", "type": "task_plan", "sender": "planner", "receiver": "executor_pool", "msg_id": "字串", "timestamp": "ISO 8601 字串",
+  │  "payload": {"nodes": [{"id": "N1", "desc": "原子任務說明", "depends_on": ["前置節點 id"], "input": "這個節點的輸入", "output": "這個節點的輸出"}]}}
+  │ 規則：節點 6～12 個；id 用 N1、N2、N3 依序編號；depends_on 只能填已存在的 id，沒有前置就填空陣列；彼此不依賴的步驟不要排成一直線。"""
+  │ BOOK = [
+  │     ("N1", "從資料倉儲取出過去一年訂單數據", [], "資料庫連線與日期範圍", "原始訂單表"),
+  │     ("N2", "清洗訂單數據，去除重複與退貨", ["N1"], "原始訂單表", "乾淨訂單表"),
+  │     ("N3", "計算各品類月銷售趨勢", ["N2"], "乾淨訂單表", "品類月趨勢表"),
+  │     ("N4", "依成長率挑出前十名品類", ["N3"], "品類月趨勢表", "前十名品類清單"),
+  │     ("N5", "蒐集前十名品類的競爭數據", ["N4"], "前十名品類清單", "競爭數據表"),
+  │     ("N6", "做宏觀經濟與消費趨勢分析", ["N2"], "乾淨訂單表", "宏觀趨勢摘要"),
+  │     ("N7", "綜合成長、競爭與宏觀結果選出三個品類", ["N4", "N5", "N6"], "前十名清單、競爭數據表、宏觀趨勢摘要", "三個候選品類與理由"),
+  │     ("N8", "彙整結論並且撰寫建議報告然後寄給主管", ["N7"], "三個候選品類與理由", "建議報告"),
+  │ ]
+  │ FALLBACK = {"schema_version": "2.0", "type": "task_plan", "sender": "planner", "receiver": "executor_pool",
+  │             "msg_id": "plan-fallback-001", "timestamp": "2026-01-01T00:00:00Z",
+  │             "payload": {"nodes": [{"id": i, "desc": d, "depends_on": dep, "input": a, "output": b} for i, d, dep, a, b in BOOK]}}
+  │ try:
+  │     msg = ask_json(PROMPT)
+  │     source = "模型輸出（claude -p 1 次）"
+  │     (out / "planner_raw.json").write_text(json.dumps(msg, ensure_ascii=False, indent=2), encoding="utf-8")
+  │ except (RuntimeError, ValueError) as exc:
+  │     print("呼叫模型失敗：", exc)
+  │     msg = None
+  │ if not isinstance(msg, dict):
+  │     msg = FALLBACK
+  │     source = "內建範例（模型呼叫失敗，改用書中電商 DAG）"
+  │ 
+  │ rows = []
+  │ miss = [k for k in REQUIRED if k not in msg]
+  │ rows.append(("a 信封六欄位＋schema_version", not miss and "schema_version" in msg, ("缺 " + ",".join(miss)) if miss else "版本 " + str(msg.get("schema_version"))))
+  │ 
+  │ def recv_v1(m):
+  │     lack = [k for k in REQUIRED if k not in m]
+  │     if lack:
+  │         raise ValueError("缺必要欄位 " + ",".join(lack))
+  │     return {k: m[k] for k in REQUIRED}, sorted(k for k in m if k not in REQUIRED)
+  │ 
+  │ try:
+  │     _, ignored = recv_v1(dict(msg, priority="high"))
+  │     ok1, note1 = "priority" in ignored, "忽略 " + ",".join(ignored)
+  │ except ValueError as exc:
+  │     ok1, note1 = False, str(exc)
+  │ rows.append(("b1 寬容接收者：未知欄位忽略", ok1, note1))
+  │ try:
+  │     recv_v1({k: v for k, v in msg.items() if k != "msg_id"})
+  │     ok2, note2 = False, "沒有報錯"
+  │ except ValueError as exc:
+  │     ok2, note2 = True, str(exc)
+  │ rows.append(("b2 寬容接收者：缺 msg_id 報錯", ok2, note2))
+  │ 
+  │ payload = msg.get("payload") if isinstance(msg.get("payload"), dict) else {}
+  │ raw_nodes = payload.get("nodes") if isinstance(payload.get("nodes"), list) else []
+  │ nodes = [n for n in raw_nodes if isinstance(n, dict)]
+  │ deps = {}
+  │ for n in nodes:
+  │     d = n.get("depends_on") or []
+  │     if isinstance(d, str):
+  │         d = [d]
+  │     deps[str(n.get("id"))] = [str(x) for x in d]
+  │ missing = [(u, v) for u in deps for v in deps[u] if v not in deps]
+  │ indeg = {u: sum(1 for v in deps[u] if v in deps) for u in deps}
+  │ kids = {u: [] for u in deps}
+  │ for u in deps:
+  │     for v in deps[u]:
+  │         if v in deps:
+  │             kids[v].append(u)
+  │ q = [u for u in deps if indeg[u] == 0]
+  │ order = []
+  │ while q:
+  │     u = q.pop(0)
+  │     order.append(u)
+  │     for c in kids[u]:
+  │         indeg[c] -= 1
+  │         if indeg[c] == 0:
+  │             q.append(c)
+  │ cyc = sorted(set(deps) - set(order))
+  │ ok_c = bool(nodes) and not missing and not cyc
+  │ note_c = "節點 {} 個；".format(len(nodes)) + (("缺依賴 " + str(missing)) if missing else "依賴都存在") + "；" + (("循環卡住 " + ",".join(cyc)) if cyc else "無循環")
+  │ rows.append(("c 可執行性（依賴存在、無循環）", ok_c, note_c))
+  │ 
+  │ blank = [str(n.get("id")) for n in nodes if not str(n.get("input") or "").strip() or not str(n.get("output") or "").strip()]
+  │ rows.append(("d 可觀測性（input／output 非空）", bool(nodes) and not blank, ("空的：" + ",".join(blank)) if blank else "全部都有"))
+  │ 
+  │ flagged = [str(n.get("id")) for n in nodes if sum(str(n.get("desc", "")).count(w) for w in WORDS) >= 2]
+  │ rows.append(("e 最小性（啟發式）", not flagged, ("可能不是原子任務：" + ",".join(flagged)) if flagged else "沒有節點被標記"))
+  │ 
+  │ crit, width, groups = 0, 0, []
+  │ if ok_c:
+  │     level = {}
+  │     for u in order:
+  │         level[u] = 1 + max((level[v] for v in deps[u] if v in deps), default=0)
+  │     cnt = Counter(level.values())
+  │     crit, width = max(level.values()), max(cnt.values())
+  │     groups = [sorted(u for u in level if level[u] == L) for L in sorted(cnt) if cnt[L] > 1]
+  │     note_f = "關鍵路徑 {} 層、最大並行寬度 {}、可並行組 {}".format(crit, width, groups)
+  │ else:
+  │     note_f = "有循環或缺依賴，無法計算"
+  │ rows.append(("f 並行度（不是一直線）", width >= 2, note_f))
+  │ 
+  │ joins = [u for u in deps if len([v for v in deps[u] if v in deps]) >= 2]
+  │ lines = ["Monitor 可盯：{} 個節點都有 output 可做數據檢查；多路匯合的節點 {} 是做邏輯一致性檢查的位置。".format(len(nodes) - len(blank), ",".join(joins) if joins else "（無）"),
+  │          "進度：關鍵路徑 {} 層、最大並行寬度 {}，每個節點都可以設「預估 × 3」的進度門檻。".format(crit, width)]
+  │ if flagged:
+  │     lines.append("黑盒子風險：{} 的 desc 塞了多個動作，像封裝太深的複合任務，出錯時難定位。".format(",".join(flagged)))
+  │ elif nodes:
+  │     longest = max(nodes, key=lambda n: len(str(n.get("desc", ""))))
+  │     lines.append("黑盒子風險：沒有節點被標成非原子；desc 最長的 {} 最可能藏多個步驟，值得再拆。".format(longest.get("id")))
+  │ else:
+  │     lines.append("黑盒子風險：沒有節點可評估，整份計畫本身就是黑盒。")
+  │ 
+  │ print("資料來源：", source)
+  │ print("節點：")
+  │ for n in nodes:
+  │     print("  {:<4} 依賴 {:<12} {}".format(str(n.get("id")), ",".join(deps.get(str(n.get("id")), [])) or "-", str(n.get("desc", ""))[:36]))
+  │ print()
+  │ print("{:<30} | {:<4} | {}".format("檢查", "結果", "說明"))
+  │ print("-" * 90)
+  │ for name, ok, note in rows:
+  │     print("{:<30} | {:<4} | {}".format(name, "PASS" if ok else "FAIL", note))
+  │ print()
+  │ for s in lines:
+  │     print("  " + s)
+  │ 
+  │ fence = chr(96) * 3
+  │ report = "# 第 2 章練習 2：Planner DAG 檢查報告\n\n資料來源：" + source + "\n\n## 模型原始訊息\n\n" + fence + "json\n" + json.dumps(msg, ensure_ascii=False, indent=2) + "\n" + fence + "\n\n## 檢查結果\n\n| 檢查 | 結果 | 說明 |\n|---|---|---|\n"
+  │ report += "".join("| {} | {} | {} |\n".format(name, "PASS" if ok else "FAIL", note) for name, ok, note in rows)
+  │ report += "\n## 三行結論\n\n" + "\n".join("- " + s for s in lines) + "\n"
+  │ (out / "planner_report.md").write_text(report, encoding="utf-8")
+  │ print()
+  │ print("已寫入", out / "planner_report.md")
+▶ 執行結果：
+資料來源： 模型輸出（claude -p 1 次）
+節點：
+  N1   依賴 -            定義分析範圍、時間區間（過去 12 個月）與「新品類潛力」評估指標及權重
+  N2   依賴 -            擷取過去 12 個月訂單交易資料，清理重複、退貨、異常值與缺漏欄位
+  N3   依賴 -            擷取商品主檔、品類階層對照、成本與庫存資料，統一品類編碼
+  N4   依賴 N1           蒐集外部市場訊號：搜尋關鍵字趨勢、競品平台熱銷品類、產業報告中的新興品類
+  N5   依賴 N2,N3        計算各品類銷售指標：月營收、年成長率、毛利率、季節性、客單價與退貨率
+  N6   依賴 N2,N3        分析客群購買行為：RFM 分群、交叉購買（購物籃分析）、站內搜尋無結果關
+  N7   依賴 N4,N5,N6     綜合內部績效、客群需求與外部趨勢，產出 8～15 個候選新品類清單
+  N8   依賴 N1,N7        依評估框架為候選品類逐項評分並排序，選出前三名最具潛力的新品類
+  N9   依賴 N3,N8        針對前三名品類評估風險與可行性：供應商來源、庫存與物流需求、預估營收與投
+  N10  依賴 N8,N9        撰寫新品類建議報告：執行摘要、資料與方法、三個推薦品類的理由、財務預估、
+  N11  依賴 N10          審查報告：核對數據與結論一致性、檢查邏輯漏洞與表達清晰度，修訂後定稿
+
+檢查                             | 結果   | 說明
+------------------------------------------------------------------------------------------
+a 信封六欄位＋schema_version         | PASS | 版本 2.0
+b1 寬容接收者：未知欄位忽略                | PASS | 忽略 priority,schema_version
+b2 寬容接收者：缺 msg_id 報錯           | PASS | 缺必要欄位 msg_id
+c 可執行性（依賴存在、無循環）               | PASS | 節點 11 個；依賴都存在；無循環
+d 可觀測性（input／output 非空）        | PASS | 全部都有
+e 最小性（啟發式）                     | PASS | 沒有節點被標記
+f 並行度（不是一直線）                   | PASS | 關鍵路徑 7 層、最大並行寬度 3、可並行組 [['N1', 'N2', 'N3'], ['N4', 'N5', 'N6']]
+
+  Monitor 可盯：11 個節點都有 output 可做數據檢查；多路匯合的節點 N5,N6,N7,N8,N9,N10 是做邏輯一致性檢查的位置。
+  進度：關鍵路徑 7 層、最大並行寬度 3，每個節點都可以設「預估 × 3」的進度門檻。
+  黑盒子風險：沒有節點被標成非原子；desc 最長的 N1 最可能藏多個步驟，值得再拆。
+
+已寫入 ch02\interactive\planner_report.md
+
+👉 第 7 步完成
+
+===== 第 8 步 =====
+指令：bash ch02.sh 8
+exit code：0　耗時：0.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K145 第 2 章｜結構語法：角色、任務、介面　第 8 / 8 步
+  總結：Agent Swarm 結構語法的六個重點
+╚══════════════════════════════════════════════════════╝
+
+💡 本章的關鍵字是「可被驗證」：角色有契約、DAG 能被程式檢查、Monitor 的授權看風險、訊息有版本號。
+
+▶ 要執行的程式：
+  │ from pathlib import Path
+  │ 
+  │ points = [
+  │     "三角色分工：Planner 動腦（產出 DAG）、Executor 動手、Monitor 長眼；每個角色有輸入／輸出契約和自己的工具箱。注入 20 次錯誤，三角色 20/20 定位到兇手、只重做那一段，黑盒 0/20、只能全部重做 40 分鐘。",
+  │     "DAG 是可被驗證的輸出：循環、打錯依賴、有產出沒人接，程式都抓得到；好的 DAG 要完整、最小、可執行、可觀測。",
+  │     "並行收益來自圖的形狀而不是代理數：書中 DAG 關鍵路徑 35 分鐘、寬度 2，2 個 executor 從 40 降到 35，3 個也不會更快；而且「可並行」不等於「實際重疊」，E 與 F 要等 F 變慢才真的重疊，關鍵路徑也跟著換人。",
+  │     "Monitor 盯三種訊號：數據（月增 500% 無促銷）、進度（超過預估 × 3）、邏輯（同品類結論相反）。active 把總時間從約 240 分鐘壓到約 117 分鐘，但邏輯矛盾兩種模式都要人類判斷。",
+  │     "授權範圍要看風險：全自動會過度修正、還會闖出嚴重事故；高風險只報警、低風險自動處理，自動修正前再查一個證據，過度修正才壓得下來。",
+  │     "介面要能演化：Schema 版本號＋寬容的接收者（不認識的欄位忽略、缺必要欄位報錯）；但欄位越細越容易走向 YAML 地獄，鬆耦合與強一致性要依場景調。",
+  │ ]
+  │ print("第 2 章重點：")
+  │ for i, p in enumerate(points, 1):
+  │     print("  {}. {}".format(i, p))
+  │ print()
+  │ print("本章產出檔案：")
+  │ for name in ("triad_result.json", "planner_raw.json", "planner_report.md"):
+  │     p = Path("ch02/interactive") / name
+  │     print("  {} {}".format("OK" if p.exists() else "缺", p))
+▶ 執行結果：
+第 2 章重點：
+  1. 三角色分工：Planner 動腦（產出 DAG）、Executor 動手、Monitor 長眼；每個角色有輸入／輸出契約和自己的工具箱。注入 20 次錯誤，三角色 20/20 定位到兇手、只重做那一段，黑盒 0/20、只能全部重做 40 分鐘。
+  2. DAG 是可被驗證的輸出：循環、打錯依賴、有產出沒人接，程式都抓得到；好的 DAG 要完整、最小、可執行、可觀測。
+  3. 並行收益來自圖的形狀而不是代理數：書中 DAG 關鍵路徑 35 分鐘、寬度 2，2 個 executor 從 40 降到 35，3 個也不會更快；而且「可並行」不等於「實際重疊」，E 與 F 要等 F 變慢才真的重疊，關鍵路徑也跟著換人。
+  4. Monitor 盯三種訊號：數據（月增 500% 無促銷）、進度（超過預估 × 3）、邏輯（同品類結論相反）。active 把總時間從約 240 分鐘壓到約 117 分鐘，但邏輯矛盾兩種模式都要人類判斷。
+  5. 授權範圍要看風險：全自動會過度修正、還會闖出嚴重事故；高風險只報警、低風險自動處理，自動修正前再查一個證據，過度修正才壓得下來。
+  6. 介面要能演化：Schema 版本號＋寬容的接收者（不認識的欄位忽略、缺必要欄位報錯）；但欄位越細越容易走向 YAML 地獄，鬆耦合與強一致性要依場景調。
+
+本章產出檔案：
+  OK ch02\interactive\triad_result.json
+  OK ch02\interactive\planner_raw.json
+  OK ch02\interactive\planner_report.md
+
+👉 第 8 步完成

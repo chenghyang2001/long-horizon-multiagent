@@ -1,5 +1,4 @@
-時間：2026-11-21 14:06:56
-log：C:\Users\USER\workspace\long-horizon-multiagent\projects\k145\run\logs\hours-20261121-135917.log
-第 1 輪（ch01）指令站期間工作目錄控制檔被改動；已停止連續執行
+時間：2026-11-21 16:56:07
+log：C:\Users\user\workspace\long-horizon-multiagent\projects\k145\run\logs\hours-20261121-142929.log
 本次新增、需要人看過的單位（看完後 reset <id> 才會重做）：
-  ch01：failed
+  ch09：rejected

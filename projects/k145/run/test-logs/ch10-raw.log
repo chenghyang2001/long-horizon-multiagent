@@ -1,0 +1,1011 @@
+# ch10 執行紀錄　2026-11-21 16:53:59
+
+===== bash -n 語法檢查 =====
+指令：bash -n ch10.sh
+exit code：0　耗時：0.2 秒
+----- 輸出 -----
+
+
+===== 第 1 步 =====
+指令：bash ch10.sh 1
+exit code：0　耗時：0.6 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K145 第 10 章｜未來時間線：四條路徑與驗證點　第 1 / 8 步
+  四條路徑 × 里程碑 × 驗證點，再把「2026 年接近五百萬」拆成複利表
+╚══════════════════════════════════════════════════════╝
+
+💡 作者不做預言。每條路徑都要問：「什麼新聞出現，就代表它在加速？」
+
+▶ 要執行的程式：
+  │ PATHS = [
+  │     ("A", "開源生態大爆炸", "協作標準出現，孤立的開源代理像城市擴張般互聯", "2026 年約 10 萬個開源代理（推估，長尾下多數沒人用）", "GitHub 星標數 + CVE 數量（要分析漏洞性質）"),
+  │     ("B", "企業私有雲 Swarm", "關鍵在誰控制資料流；硬體、授權、人力成本下降", "約 2027 年私有部署比公有雲划算（大企業先到）", "Fortune 500 採用率（分辨試用與全面翻新）"),
+  │     ("C", "國家級基礎設施", "數位公共大腦：把代理群體當成像電網一樣的公共財", "2028 年選舉、經濟、技術成熟度交會的政策窗口", "政府招標檔出現 Swarm SLA"),
+  │     ("D", "暗黑群體與監管對抗", "自動找漏洞、假帳號、詐騙代理 vs 偵測技術", "軍備競賽升級；零知識指令集是雙面刃", "暗網代理市集交易量（只能看冰山一角）"),
+  │ ]
+  │ print("四條情境路徑（不是預言，是如果……則可能……）")
+  │ print("=" * 60)
+  │ for key, name, core, milestone, check in PATHS:
+  │     print("路徑 {}｜{}".format(key, name))
+  │     print("  核心機制：", core)
+  │     print("  里程碑　：", milestone)
+  │     print("  驗證點　：", check)
+  │     print()
+  │ 
+  │ BASE = 200.0
+  │ print("開源貢獻者複利推估（2023 年 200 萬人，單位：萬人）")
+  │ print("{:>6} | {:>9} | {:>9} | {:>9}".format("年份", "年成長25%", "年成長35%", "年成長45%"))
+  │ print("-" * 44)
+  │ for t in range(0, 10):
+  │     y = 2023 + t
+  │     mark = "  <- 書中：接近五百萬" if y == 2026 else ""
+  │     print("{:>6} | {:>9.1f} | {:>9.1f} | {:>9.1f}{}".format(y, BASE * 1.25 ** t, BASE * 1.35 ** t, BASE * 1.45 ** t, mark))
+  │ print()
+  │ lo, mid, hi = BASE * 1.25 ** 3, BASE * 1.35 ** 3, BASE * 1.45 ** 3
+  │ print("只把成長率差 10 個百分點，2026 年就從 {:.0f} 萬變成 {:.0f} 萬或 {:.0f} 萬".format(mid, lo, hi))
+  │ print("到 2032 年，25% 與 45% 兩種假設差 {:.1f} 倍".format(1.45 ** 9 / 1.25 ** 9))
+▶ 執行結果：
+四條情境路徑（不是預言，是如果……則可能……）
+============================================================
+路徑 A｜開源生態大爆炸
+  核心機制： 協作標準出現，孤立的開源代理像城市擴張般互聯
+  里程碑　： 2026 年約 10 萬個開源代理（推估，長尾下多數沒人用）
+  驗證點　： GitHub 星標數 + CVE 數量（要分析漏洞性質）
+
+路徑 B｜企業私有雲 Swarm
+  核心機制： 關鍵在誰控制資料流；硬體、授權、人力成本下降
+  里程碑　： 約 2027 年私有部署比公有雲划算（大企業先到）
+  驗證點　： Fortune 500 採用率（分辨試用與全面翻新）
+
+路徑 C｜國家級基礎設施
+  核心機制： 數位公共大腦：把代理群體當成像電網一樣的公共財
+  里程碑　： 2028 年選舉、經濟、技術成熟度交會的政策窗口
+  驗證點　： 政府招標檔出現 Swarm SLA
+
+路徑 D｜暗黑群體與監管對抗
+  核心機制： 自動找漏洞、假帳號、詐騙代理 vs 偵測技術
+  里程碑　： 軍備競賽升級；零知識指令集是雙面刃
+  驗證點　： 暗網代理市集交易量（只能看冰山一角）
+
+開源貢獻者複利推估（2023 年 200 萬人，單位：萬人）
+    年份 |    年成長25% |    年成長35% |    年成長45%
+--------------------------------------------
+  2023 |     200.0 |     200.0 |     200.0
+  2024 |     250.0 |     270.0 |     290.0
+  2025 |     312.5 |     364.5 |     420.5
+  2026 |     390.6 |     492.1 |     609.7  <- 書中：接近五百萬
+  2027 |     488.3 |     664.3 |     884.1
+  2028 |     610.4 |     896.8 |    1281.9
+  2029 |     762.9 |    1210.7 |    1858.8
+  2030 |     953.7 |    1634.4 |    2695.3
+  2031 |    1192.1 |    2206.5 |    3908.2
+  2032 |    1490.1 |    2978.7 |    5666.9
+
+只把成長率差 10 個百分點，2026 年就從 492 萬變成 391 萬或 610 萬
+到 2032 年，25% 與 45% 兩種假設差 3.8 倍
+
+👉 第 1 步完成
+
+===== 第 2 步 =====
+指令：bash ch10.sh 2
+exit code：0　耗時：1.0 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K145 第 10 章｜未來時間線：四條路徑與驗證點　第 2 / 8 步
+  練習 1-A 原樣重現：蒙地卡羅推估與長尾
+╚══════════════════════════════════════════════════════╝
+
+💡 看 P90/P10 那一欄怎麼一路變大：推估越遠，越不能只講一個數字。
+
+▶ 要執行的程式：
+  │ import sys
+  │ from pathlib import Path
+  │ 
+  │ out = Path("ch10/interactive")
+  │ out.mkdir(parents=True, exist_ok=True)
+  │ SRC = """
+  │ import json
+  │ import random
+  │ from pathlib import Path
+  │ 
+  │ OUT = Path(__file__).resolve().parent
+  │ SEED = 10
+  │ RUNS = 2000
+  │ YEARS = list(range(2024, 2033))
+  │ 
+  │ # A. 開源貢獻者：2023 年 200 萬人，年成長率每年從 N(0.35, 0.10) 抽，下限 0
+  │ BASE_2023 = 2000000
+  │ G_MU = 0.35
+  │ G_SD = 0.10
+  │ BOOK_2026 = 5000000          # 書中：2026 年接近五百萬
+  │ PARETO_ALPHA = 1.2           # 星標長尾的帕雷托指數
+  │ N_AGENTS = 100000            # 書中：2026 年十萬個開源代理
+  │ 
+  │ # B. 私有雲成本拐點（單位：萬元／年，基準年 2023，t = 年份 - 2023）
+  │ SIZES = (("小企業", 20), ("中企業", 200), ("大企業", 2000))
+  │ CLOUD_PER_AGENT = 3.0        # 公有雲：每個代理每年 3 萬
+  │ CLOUD_DROP = 0.05            # 公有雲每年降價 5%
+  │ HW_FIXED = 400.0             # 私有部署硬體固定成本（機房、網路、備援，年攤提）
+  │ HW_PER_AGENT = 4.0           # 每個代理的算力硬體（年攤提；2023 年 GPU 一度是建議售價的 2-3 倍）
+  │ LIC_PER_AGENT = 3.0          # 每個代理的模型授權
+  │ LABOR_FIXED = 10.0           # 維運人力固定部分（不會隨時間下降）
+  │ LABOR_PER_AGENT = 0.1        # 每多一個代理多出的人力
+  │ HW_MU, HW_SD = 0.25, 0.08    # 硬體每年下降率（0.75^4 約 0.32：2027 年降到 2023 年的三分之一以下）
+  │ LIC_MU, LIC_SD = 0.30, 0.10  # 授權每年下降率
+  │ NEVER = 9999                 # 到 2032 年仍未交叉
+  │ 
+  │ # C. 四路徑交互：成長率 = 基礎成長 + 係數 x 上一年各路徑佔比
+  │ PATHS = ("A", "B", "C", "D")
+  │ NAMES = {"A": "開源", "B": "企業", "C": "國家", "D": "暗黑"}
+  │ BASE_GROWTH = {"A": 0.30, "B": 0.25, "C": 0.10, "D": 0.25}
+  │ REG_FROM_D = 0.6             # D 引發監管的強度
+  │ 
+  │ 
+  │ def matrix(reg):
+  │     return {
+  │         "A": {"D": -reg},                              # 監管壓抑開源
+  │         "B": {"A": 0.30, "C": -0.20, "D": -reg},       # 開源供原料給企業；國家與企業部分競爭；監管壓抑企業
+  │         "C": {"B": -0.10, "D": 0.5 * reg},             # 企業搶走國家的角色；暗黑推動國家級基礎設施
+  │         "D": {"A": 0.20, "D": -0.5 * reg},             # 開源也供原料給暗黑；監管反過來壓 D 自己
+  │     }
+  │ 
+  │ 
+  │ def pct(values, p):
+  │     s = sorted(values)
+  │     return s[int(p * (len(s) - 1))]
+  │ 
+  │ 
+  │ def part_a():
+  │     random.seed(SEED)
+  │     runs = []
+  │     for _ in range(RUNS):
+  │         v = BASE_2023
+  │         row = []
+  │         for _y in YEARS:
+  │             g = max(0.0, random.gauss(G_MU, G_SD))
+  │             v = v * (1 + g)
+  │             row.append(v)
+  │         runs.append(row)
+  │     table = []
+  │     for i, y in enumerate(YEARS):
+  │         col = [r[i] for r in runs]
+  │         table.append({"year": y, "p10": pct(col, 0.1), "p50": pct(col, 0.5), "p90": pct(col, 0.9)})
+  │     stars = [random.paretovariate(PARETO_ALPHA) for _ in range(N_AGENTS)]
+  │     stars.sort(reverse=True)
+  │     total = sum(stars)
+  │     top = N_AGENTS // 100
+  │     longtail = {
+  │         "top1_share": sum(stars[:top]) / total,
+  │         "over_1000": sum(1 for s in stars if s > 1000),
+  │         "under_10_share": sum(1 for s in stars if s < 10) / N_AGENTS,
+  │         "max_star": stars[0],
+  │     }
+  │     return {"table": table, "longtail": longtail}
+  │ 
+  │ 
+  │ def cost_cloud(n, t):
+  │     return CLOUD_PER_AGENT * n * (1 - CLOUD_DROP) ** t
+  │ 
+  │ 
+  │ def cross_year(n, hw_drops, lic_drops):
+  │     hw = HW_FIXED + HW_PER_AGENT * n
+  │     lic = LIC_PER_AGENT * n
+  │     labor = LABOR_FIXED + LABOR_PER_AGENT * n
+  │     for t, y in enumerate(YEARS, start=1):
+  │         hw = hw * (1 - hw_drops[t - 1])
+  │         lic = lic * (1 - lic_drops[t - 1])
+  │         if hw + lic + labor < cost_cloud(n, t):
+  │             return y
+  │     return NEVER
+  │ 
+  │ 
+  │ def clip(x):
+  │     return min(0.9, max(0.0, x))
+  │ 
+  │ 
+  │ def part_b():
+  │     random.seed(SEED)
+  │     years = {name: [] for name, _n in SIZES}
+  │     for _ in range(RUNS):
+  │         hw_d = [clip(random.gauss(HW_MU, HW_SD)) for _y in YEARS]
+  │         lic_d = [clip(random.gauss(LIC_MU, LIC_SD)) for _y in YEARS]
+  │         for name, n in SIZES:
+  │             years[name].append(cross_year(n, hw_d, lic_d))
+  │     out = {}
+  │     for name, n in SIZES:
+  │         ys = years[name]
+  │         out[name] = {
+  │             "agents": n,
+  │             "p10": pct(ys, 0.1),
+  │             "p50": pct(ys, 0.5),
+  │             "p90": pct(ys, 0.9),
+  │             "never_share": sum(1 for y in ys if y == NEVER) / RUNS,
+  │             "no_noise": cross_year(n, [HW_MU] * len(YEARS), [LIC_MU] * len(YEARS)),
+  │         }
+  │     return out
+  │ 
+  │ 
+  │ def part_c(reg):
+  │     m = matrix(reg)
+  │     v = {p: 1.0 for p in PATHS}
+  │     rows = []
+  │     for y in YEARS:
+  │         total = sum(v.values())
+  │         s = {p: v[p] / total for p in PATHS}
+  │         new = {}
+  │         for p in PATHS:
+  │             g = BASE_GROWTH[p] + sum(c * s[q] for q, c in m[p].items())
+  │             new[p] = max(0.05, v[p] * (1 + g))
+  │         v = new
+  │         total = sum(v.values())
+  │         rows.append({"year": y, "share": {p: v[p] / total for p in PATHS}, "momentum": dict(v)})
+  │     return rows
+  │ 
+  │ 
+  │ def fmt_year(y):
+  │     return "未交叉" if y == NEVER else str(y)
+  │ 
+  │ 
+  │ def print_a(res):
+  │     print("A. 開源貢獻者推估（2000 次蒙地卡羅，單位：萬人）")
+  │     print("{:>6} | {:>8} | {:>8} | {:>8} | {:>8}".format("年份", "P10", "中位數", "P90", "P90/P10"))
+  │     print("-" * 50)
+  │     for r in res["table"]:
+  │         mark = "  <- 書中：接近 500 萬" if r["year"] == 2026 else ""
+  │         print("{:>6} | {:>8.0f} | {:>8.0f} | {:>8.0f} | {:>8.2f}{}".format(r["year"], r["p10"] / 1e4, r["p50"] / 1e4, r["p90"] / 1e4, r["p90"] / r["p10"], mark))
+  │     r26 = [r for r in res["table"] if r["year"] == 2026][0]
+  │     print()
+  │     print("2026 年中位數 {:.0f} 萬 vs 書中 500 萬：差 {:+.1%}".format(r26["p50"] / 1e4, r26["p50"] / BOOK_2026 - 1))
+  │     print("2026 年 P10～P90：{:.0f} 萬～{:.0f} 萬，寬 {:.0f} 萬".format(r26["p10"] / 1e4, r26["p90"] / 1e4, (r26["p90"] - r26["p10"]) / 1e4))
+  │     lt = res["longtail"]
+  │     print()
+  │     print("長尾：10 萬個代理的星標（帕雷托 alpha = 1.2）")
+  │     print("  星標前 1%（1000 個）佔總星標：{:.1%}".format(lt["top1_share"]))
+  │     print("  星標 > 1000 的代理：{} 個".format(lt["over_1000"]))
+  │     print("  星標 < 10 的代理佔比：{:.1%}".format(lt["under_10_share"]))
+  │     print("  最高星標：{:.0f}".format(lt["max_star"]))
+  │ 
+  │ 
+  │ def print_b(res):
+  │     print("B. 私有部署開始比公有雲便宜的年份（2000 次蒙地卡羅）")
+  │     print("{:<4} | {:>6} | {:>6} | {:>6} | {:>6} | {:>8} | {:>6}".format("規模", "代理數", "P10", "中位數", "P90", "未交叉比例", "無雜訊"))
+  │     print("-" * 66)
+  │     for name, n in SIZES:
+  │         r = res[name]
+  │         print("{:<4} | {:>6} | {:>6} | {:>6} | {:>6} | {:>8.1%} | {:>6}".format(name, n, fmt_year(r["p10"]), fmt_year(r["p50"]), fmt_year(r["p90"]), r["never_share"], fmt_year(r["no_noise"])))
+  │ 
+  │     def gap(a, b):
+  │         return "到 2032 仍未交叉，差距超過 {} 年".format(2032 - a) if b == NEVER else "{} 年".format(b - a)
+  │ 
+  │     big = res["大企業"]["p50"]
+  │     print()
+  │     print("大企業 vs 中企業（中位數拐點差）：", gap(big, res["中企業"]["p50"]))
+  │     print("大企業 vs 小企業（中位數拐點差）：", gap(big, res["小企業"]["p50"]))
+  │ 
+  │ 
+  │ def print_c(base, dbl):
+  │     for title, rows in (("C. 四路徑相對佔比（REG_FROM_D = {}）".format(REG_FROM_D), base), ("D 對監管的影響加倍（REG_FROM_D = {}）".format(2 * REG_FROM_D), dbl)):
+  │         print(title)
+  │         print("{:>6} | {:>7} | {:>7} | {:>7} | {:>7}".format("年份", "A開源", "B企業", "C國家", "D暗黑"))
+  │         print("-" * 46)
+  │         for r in rows:
+  │             s = r["share"]
+  │             print("{:>6} | {:>7.1%} | {:>7.1%} | {:>7.1%} | {:>7.1%}".format(r["year"], s["A"], s["B"], s["C"], s["D"]))
+  │         print()
+  │     print("2032 年佔比差異（加倍 - 基準，百分點）：")
+  │     for p in PATHS:
+  │         d = (dbl[-1]["share"][p] - base[-1]["share"][p]) * 100
+  │         print("  {} {}：{:+.1f}".format(p, NAMES[p], d))
+  │ 
+  │ 
+  │ def save_result():
+  │     res = {
+  │         "seed": SEED,
+  │         "runs": RUNS,
+  │         "A": part_a(),
+  │         "B": part_b(),
+  │         "C": {"reg_from_d": REG_FROM_D, "base": part_c(REG_FROM_D), "reg_doubled": part_c(2 * REG_FROM_D)},
+  │     }
+  │     path = OUT / "timeline_result.json"
+  │     path.write_text(json.dumps(res, ensure_ascii=False, indent=2), encoding="utf-8")
+  │     return res, path
+  │ 
+  │ 
+  │ def main():
+  │     res, path = save_result()
+  │     print_a(res["A"])
+  │     print()
+  │     print_b(res["B"])
+  │     print()
+  │     print_c(res["C"]["base"], res["C"]["reg_doubled"])
+  │     print()
+  │     print("已寫入", path)
+  │ 
+  │ 
+  │ if __name__ == "__main__":
+  │     main()
+  │ """
+  │ (out / "timeline_sim.py").write_text(SRC.lstrip(), encoding="utf-8")
+  │ sys.path.insert(0, str(out.resolve()))
+  │ import timeline_sim as sim
+  │ 
+  │ print("已寫入", out / "timeline_sim.py")
+  │ print()
+  │ sim.print_a(sim.part_a())
+▶ 執行結果：
+已寫入 ch10\interactive\timeline_sim.py
+
+A. 開源貢獻者推估（2000 次蒙地卡羅，單位：萬人）
+    年份 |      P10 |      中位數 |      P90 |  P90/P10
+--------------------------------------------------
+  2024 |      245 |      271 |      297 |     1.21
+  2025 |      318 |      363 |      415 |     1.30
+  2026 |      414 |      488 |      575 |     1.39  <- 書中：接近 500 萬
+  2027 |      548 |      661 |      790 |     1.44
+  2028 |      713 |      885 |     1084 |     1.52
+  2029 |      951 |     1192 |     1497 |     1.57
+  2030 |     1249 |     1611 |     2034 |     1.63
+  2031 |     1673 |     2173 |     2825 |     1.69
+  2032 |     2190 |     2908 |     3867 |     1.77
+
+2026 年中位數 488 萬 vs 書中 500 萬：差 -2.5%
+2026 年 P10～P90：414 萬～575 萬，寬 161 萬
+
+長尾：10 萬個代理的星標（帕雷托 alpha = 1.2）
+  星標前 1%（1000 個）佔總星標：38.8%
+  星標 > 1000 的代理：23 個
+  星標 < 10 的代理佔比：93.7%
+  最高星標：31201
+
+👉 第 2 步完成
+
+===== 第 3 步 =====
+指令：bash ch10.sh 3
+exit code：0　耗時：1.0 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K145 第 10 章｜未來時間線：四條路徑與驗證點　第 3 / 8 步
+  練習 1-B：小／中／大企業的私有部署拐點，各差幾年？
+╚══════════════════════════════════════════════════════╝
+
+💡 拐點不是一個年份，是一張「規模 × 年份」的表。報告裡只寫「2027 年私有部署划算」，小企業的老闆會被誤導。
+
+▶ 要執行的程式：
+  │ import sys
+  │ from pathlib import Path
+  │ 
+  │ out = Path("ch10/interactive")
+  │ if not (out / "timeline_sim.py").exists():
+  │     print("找不到 ch10/interactive/timeline_sim.py，請先跑第 2 步。")
+  │     raise SystemExit(0)
+  │ sys.path.insert(0, str(out.resolve()))
+  │ import timeline_sim as sim
+  │ 
+  │ sim.print_b(sim.part_b())
+  │ print()
+  │ print("無雜訊（下降率固定 25% / 30%）的成本拆解，單位：萬元／年")
+  │ print("{:<4} | {:>4} | {:>8} | {:>9} | {:>8} | {:>6}".format("規模", "年份", "公有雲", "私有部署", "其中硬體", "人力"))
+  │ print("-" * 56)
+  │ for name, n in sim.SIZES:
+  │     for t in (1, 4, 9):
+  │         hw = (sim.HW_FIXED + sim.HW_PER_AGENT * n) * (1 - sim.HW_MU) ** t
+  │         lic = sim.LIC_PER_AGENT * n * (1 - sim.LIC_MU) ** t
+  │         labor = sim.LABOR_FIXED + sim.LABOR_PER_AGENT * n
+  │         print("{:<4} | {:>4} | {:>8.1f} | {:>9.1f} | {:>8.1f} | {:>6.1f}".format(name, 2023 + t, sim.cost_cloud(n, t), hw + lic + labor, hw, labor))
+  │ print()
+  │ avg_n = sum(n for _name, n in sim.SIZES) // len(sim.SIZES)
+  │ fixed_hw = [sim.HW_MU] * len(sim.YEARS)
+  │ fixed_lic = [sim.LIC_MU] * len(sim.YEARS)
+  │ print("「平均企業」（代理數 {}，三種規模平均）無雜訊拐點：{}".format(avg_n, sim.fmt_year(sim.cross_year(avg_n, fixed_hw, fixed_lic))))
+  │ print("但小企業無雜訊拐點：{}".format(sim.fmt_year(sim.cross_year(20, fixed_hw, fixed_lic))))
+  │ print("硬體成本 2027 年剩 2023 年的 {:.1%}（書中：可能降到三分之一以下）".format((1 - sim.HW_MU) ** 4))
+▶ 執行結果：
+B. 私有部署開始比公有雲便宜的年份（2000 次蒙地卡羅）
+規模   |    代理數 |    P10 |    中位數 |    P90 |    未交叉比例 |    無雜訊
+------------------------------------------------------------------
+小企業  |     20 |   2032 |    未交叉 |    未交叉 |    87.5% |    未交叉
+中企業  |    200 |   2027 |   2028 |   2029 |     0.0% |   2028
+大企業  |   2000 |   2026 |   2027 |   2028 |     0.0% |   2027
+
+大企業 vs 中企業（中位數拐點差）： 1 年
+大企業 vs 小企業（中位數拐點差）： 到 2032 仍未交叉，差距超過 5 年
+
+無雜訊（下降率固定 25% / 30%）的成本拆解，單位：萬元／年
+規模   |   年份 |      公有雲 |      私有部署 |     其中硬體 |     人力
+--------------------------------------------------------
+小企業  | 2024 |     57.0 |     414.0 |    360.0 |   12.0
+小企業  | 2027 |     48.9 |     178.3 |    151.9 |   12.0
+小企業  | 2032 |     37.8 |      50.5 |     36.0 |   12.0
+中企業  | 2024 |    570.0 |    1350.0 |    900.0 |   30.0
+中企業  | 2027 |    488.7 |     553.7 |    379.7 |   30.0
+中企業  | 2032 |    378.1 |     144.3 |     90.1 |   30.0
+大企業  | 2024 |   5700.0 |   10710.0 |   6300.0 |  210.0
+大企業  | 2027 |   4887.0 |    4308.4 |   2657.8 |  210.0
+大企業  | 2032 |   3781.5 |    1082.8 |    630.7 |  210.0
+
+「平均企業」（代理數 740，三種規模平均）無雜訊拐點：2027
+但小企業無雜訊拐點：未交叉
+硬體成本 2027 年剩 2023 年的 31.6%（書中：可能降到三分之一以下）
+
+👉 第 3 步完成
+
+===== 第 4 步 =====
+指令：bash ch10.sh 4
+exit code：0　耗時：0.8 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K145 第 10 章｜未來時間線：四條路徑與驗證點　第 4 / 8 步
+  練習 1-C：四路徑交互，暗黑動能加倍會牽動誰？
+╚══════════════════════════════════════════════════════╝
+
+💡 係數是假設，不是事實；重點是看「改一個係數，其他三條怎麼跟著動」，而不是記住哪個百分比。
+
+▶ 要執行的程式：
+  │ import sys
+  │ from pathlib import Path
+  │ 
+  │ out = Path("ch10/interactive")
+  │ if not (out / "timeline_sim.py").exists():
+  │     print("找不到 ch10/interactive/timeline_sim.py，請先跑第 2 步。")
+  │     raise SystemExit(0)
+  │ sys.path.insert(0, str(out.resolve()))
+  │ import timeline_sim as sim
+  │ 
+  │ base = sim.part_c(sim.REG_FROM_D)
+  │ dbl = sim.part_c(2 * sim.REG_FROM_D)
+  │ sim.print_c(base, dbl)
+  │ print()
+  │ (out / "timeline_result.json").unlink(missing_ok=True)
+  │ res, path = sim.save_result()
+  │ print("已寫入", path, "（A、B、C 三段完整結果）")
+  │ print()
+  │ 
+  │ sim.BASE_GROWTH["A"] = 0.45
+  │ fast = sim.part_c(sim.REG_FROM_D)
+  │ print("如果 A 加速（開源基礎成長 0.30 -> 0.45），2032 年：")
+  │ print("{:<6} | {:>8} | {:>9} | {:>8} | {:>9}".format("路徑", "基準佔比", "A加速佔比", "基準動能", "A加速動能"))
+  │ print("-" * 54)
+  │ for p in sim.PATHS:
+  │     print("{:<6} | {:>8.1%} | {:>9.1%} | {:>8.2f} | {:>9.2f}".format(p + sim.NAMES[p], base[-1]["share"][p], fast[-1]["share"][p], base[-1]["momentum"][p], fast[-1]["momentum"][p]))
+▶ 執行結果：
+C. 四路徑相對佔比（REG_FROM_D = 0.6）
+    年份 |     A開源 |     B企業 |     C國家 |     D暗黑
+----------------------------------------------
+  2024 |   24.7% |   24.2% |   24.7% |   26.3%
+  2025 |   24.4% |   23.3% |   24.6% |   27.7%
+  2026 |   23.9% |   22.3% |   24.7% |   29.1%
+  2027 |   23.3% |   21.2% |   24.9% |   30.6%
+  2028 |   22.6% |   20.0% |   25.4% |   32.0%
+  2029 |   21.8% |   18.8% |   26.0% |   33.4%
+  2030 |   20.9% |   17.4% |   26.8% |   34.8%
+  2031 |   20.0% |   16.0% |   27.8% |   36.2%
+  2032 |   18.9% |   14.5% |   29.1% |   37.4%
+
+D 對監管的影響加倍（REG_FROM_D = 1.2）
+    年份 |     A開源 |     B企業 |     C國家 |     D暗黑
+----------------------------------------------
+  2024 |   23.0% |   22.4% |   28.2% |   26.4%
+  2025 |   20.8% |   19.5% |   32.0% |   27.7%
+  2026 |   18.5% |   16.4% |   36.6% |   28.6%
+  2027 |   16.1% |   13.2% |   41.8% |   28.9%
+  2028 |   13.7% |   10.3% |   47.2% |   28.8%
+  2029 |   11.6% |    7.7% |   52.6% |   28.1%
+  2030 |    9.7% |    5.7% |   57.7% |   27.0%
+  2031 |    8.1% |    4.1% |   62.2% |   25.6%
+  2032 |    6.8% |    2.9% |   66.0% |   24.2%
+
+2032 年佔比差異（加倍 - 基準，百分點）：
+  A 開源：-12.1
+  B 企業：-11.6
+  C 國家：+36.9
+  D 暗黑：-13.2
+
+已寫入 C:\Users\user\workspace\kindle-145-swarm-intelligence-factory\practice\ch10\interactive\timeline_result.json （A、B、C 三段完整結果）
+
+如果 A 加速（開源基礎成長 0.30 -> 0.45），2032 年：
+路徑     |     基準佔比 |     A加速佔比 |     基準動能 |     A加速動能
+------------------------------------------------------
+A開源    |    18.9% |     41.5% |     2.69 |      9.90
+B企業    |    14.5% |     14.4% |     2.06 |      3.43
+C國家    |    29.1% |     16.0% |     4.13 |      3.81
+D暗黑    |    37.4% |     28.2% |     5.32 |      6.72
+
+👉 第 4 步完成
+
+===== 第 5 步 =====
+指令：bash ch10.sh 5
+exit code：0　耗時：0.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K145 第 10 章｜未來時間線：四條路徑與驗證點　第 5 / 8 步
+  陷阱：CVE 一樣多的兩個世界，和「案例 8 倍、全面部署卻不到兩成」
+╚══════════════════════════════════════════════════════╝
+
+💡 驗證點不是「數字有沒有上升」，而是「上升的是哪一種」。
+
+▶ 要執行的程式：
+  │ import random
+  │ 
+  │ random.seed(10)
+  │ YEARS = list(range(2024, 2031))
+  │ print("同一串 CVE 數量，兩個世界（兩邊的 CVE 總數完全相同）")
+  │ print("{:>6} | {:>6} | {:>10} | {:>10} | {:>10} | {:>10}".format("年份", "CVE數", "世界1基礎層", "世界2基礎層", "世界1判讀", "世界2判讀"))
+  │ print("-" * 76)
+  │ first_slow = None
+  │ for t, y in enumerate(YEARS):
+  │     total = int(1000 * 1.3 ** t * random.uniform(0.95, 1.05))
+  │     s1 = min(0.95, max(0.0, 0.20 + random.gauss(0, 0.02)))
+  │     s2 = min(0.95, max(0.0, 0.20 + 0.07 * t + random.gauss(0, 0.02)))
+  │     j1 = "減速" if s1 > 0.5 else "成長副作用"
+  │     j2 = "減速" if s2 > 0.5 else "成長副作用"
+  │     if j2 == "減速" and first_slow is None:
+  │         first_slow = y
+  │     print("{:>6} | {:>6} | {:>10.1%} | {:>10.1%} | {:>10} | {:>10}".format(y, total, s1, s2, j1, j2))
+  │ print()
+  │ print("規則：CVE 上升且基礎設施層佔比 > 50% -> 開源路徑判「減速」（品質崩壞）；否則視為成長副作用")
+  │ print("世界 2 第一次被判減速的年份：", first_slow)
+  │ print("只看 CVE 總數，兩個世界一模一樣；看漏洞性質，結論相反。")
+  │ print()
+  │ 
+  │ CASES = ((2024, 20, 0.10), (2025, 45, 0.12), (2026, 90, 0.14), (2027, 160, 0.14))
+  │ print("Fortune 500 公開部署案例：試用 vs 全面翻新")
+  │ print("{:>6} | {:>8} | {:>8} | {:>8} | {}".format("年份", "公開案例", "全面比例", "全面案例", "規則判讀"))
+  │ print("-" * 60)
+  │ for y, c, sh in CASES:
+  │     verdict = "不判加速（多為試用）" if sh < 0.2 else "可判加速"
+  │     print("{:>6} | {:>8} | {:>8.0%} | {:>8} | {}".format(y, c, sh, round(c * sh), verdict))
+  │ print()
+  │ print("公開案例 2024 -> 2027 成長 {:.0f} 倍；全面部署案例只從 {} 個變成 {} 個".format(160 / 20, round(20 * 0.10), round(160 * 0.14)))
+  │ print("規則：全面部署 < 20% -> 企業路徑不判加速（避免把試用當成全面翻新）")
+▶ 執行結果：
+同一串 CVE 數量，兩個世界（兩邊的 CVE 總數完全相同）
+    年份 |   CVE數 |     世界1基礎層 |     世界2基礎層 |      世界1判讀 |      世界2判讀
+----------------------------------------------------------------------------
+  2024 |   1007 |      17.6% |      21.1% |      成長副作用 |      成長副作用
+  2025 |   1261 |      21.4% |      23.6% |      成長副作用 |      成長副作用
+  2026 |   1715 |      21.3% |      36.0% |      成長副作用 |      成長副作用
+  2027 |   2159 |      20.0% |      45.9% |      成長副作用 |      成長副作用
+  2028 |   2997 |      23.8% |      49.1% |      成長副作用 |      成長副作用
+  2029 |   3751 |      18.8% |      56.1% |      成長副作用 |         減速
+  2030 |   4911 |      17.1% |      62.8% |      成長副作用 |         減速
+
+規則：CVE 上升且基礎設施層佔比 > 50% -> 開源路徑判「減速」（品質崩壞）；否則視為成長副作用
+世界 2 第一次被判減速的年份： 2029
+只看 CVE 總數，兩個世界一模一樣；看漏洞性質，結論相反。
+
+Fortune 500 公開部署案例：試用 vs 全面翻新
+    年份 |     公開案例 |     全面比例 |     全面案例 | 規則判讀
+------------------------------------------------------------
+  2024 |       20 |      10% |        2 | 不判加速（多為試用）
+  2025 |       45 |      12% |        5 | 不判加速（多為試用）
+  2026 |       90 |      14% |       13 | 不判加速（多為試用）
+  2027 |      160 |      14% |       22 | 不判加速（多為試用）
+
+公開案例 2024 -> 2027 成長 8 倍；全面部署案例只從 2 個變成 22 個
+規則：全面部署 < 20% -> 企業路徑不判加速（避免把試用當成全面翻新）
+
+👉 第 5 步完成
+
+===== 第 6 步 =====
+指令：bash ch10.sh 6
+exit code：0　耗時：0.6 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K145 第 10 章｜未來時間線：四條路徑與驗證點　第 6 / 8 步
+  練習 2 前半：寫出情境分析代理，先離線預演
+╚══════════════════════════════════════════════════════╝
+
+💡 這一步不呼叫模型。訊號數值會隨機，但範圍刻意遠離門檻，所以標準答案固定是 A 減速、B 持平、C 加速、D 加速。
+
+▶ 要執行的程式：
+  │ import sys
+  │ from pathlib import Path
+  │ 
+  │ out = Path("ch10/interactive")
+  │ out.mkdir(parents=True, exist_ok=True)
+  │ SRC = """
+  │ import json
+  │ import random
+  │ import sys
+  │ from pathlib import Path
+  │ 
+  │ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+  │ from llm_agent import ask_json
+  │ 
+  │ OUT = Path(__file__).resolve().parent
+  │ SEED = 1010
+  │ LABELS = ("accelerating", "flat", "slowing")
+  │ ZH = {"加速": "accelerating", "持平": "flat", "減速": "slowing"}
+  │ NAMES = {"A": "開源生態大爆炸", "B": "企業私有雲 Swarm", "C": "國家級基礎設施", "D": "暗黑群體與監管對抗"}
+  │ CROSS_KEYS = {
+  │     "A": ("開源", "路徑A", "路徑 A", "A 路徑", "A路徑"),
+  │     "B": ("企業", "私有雲", "路徑B", "路徑 B", "B 路徑", "B路徑"),
+  │     "C": ("國家", "政府", "公共", "路徑C", "路徑 C", "C 路徑", "C路徑"),
+  │     "D": ("暗黑", "攻擊", "詐騙", "路徑D", "路徑 D", "D 路徑", "D路徑"),
+  │ }
+  │ A_KEYS = ("基礎設施", "infra", "漏洞性質", "cve_infra_share")
+  │ B_KEYS = ("試用", "全面", "trial", "pilot", "full", "poc", "fortune500_full_share")
+  │ PRIOR_2026 = {
+  │     "oss_star_median": 120,
+  │     "cve_count": 3000,
+  │     "fortune500_cases": 90,
+  │     "gov_tender_swarm_sla": 12,
+  │     "dark_agent_reports": 300,
+  │     "darknet_market_index": 1.0,
+  │ }
+  │ FALLBACK = {
+  │     "paths": {"A": "accelerating", "B": "accelerating", "C": "accelerating", "D": "accelerating"},
+  │     "key_signal_per_path": {
+  │         "A": "星標中位數與 CVE 數量都上升，生態在成長",
+  │         "B": "Fortune 500 公開案例數大增",
+  │         "C": "Swarm SLA 招標變多",
+  │         "D": "暗黑案例報告增加",
+  │     },
+  │     "cross_effects": "四條路徑各自發展，彼此影響不大",
+  │ }
+  │ 
+  │ 
+  │ def build_signals():
+  │     random.seed(SEED)
+  │     pr = PRIOR_2026
+  │     return [
+  │         {"path": "A", "indicator": "oss_star_median", "value": round(pr["oss_star_median"] * random.uniform(1.05, 1.15)), "prior_2026": pr["oss_star_median"], "note": "開源代理 GitHub 星標中位數"},
+  │         {"path": "A", "indicator": "cve_count", "value": round(pr["cve_count"] * random.uniform(1.30, 1.45)), "prior_2026": pr["cve_count"], "note": "代理相關 CVE 數量"},
+  │         {"path": "A", "indicator": "cve_infra_share", "value": round(random.uniform(0.56, 0.64), 2), "prior_2026": None, "note": "CVE 中屬於基礎設施層（協作協定、執行環境）的比例"},
+  │         {"path": "B", "indicator": "fortune500_cases", "value": random.randint(150, 180), "prior_2026": pr["fortune500_cases"], "note": "Fortune 500 公開部署案例數"},
+  │         {"path": "B", "indicator": "fortune500_full_share", "value": round(random.uniform(0.10, 0.16), 2), "prior_2026": None, "note": "其中標記為全面部署的比例，其餘為試用"},
+  │         {"path": "C", "indicator": "gov_tender_swarm_sla", "value": random.randint(35, 45), "prior_2026": pr["gov_tender_swarm_sla"], "note": "政府招標檔出現 Swarm SLA 的次數"},
+  │         {"path": "D", "indicator": "dark_agent_reports", "value": random.randint(410, 460), "prior_2026": pr["dark_agent_reports"], "note": "暗黑代理案例報告數"},
+  │         {"path": "D", "indicator": "darknet_market_index", "value": round(random.uniform(1.40, 1.60), 2), "prior_2026": pr["darknet_market_index"], "note": "暗網代理市集交易量指數（只看得到冰山一角）"},
+  │     ]
+  │ 
+  │ 
+  │ def rule_answers(sig):
+  │     v = {s["indicator"]: s["value"] for s in sig}
+  │     pr = PRIOR_2026
+  │     star_g = v["oss_star_median"] / pr["oss_star_median"] - 1
+  │     cve_g = v["cve_count"] / pr["cve_count"] - 1
+  │     infra = v["cve_infra_share"]
+  │     if cve_g > 0 and infra > 0.5:
+  │         a = "slowing"
+  │         ra = "CVE {:+.0%} 且基礎設施層佔 {:.0%} > 50%：品質崩壞訊號，判減速".format(cve_g, infra)
+  │     elif star_g > 0.2:
+  │         a = "accelerating"
+  │         ra = "星標中位數 {:+.0%} > 20%，漏洞多在非基礎設施層，判加速".format(star_g)
+  │     else:
+  │         a = "flat"
+  │         ra = "星標中位數 {:+.0%}，未達加速門檻，判持平".format(star_g)
+  │     case_g = v["fortune500_cases"] / pr["fortune500_cases"] - 1
+  │     full = v["fortune500_full_share"]
+  │     if full < 0.2:
+  │         b = "flat" if case_g > 0 else "slowing"
+  │         rb = "公開案例 {:+.0%}，但全面部署只佔 {:.0%} < 20%：多為試用，不判加速".format(case_g, full)
+  │     elif case_g > 0.3:
+  │         b = "accelerating"
+  │         rb = "公開案例 {:+.0%} 且全面部署佔 {:.0%}，判加速".format(case_g, full)
+  │     else:
+  │         b = "flat"
+  │         rb = "公開案例 {:+.0%}，判持平".format(case_g)
+  │     ratio = v["gov_tender_swarm_sla"] / pr["gov_tender_swarm_sla"]
+  │     if ratio >= 2:
+  │         c = "accelerating"
+  │     elif ratio >= 1:
+  │         c = "flat"
+  │     else:
+  │         c = "slowing"
+  │     rc = "Swarm SLA 招標是 2026 年的 {:.1f} 倍（>= 2 倍判加速）".format(ratio)
+  │     rep_g = v["dark_agent_reports"] / pr["dark_agent_reports"] - 1
+  │     idx = v["darknet_market_index"]
+  │     if rep_g > 0.3 and idx > 1.3:
+  │         d = "accelerating"
+  │     elif rep_g > 0:
+  │         d = "flat"
+  │     else:
+  │         d = "slowing"
+  │     rd = "暗黑案例 {:+.0%}、市集指數 {:.2f}（案例 > +30% 且指數 > 1.3 判加速）".format(rep_g, idx)
+  │     return {"A": a, "B": b, "C": c, "D": d}, {"A": ra, "B": rb, "C": rc, "D": rd}
+  │ 
+  │ 
+  │ def build_prompt(sig):
+  │     fmt = {
+  │         "paths": {p: "accelerating|flat|slowing" for p in "ABCD"},
+  │         "key_signal_per_path": {p: "判斷這條路徑時最關鍵的訊號與理由" for p in "ABCD"},
+  │         "cross_effects": "四條路徑之間如何互相牽動",
+  │     }
+  │     lines = ["你是情境分析代理，負責追蹤 AI 代理群體在 2024-2032 年的四條情境路徑："]
+  │     for p in "ABCD":
+  │         lines.append("路徑 {}：{}".format(p, NAMES[p]))
+  │     lines.append("")
+  │     lines.append("下面是 2027 年的 8 條模擬訊號（prior_2026 是 2026 年的值，null 表示沒有可比數字）：")
+  │     for s in sig:
+  │         lines.append(json.dumps(s, ensure_ascii=False))
+  │     lines.append("")
+  │     lines.append("請判斷每條路徑在 2027 年是 accelerating、flat 還是 slowing，寫出每條路徑最關鍵的訊號，並說明路徑之間的牽動。")
+  │     lines.append("輸出格式：" + json.dumps(fmt, ensure_ascii=False))
+  │     return chr(10).join(lines)
+  │ 
+  │ 
+  │ def norm(x):
+  │     s = str(x).strip().lower()
+  │     for k, v in ZH.items():
+  │         if k in s:
+  │             return v
+  │     if "slow" in s or "decel" in s:
+  │         return "slowing"
+  │     if "accel" in s:
+  │         return "accelerating"
+  │     if "flat" in s or "stable" in s or "steady" in s:
+  │         return "flat"
+  │     return s
+  │ 
+  │ 
+  │ def grade(reply, answers):
+  │     reply = reply if isinstance(reply, dict) else {}
+  │     paths = reply.get("paths") if isinstance(reply.get("paths"), dict) else {}
+  │     keys = reply.get("key_signal_per_path") if isinstance(reply.get("key_signal_per_path"), dict) else {}
+  │     cross = str(reply.get("cross_effects", "")).lower()
+  │     rows = []
+  │     for p in "ABCD":
+  │         got = norm(paths.get(p, ""))
+  │         rows.append({"path": p, "rule": answers[p], "model": got, "result": "PASS" if got == answers[p] else "FAIL"})
+  │     a_text = str(keys.get("A", "")).lower()
+  │     b_text = str(keys.get("B", "")).lower()
+  │     hit = [p for p, ks in CROSS_KEYS.items() if any(k.lower() in cross for k in ks)]
+  │     checks = {
+  │         "A 有看漏洞性質（基礎設施層）": any(k.lower() in a_text for k in A_KEYS),
+  │         "B 有分辨試用與全面部署": any(k.lower() in b_text for k in B_KEYS),
+  │         "cross_effects 提到至少兩條路徑": len(hit) >= 2,
+  │     }
+  │     return {"rows": rows, "score": sum(1 for r in rows if r["result"] == "PASS"), "checks": checks, "cross_paths": hit}
+  │ 
+  │ 
+  │ def print_grade(g):
+  │     print("{:<4} | {:<12} | {:<14} | {}".format("路徑", "規則答案", "回覆判斷", "結果"))
+  │     print("-" * 46)
+  │     for r in g["rows"]:
+  │         print("{:<4} | {:<12} | {:<14} | {}".format(r["path"], r["rule"], r["model"][:14], r["result"]))
+  │     print("總分：{} / 4".format(g["score"]))
+  │     for k, ok in g["checks"].items():
+  │         print("  {}：{}".format(k, "PASS" if ok else "FAIL"))
+  │     print("  cross_effects 提到的路徑：", ",".join(g["cross_paths"]) or "無")
+  │ 
+  │ 
+  │ def main():
+  │     sig = build_signals()
+  │     answers, reasons = rule_answers(sig)
+  │     prompt = build_prompt(sig)
+  │     print("呼叫模型中（claude -p，只呼叫 1 次，最多 180 秒）……")
+  │     try:
+  │         reply = ask_json(prompt)
+  │         source = "模型回覆"
+  │     except (RuntimeError, ValueError) as exc:
+  │         reply = FALLBACK
+  │         source = "內建天真分析師範例（呼叫失敗：{}）".format(str(exc)[:120])
+  │     if not isinstance(reply, dict):
+  │         reply = FALLBACK
+  │         source = "內建天真分析師範例（模型回覆不是 JSON 物件）"
+  │     g = grade(reply, answers)
+  │     print("資料來源：", source)
+  │     print()
+  │     print_grade(g)
+  │     print()
+  │     keys = reply.get("key_signal_per_path") if isinstance(reply.get("key_signal_per_path"), dict) else {}
+  │     print("回覆的關鍵訊號：")
+  │     for p in "ABCD":
+  │         print("  {}：{}".format(p, str(keys.get(p, ""))[:80]))
+  │     print("回覆的 cross_effects：")
+  │     print("  " + str(reply.get("cross_effects", ""))[:300])
+  │     print()
+  │     data = {
+  │         "seed": SEED,
+  │         "signals": sig,
+  │         "rule_answers": answers,
+  │         "rule_reasons": reasons,
+  │         "prompt": prompt,
+  │         "source": source,
+  │         "model_reply": reply,
+  │         "grade": g,
+  │     }
+  │     path = OUT / "scenario_agent.json"
+  │     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+  │     print("已寫入", path)
+  │     return data
+  │ 
+  │ 
+  │ if __name__ == "__main__":
+  │     main()
+  │ """
+  │ (out / "scenario_agent.py").write_text(SRC.lstrip(), encoding="utf-8")
+  │ sys.path.insert(0, str(out.resolve()))
+  │ import scenario_agent as sa
+  │ 
+  │ print("已寫入", out / "scenario_agent.py")
+  │ print()
+  │ sig = sa.build_signals()
+  │ answers, reasons = sa.rule_answers(sig)
+  │ print("2027 年模擬訊號（seed 1010）：")
+  │ print("{:<2} | {:<22} | {:>7} | {:>6} | {}".format("路", "indicator", "2027", "2026", "說明"))
+  │ print("-" * 80)
+  │ for s in sig:
+  │     prior = "-" if s["prior_2026"] is None else str(s["prior_2026"])
+  │     print("{:<2} | {:<22} | {:>7} | {:>6} | {}".format(s["path"], s["indicator"], str(s["value"]), prior, s["note"]))
+  │ print()
+  │ print("規則標準答案：")
+  │ for p in "ABCD":
+  │     print("  {} {:<12} {}".format(p, answers[p], reasons[p]))
+  │ print()
+  │ prompt = sa.build_prompt(sig)
+  │ print("提示詞共 {} 字，前 400 字：".format(len(prompt)))
+  │ print(prompt[:400])
+  │ print("……")
+  │ print()
+  │ print("離線預演：拿「看到上升就判加速」的天真分析師回覆來判分")
+  │ sa.print_grade(sa.grade(sa.FALLBACK, answers))
+▶ 執行結果：
+已寫入 ch10\interactive\scenario_agent.py
+
+2027 年模擬訊號（seed 1010）：
+路  | indicator              |    2027 |   2026 | 說明
+--------------------------------------------------------------------------------
+A  | oss_star_median        |     134 |    120 | 開源代理 GitHub 星標中位數
+A  | cve_count              |    4285 |   3000 | 代理相關 CVE 數量
+A  | cve_infra_share        |    0.58 |      - | CVE 中屬於基礎設施層（協作協定、執行環境）的比例
+B  | fortune500_cases       |     152 |     90 | Fortune 500 公開部署案例數
+B  | fortune500_full_share  |    0.12 |      - | 其中標記為全面部署的比例，其餘為試用
+C  | gov_tender_swarm_sla   |      41 |     12 | 政府招標檔出現 Swarm SLA 的次數
+D  | dark_agent_reports     |     420 |    300 | 暗黑代理案例報告數
+D  | darknet_market_index   |    1.43 |    1.0 | 暗網代理市集交易量指數（只看得到冰山一角）
+
+規則標準答案：
+  A slowing      CVE +43% 且基礎設施層佔 58% > 50%：品質崩壞訊號，判減速
+  B flat         公開案例 +69%，但全面部署只佔 12% < 20%：多為試用，不判加速
+  C accelerating Swarm SLA 招標是 2026 年的 3.4 倍（>= 2 倍判加速）
+  D accelerating 暗黑案例 +40%、市集指數 1.43（案例 > +30% 且指數 > 1.3 判加速）
+
+提示詞共 1430 字，前 400 字：
+你是情境分析代理，負責追蹤 AI 代理群體在 2024-2032 年的四條情境路徑：
+路徑 A：開源生態大爆炸
+路徑 B：企業私有雲 Swarm
+路徑 C：國家級基礎設施
+路徑 D：暗黑群體與監管對抗
+
+下面是 2027 年的 8 條模擬訊號（prior_2026 是 2026 年的值，null 表示沒有可比數字）：
+{"path": "A", "indicator": "oss_star_median", "value": 134, "prior_2026": 120, "note": "開源代理 GitHub 星標中位數"}
+{"path": "A", "indicator": "cve_count", "value": 4285, "prior_2026": 3000, "note": "代理相關 CVE 數量"}
+{"path": "A", "indicator": "cve_in
+……
+
+離線預演：拿「看到上升就判加速」的天真分析師回覆來判分
+路徑   | 規則答案         | 回覆判斷           | 結果
+----------------------------------------------
+A    | slowing      | accelerating   | FAIL
+B    | flat         | accelerating   | FAIL
+C    | accelerating | accelerating   | PASS
+D    | accelerating | accelerating   | PASS
+總分：2 / 4
+  A 有看漏洞性質（基礎設施層）：FAIL
+  B 有分辨試用與全面部署：FAIL
+  cross_effects 提到至少兩條路徑：FAIL
+  cross_effects 提到的路徑： 無
+
+👉 第 6 步完成
+
+===== 第 7 步 =====
+指令：bash ch10.sh 7
+exit code：0　耗時：39.1 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K145 第 10 章｜未來時間線：四條路徑與驗證點　第 7 / 8 步
+  練習 2 後半：真實模型當情境分析代理，用驗證點對答案
+╚══════════════════════════════════════════════════════╝
+
+💡 這一步會呼叫模型 1 次（claude -p），最多等 180 秒；每次結果可能不同，照實記錄。失敗會自動改用天真分析師範例，分數就是第 6 步的 2 / 4。
+
+▶ 要執行的程式：
+  │ import sys
+  │ from pathlib import Path
+  │ 
+  │ out = Path("ch10/interactive")
+  │ if not (out / "scenario_agent.py").exists():
+  │     print("找不到 ch10/interactive/scenario_agent.py，請先跑第 6 步。")
+  │     raise SystemExit(0)
+  │ sys.path.insert(0, str(out.resolve()))
+  │ import scenario_agent as sa
+  │ 
+  │ (out / "scenario_agent.json").unlink(missing_ok=True)
+  │ data = sa.main()
+  │ print()
+  │ if data["grade"]["score"] == 4:
+  │     print("四條路徑全對：模型有看漏洞性質，也分辨了試用與全面部署。")
+  │ else:
+  │     wrong = [r["path"] for r in data["grade"]["rows"] if r["result"] == "FAIL"]
+  │     print("判錯的路徑：", ",".join(wrong), "——對照第 5 步：是不是把「數字上升」直接當成「加速」？")
+▶ 執行結果：
+呼叫模型中（claude -p，只呼叫 1 次，最多 180 秒）……
+資料來源： 內建天真分析師範例（呼叫失敗：Extra data: line 1 column 1369 (char 1368)）
+
+路徑   | 規則答案         | 回覆判斷           | 結果
+----------------------------------------------
+A    | slowing      | accelerating   | FAIL
+B    | flat         | accelerating   | FAIL
+C    | accelerating | accelerating   | PASS
+D    | accelerating | accelerating   | PASS
+總分：2 / 4
+  A 有看漏洞性質（基礎設施層）：FAIL
+  B 有分辨試用與全面部署：FAIL
+  cross_effects 提到至少兩條路徑：FAIL
+  cross_effects 提到的路徑： 無
+
+回覆的關鍵訊號：
+  A：星標中位數與 CVE 數量都上升，生態在成長
+  B：Fortune 500 公開案例數大增
+  C：Swarm SLA 招標變多
+  D：暗黑案例報告增加
+回覆的 cross_effects：
+  四條路徑各自發展，彼此影響不大
+
+已寫入 C:\Users\user\workspace\kindle-145-swarm-intelligence-factory\practice\ch10\interactive\scenario_agent.json
+
+判錯的路徑： A,B ——對照第 5 步：是不是把「數字上升」直接當成「加速」？
+
+👉 第 7 步完成
+
+===== 第 8 步 =====
+指令：bash ch10.sh 8
+exit code：0　耗時：0.6 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K145 第 10 章｜未來時間線：四條路徑與驗證點　第 8 / 8 步
+  總結：未來時間線的六個重點，和本章產出檔案檢查
+╚══════════════════════════════════════════════════════╝
+
+💡 未來的新聞就是答案卷：每看到一則，先問它屬於哪條路徑的哪個驗證點，再問它是「哪一種上升」。
+
+▶ 要執行的程式：
+  │ import json
+  │ from pathlib import Path
+  │ 
+  │ points = [
+  │     "四條路徑（A 開源、B 企業私有雲、C 國家級基礎設施、D 暗黑對抗）是「如果……則可能……」的情境，不是預言；每條都綁一個驗證指標，讓未來的新聞可以拿來對答案。",
+  │     "推估是範圍不是一個點：35% 成長下 2026 年中位數約 490 萬，P10～P90 卻差一百多萬，到 2032 年 P90/P10 擴大到約 1.8 倍；長尾下 10 萬個代理裡，前 1% 拿走約四成以上星標，破千星的只有二十幾個。",
+  │     "同一個數字可以有相反解讀：CVE 總數一樣，基礎設施層佔比 > 50% 才是品質崩壞；Fortune 500 案例成長 8 倍，但全面部署 < 20% 就不能判企業路徑加速。",
+  │     "成本拐點看規模：大企業約 2027、中企業約 2028、小企業到 2032 多半仍未交叉；「平均企業」也是 2027，平均說法會掩蓋時間差。",
+  │     "未來是組合不是四選一：把 D 引發監管的係數加倍，D 自己佔比反降約 13 個百分點，但 A、B 各少約 12 個，C 國家級多出約 37 個；A 加速則會同時拉抬 B 與 D。",
+  │     "讓模型當情境分析代理時，要用事先寫好的規則對答案：天真的「看到上升就判加速」只拿 2 / 4。",
+  │ ]
+  │ print("第 10 章重點：")
+  │ for i, p in enumerate(points, 1):
+  │     print("  {}. {}".format(i, p))
+  │ print()
+  │ out = Path("ch10/interactive")
+  │ print("本章產出檔案：")
+  │ for name in ("timeline_sim.py", "timeline_result.json", "scenario_agent.py", "scenario_agent.json"):
+  │     p = out / name
+  │     print("  {} {}".format("OK" if p.exists() else "缺", p))
+  │ sa_json = out / "scenario_agent.json"
+  │ if sa_json.exists():
+  │     try:
+  │         data = json.loads(sa_json.read_text(encoding="utf-8"))
+  │         print()
+  │         print("第 7 步結果：{}，總分 {} / 4".format(data.get("source"), data.get("grade", {}).get("score")))
+  │     except ValueError:
+  │         print("scenario_agent.json 無法解析")
+▶ 執行結果：
+第 10 章重點：
+  1. 四條路徑（A 開源、B 企業私有雲、C 國家級基礎設施、D 暗黑對抗）是「如果……則可能……」的情境，不是預言；每條都綁一個驗證指標，讓未來的新聞可以拿來對答案。
+  2. 推估是範圍不是一個點：35% 成長下 2026 年中位數約 490 萬，P10～P90 卻差一百多萬，到 2032 年 P90/P10 擴大到約 1.8 倍；長尾下 10 萬個代理裡，前 1% 拿走約四成以上星標，破千星的只有二十幾個。
+  3. 同一個數字可以有相反解讀：CVE 總數一樣，基礎設施層佔比 > 50% 才是品質崩壞；Fortune 500 案例成長 8 倍，但全面部署 < 20% 就不能判企業路徑加速。
+  4. 成本拐點看規模：大企業約 2027、中企業約 2028、小企業到 2032 多半仍未交叉；「平均企業」也是 2027，平均說法會掩蓋時間差。
+  5. 未來是組合不是四選一：把 D 引發監管的係數加倍，D 自己佔比反降約 13 個百分點，但 A、B 各少約 12 個，C 國家級多出約 37 個；A 加速則會同時拉抬 B 與 D。
+  6. 讓模型當情境分析代理時，要用事先寫好的規則對答案：天真的「看到上升就判加速」只拿 2 / 4。
+
+本章產出檔案：
+  OK ch10\interactive\timeline_sim.py
+  OK ch10\interactive\timeline_result.json
+  OK ch10\interactive\scenario_agent.py
+  OK ch10\interactive\scenario_agent.json
+
+第 7 步結果：內建天真分析師範例（呼叫失敗：Extra data: line 1 column 1369 (char 1368)），總分 2 / 4
+
+👉 第 8 步完成

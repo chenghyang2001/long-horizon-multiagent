@@ -1,0 +1,1046 @@
+# ch05 執行紀錄　2026-11-21 15:36:50
+
+===== bash -n 語法檢查 =====
+指令：bash -n ch05.sh
+exit code：0　耗時：0.2 秒
+----- 輸出 -----
+
+
+===== 第 1 步 =====
+指令：bash ch05.sh 1
+exit code：0　耗時：0.6 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K145 第 5 章｜任務網絡與協作回路　第 1 / 8 步
+  故障是常態：一天壞幾個？慢 200 ms 會塞多久？
+╚══════════════════════════════════════════════════════╝
+
+💡 書上說「一萬個節點、年故障率 1%，每天二十多個出事」——先照算一次；然後看「只慢 200 ms」怎麼變成兩分半的大塞車。
+
+▶ 要執行的程式：
+  │ import random
+  │ random.seed(505)
+  │ 
+  │ P_DAY = 0.01 / 365
+  │ print("A. 年故障率 1%：一天平均有幾個節點出事？")
+  │ print("{:>9} | {:>8} | {:>8} | {:>14}".format("節點數", "每年故障", "每天平均", "一天至少壞一個"))
+  │ print("-" * 52)
+  │ for n in (100, 1000, 10000, 100000, 1000000):
+  │     print("{:>9} | {:>8.0f} | {:>8.2f} | {:>13.1f}%".format(n, n * 0.01, n * P_DAY, (1 - (1 - P_DAY) ** n) * 100))
+  │ print()
+  │ print("書上寫「一萬個節點、年故障率 1%，平均每天二十多個出事」，照算只有 0.27 個；")
+  │ print("每天 27 個要嘛是一百萬個節點，要嘛是每個節點每年平均壞一次。量級差 100 倍，數字一定要自己重算。")
+  │ print()
+  │ 
+  │ def days(n, p, d=30):
+  │     return [sum(1 for _ in range(n) if random.random() < p) for _ in range(d)]
+  │ 
+  │ for label, p in (("年故障率 1%", P_DAY), ("每年壞一次", 1 / 365)):
+  │     x = days(10000, p)
+  │     print("1 萬節點、{}：30 天共 {} 次，每天最少 {}、最多 {}、平均 {:.2f}，有出事的天數 {}/30".format(label, sum(x), min(x), max(x), sum(x) / 30, sum(1 for v in x if v > 0)))
+  │ print()
+  │ print("B. 購物節：訂單每 100 ms 一筆，庫存同步平常 20 ms；第 60～120 秒每筆慢 200 ms")
+  │ free = 0
+  │ rows = []
+  │ for i in range(3000):
+  │     a = i * 100
+  │     svc = 220 if 60000 <= a < 120000 else 20
+  │     start = max(a, free)
+  │     free = start + svc
+  │     rows.append((a, start - a))
+  │ waiting = [a for a, w in rows if w > 0]
+  │ worst = max(rows, key=lambda r: r[1])
+  │ print("  等待超過 1 秒的訂單：{} 筆".format(sum(1 for a, w in rows if w > 1000)))
+  │ print("  最長等待：{:.1f} 秒（第 {:.1f} 秒到達的那筆）".format(worst[1] / 1000, worst[0] / 1000))
+  │ print("  排隊從第 {:.1f} 秒開始，到第 {:.1f} 秒才清空：慢了 60 秒，卻塞了 {:.0f} 秒".format(waiting[0] / 1000, waiting[-1] / 1000, (waiting[-1] - waiting[0]) / 1000))
+  │ print("  原因：服務 220 ms > 到達間隔 100 ms，每來一筆隊伍就多 120 ms；恢復後每筆只能消化 80 ms")
+▶ 執行結果：
+A. 年故障率 1%：一天平均有幾個節點出事？
+      節點數 |     每年故障 |     每天平均 |        一天至少壞一個
+----------------------------------------------------
+      100 |        1 |     0.00 |           0.3%
+     1000 |       10 |     0.03 |           2.7%
+    10000 |      100 |     0.27 |          24.0%
+   100000 |     1000 |     2.74 |          93.5%
+  1000000 |    10000 |    27.40 |         100.0%
+
+書上寫「一萬個節點、年故障率 1%，平均每天二十多個出事」，照算只有 0.27 個；
+每天 27 個要嘛是一百萬個節點，要嘛是每個節點每年平均壞一次。量級差 100 倍，數字一定要自己重算。
+
+1 萬節點、年故障率 1%：30 天共 13 次，每天最少 0、最多 2、平均 0.43，有出事的天數 12/30
+1 萬節點、每年壞一次：30 天共 808 次，每天最少 17、最多 43、平均 26.93，有出事的天數 30/30
+
+B. 購物節：訂單每 100 ms 一筆，庫存同步平常 20 ms；第 60～120 秒每筆慢 200 ms
+  等待超過 1 秒的訂單：1479 筆
+  最長等待：72.0 秒（第 120.0 秒到達的那筆）
+  排隊從第 60.1 秒開始，到第 209.9 秒才清空：慢了 60 秒，卻塞了 150 秒
+  原因：服務 220 ms > 到達間隔 100 ms，每來一筆隊伍就多 120 ms；恢復後每筆只能消化 80 ms
+
+👉 第 1 步完成
+
+===== 第 2 步 =====
+指令：bash ch05.sh 2
+exit code：0　耗時：0.6 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K145 第 5 章｜任務網絡與協作回路　第 2 / 8 步
+  練習 1-A：靜態 DAG vs 動態邊權重
+╚══════════════════════════════════════════════════════╝
+
+💡 動態版不是靠閒置的備援，而是把故障當成新資訊，在本地持續調權重。注意最後一行：W1 好了，流量卻不一定馬上回來。
+
+▶ 要執行的程式：
+  │ import json
+  │ import sys
+  │ from pathlib import Path
+  │ 
+  │ MOD = """# 第 5 章練習 1：靜態 DAG 與動態重排，再比三種協作範式（只用標準庫、離線）
+  │ # 直接執行：PYTHONUTF8=1 python ch05/interactive/dynamic_dag_sim.py
+  │ import json
+  │ import random
+  │ import statistics
+  │ from collections import deque
+  │ from pathlib import Path
+  │ 
+  │ SEED = 505
+  │ BASE = {"inventory": 20, "payment": 30, "logistics": 25, "invoice": 10}
+  │ WAREHOUSES = ("W1", "W2", "W3", "W4")
+  │ TIMEOUT = 500
+  │ 
+  │ 
+  │ def pct(xs, q):
+  │     s = sorted(xs)
+  │     k = max(0, min(len(s) - 1, int(round(q * len(s))) - 1))
+  │     return s[k]
+  │ 
+  │ 
+  │ def inv_call(rng, wh, bad):
+  │     lat = BASE["inventory"] * rng.uniform(0.9, 1.1)
+  │     if wh == "W1" and bad:
+  │         if rng.random() < 0.3:
+  │             return float(TIMEOUT), True
+  │         return lat + 200, False
+  │     return lat, False
+  │ 
+  │ 
+  │ def downstream(rng):
+  │     return sum(BASE[k] * rng.uniform(0.9, 1.1) for k in ("payment", "logistics", "invoice"))
+  │ 
+  │ 
+  │ def raw_weight(h):
+  │     if not h:
+  │         return 1.0 / BASE["inventory"]
+  │     avg = sum(x for x, f in h) / len(h)
+  │     fr = sum(1 for x, f in h if f) / len(h)
+  │     return 1.0 / (avg * (1 + fr * 5))
+  │ 
+  │ 
+  │ def weights(hist, floor):
+  │     w = [raw_weight(hist[k]) for k in WAREHOUSES]
+  │     total = sum(w)
+  │     p = [x / total for x in w]
+  │     lo = min(range(len(p)), key=lambda j: p[j])
+  │     if p[lo] < floor:
+  │         others = sum(p) - p[lo]
+  │         p = [floor if j == lo else p[j] * (1 - floor) / others for j in range(len(p))]
+  │     return p
+  │ 
+  │ 
+  │ def run_orders(mode, n=1000, floor=0.05, window=20, seed=SEED, bad_from=300, bad_to=600):
+  │     rng = random.Random(seed)
+  │     hist = {k: deque(maxlen=window) for k in WAREHOUSES}
+  │     lats, picks, bad_flags, w1_prob = [], [], [], []
+  │     timeouts = 0
+  │     for i in range(1, n + 1):
+  │         bad = bad_from <= i <= bad_to
+  │         if mode == "static":
+  │             first = "W1"
+  │             w1_prob.append(1.0)
+  │         else:
+  │             p = weights(hist, floor)
+  │             w1_prob.append(p[0])
+  │             first = rng.choices(WAREHOUSES, weights=p)[0]
+  │         t, failed = inv_call(rng, first, bad)
+  │         hist[first].append((t, failed))
+  │         if failed:
+  │             timeouts += 1
+  │             if mode == "static":
+  │                 backup = "W2"
+  │             else:
+  │                 backup = max((k for k in WAREHOUSES if k != first), key=lambda k: raw_weight(hist[k]))
+  │             t2, _ = inv_call(rng, backup, bad)
+  │             hist[backup].append((t2, False))
+  │             t += t2
+  │         lats.append(t + downstream(rng))
+  │         picks.append(first)
+  │         bad_flags.append(bad)
+  │     bad_lats = [x for x, b in zip(lats, bad_flags) if b]
+  │     bad_picks = [k for k, b in zip(picks, bad_flags) if b]
+  │     rec = None
+  │     if mode != "static":
+  │         for i in range(bad_to + 1, n + 1):
+  │             if w1_prob[i - 1] >= 0.20:
+  │                 rec = i - bad_to
+  │                 break
+  │     return {
+  │         "mode": mode, "n": n, "floor": floor, "window": window,
+  │         "mean": round(statistics.mean(lats), 1),
+  │         "p95": round(pct(lats, 0.95), 1),
+  │         "timeouts": timeouts,
+  │         "share": {k: round(picks.count(k) / n, 3) for k in WAREHOUSES},
+  │         "bad_mean": round(statistics.mean(bad_lats), 1),
+  │         "w1_share_bad": round(bad_picks.count("W1") / len(bad_picks), 3),
+  │         "w1_buckets": [round(picks[s:s + 100].count("W1") / len(picks[s:s + 100]), 2) for s in range(0, n, 100)],
+  │         "recover_after": rec,
+  │     }
+  │ 
+  │ 
+  │ def pipeline(stages, n_tasks=50, copies=None):
+  │     copies = copies or [1] * len(stages)
+  │     free = [[0.0] * c for c in copies]
+  │     starts, ends = [], []
+  │     for _ in range(n_tasks):
+  │         t = 0.0
+  │         for k, d in enumerate(stages):
+  │             j = min(range(copies[k]), key=lambda x: free[k][x])
+  │             st = max(t, free[k][j])
+  │             if k == 0:
+  │                 starts.append(st)
+  │             t = st + d
+  │             free[k][j] = t
+  │         ends.append(t)
+  │     lat = [e - b for b, e in zip(starts, ends)]
+  │     makespan = max(ends)
+  │     slowest = max(d / c for d, c in zip(stages, copies))
+  │     return {
+  │         "stages": stages, "copies": copies,
+  │         "min_latency": sum(stages),
+  │         "avg_latency": round(statistics.mean(lat), 1),
+  │         "max_latency": round(max(lat), 1),
+  │         "makespan": round(makespan, 1),
+  │         "throughput": round(n_tasks / (makespan / 1000), 2),
+  │         "steady_throughput": round(1000 / slowest, 2),
+  │         "bottleneck_stage": [k + 1 for k, (d, c) in enumerate(zip(stages, copies)) if d / c == slowest],
+  │     }
+  │ 
+  │ 
+  │ def mapreduce(seed=SEED, n=20, straggler=600.0, factor=3, rerun=80.0):
+  │     rng = random.Random(seed)
+  │     d = [rng.uniform(50, 100) for _ in range(n)]
+  │     slow = rng.randrange(n)
+  │     d[slow] = straggler
+  │     normal = [x for k, x in enumerate(d) if k != slow]
+  │     med = statistics.median(normal)
+  │     limit = factor * med
+  │     spec = [limit + rerun if x > limit else x for x in d]
+  │     return {
+  │         "n_maps": n, "straggler_index": slow + 1,
+  │         "median_ms": round(med, 1), "speculate_at_ms": round(limit, 1),
+  │         "slowest_normal_ms": round(max(normal), 1),
+  │         "reduce_start_plain": round(max(d), 1),
+  │         "reduce_start_speculative": round(max(spec), 1),
+  │         "saved_ms": round(max(d) - max(spec), 1),
+  │     }
+  │ 
+  │ 
+  │ def blackboard(seed=SEED, agents=8, steps=200, fields=10, p=0.3, hot=0.0):
+  │     rng = random.Random(seed)
+  │     queues = [deque() for _ in range(fields)]
+  │     conflicts, writes, t = 0, 0, 0
+  │     waits = []
+  │     while t < steps or any(queues):
+  │         if t < steps:
+  │             touched = [0] * fields
+  │             for _ in range(agents):
+  │                 if rng.random() < p:
+  │                     f = 0 if rng.random() < hot else rng.randrange(fields)
+  │                     touched[f] += 1
+  │                     queues[f].append(t)
+  │                     writes += 1
+  │             conflicts += sum(1 for c in touched if c >= 2)
+  │         for q in queues:
+  │             if q:
+  │                 waits.append(t - q.popleft())
+  │         t += 1
+  │     return {
+  │         "writes": writes,
+  │         "conflicts_nolock": conflicts,
+  │         "lock_waited": sum(1 for w in waits if w > 0),
+  │         "lock_avg_wait": round(statistics.mean(waits), 2),
+  │         "lock_max_wait": max(waits),
+  │         "drain_steps": t,
+  │     }
+  │ 
+  │ 
+  │ def paradigms():
+  │     return {
+  │         "pipeline": {
+  │             "各階段 100ms": pipeline([100, 100, 100, 100, 100]),
+  │             "第3階段 300ms": pipeline([100, 100, 300, 100, 100]),
+  │             "300ms 階段開 3 份": pipeline([100, 100, 300, 100, 100], copies=[1, 1, 3, 1, 1]),
+  │         },
+  │         "mapreduce": mapreduce(),
+  │         "blackboard": {"均勻寫入": blackboard(), "七成寫同一欄": blackboard(hot=0.7)},
+  │     }
+  │ 
+  │ 
+  │ def main():
+  │     out = Path(__file__).resolve().parent
+  │     res = {"orders": {m: run_orders(m) for m in ("static", "dynamic")}, "paradigms": paradigms()}
+  │     (out / "dag_result.json").write_text(json.dumps(res, ensure_ascii=False, indent=2), encoding="utf-8")
+  │     for m, r in res["orders"].items():
+  │         print(m, "平均", r["mean"], "ms，p95", r["p95"], "ms，逾時", r["timeouts"], "次")
+  │     print("已寫入", out / "dag_result.json")
+  │ 
+  │ 
+  │ if __name__ == "__main__":
+  │     main()
+  │ """
+  │ 
+  │ out = Path("ch05/interactive")
+  │ out.mkdir(parents=True, exist_ok=True)
+  │ (out / "dynamic_dag_sim.py").write_text(MOD, encoding="utf-8")
+  │ (out / "dag_result.json").unlink(missing_ok=True)
+  │ sys.path.insert(0, str(out))
+  │ import dynamic_dag_sim as sim
+  │ 
+  │ rows = [sim.run_orders("static"), sim.run_orders("dynamic")]
+  │ hdr = "{:<8} | {:>8} | {:>8} | {:>5} | {:>10} | {:>9} | {}"
+  │ print(hdr.format("版本", "平均延遲", "p95延遲", "逾時", "故障期平均", "故障期W1", "流量 W1/W2/W3/W4"))
+  │ print("-" * 86)
+  │ for r in rows:
+  │     sh = "/".join("{:.0%}".format(r["share"][k]) for k in sim.WAREHOUSES)
+  │     print(hdr.format(r["mode"], r["mean"], r["p95"], r["timeouts"], r["bad_mean"], "{:.1%}".format(r["w1_share_bad"]), sh))
+  │ dyn = rows[1]
+  │ print()
+  │ print("動態版 W1 每 100 筆的流量份額：")
+  │ print("  " + "  ".join("{}-{}:{:.0%}".format(k * 100 + 1, k * 100 + 100, v) for k, v in enumerate(dyn["w1_buckets"])))
+  │ rec = dyn["recover_after"]
+  │ print("W1 從第 601 筆起恢復正常；動態版把 W1 選中機率拉回 ≥ 20%：", ("第 600+{} 筆".format(rec) if rec else "1000 筆內沒拉回（探測流量只有 5%，回來得很慢）"))
+  │ print("靜態版走備援 W2 的次數 = 逾時次數 =", rows[0]["timeouts"])
+  │ (out / "dag_result.json").write_text(json.dumps({"orders": {r["mode"]: r for r in rows}}, ensure_ascii=False, indent=2), encoding="utf-8")
+  │ print()
+  │ print("已寫入", out / "dynamic_dag_sim.py", "與", out / "dag_result.json")
+▶ 執行結果：
+版本       |     平均延遲 |    p95延遲 |    逾時 |      故障期平均 |     故障期W1 | 流量 W1/W2/W3/W4
+--------------------------------------------------------------------------------------
+static   |    173.7 |    584.4 |    95 |      379.9 |    100.0% | 100%/0%/0%/0%
+dynamic  |     91.3 |     90.0 |     7 |      106.2 |      7.0% | 11%/27%/33%/29%
+
+動態版 W1 每 100 筆的流量份額：
+  1-100:23%  101-200:25%  201-300:25%  301-400:10%  401-500:6%  501-600:4%  601-700:6%  701-800:3%  801-900:4%  901-1000:8%
+W1 從第 601 筆起恢復正常；動態版把 W1 選中機率拉回 ≥ 20%： 第 600+393 筆
+靜態版走備援 W2 的次數 = 逾時次數 = 95
+
+已寫入 ch05\interactive\dynamic_dag_sim.py 與 ch05\interactive\dag_result.json
+
+👉 第 2 步完成
+
+===== 第 3 步 =====
+指令：bash ch05.sh 3
+exit code：0　耗時：0.6 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K145 第 5 章｜任務網絡與協作回路　第 3 / 8 步
+  改參數找陷阱：防飢餓下限與歷史窗口
+╚══════════════════════════════════════════════════════╝
+
+💡 本步延長到 1500 筆。「靜態」與「下限 5%（規格）」兩列的逾時數、故障期 W1 份額必須和第 2 步一模一樣——同種子、同序列。
+
+▶ 要執行的程式：
+  │ import sys
+  │ from pathlib import Path
+  │ 
+  │ out = Path("ch05/interactive")
+  │ if not (out / "dynamic_dag_sim.py").exists():
+  │     print("找不到 ch05/interactive/dynamic_dag_sim.py，請先跑第 2 步。")
+  │     raise SystemExit(0)
+  │ sys.path.insert(0, str(out))
+  │ import dynamic_dag_sim as sim
+  │ 
+  │ N = 1500
+  │ configs = [
+  │     ("靜態（固定 W1）", "static", 0.05, 20),
+  │     ("動態，無下限", "dynamic", 0.0, 20),
+  │     ("動態，下限 5%（規格）", "dynamic", 0.05, 20),
+  │     ("動態，下限 15%", "dynamic", 0.15, 20),
+  │     ("動態，下限 5%、歷史 5 筆", "dynamic", 0.05, 5),
+  │ ]
+  │ hdr = "{:<20} | {:>8} | {:>7} | {:>5} | {:>9} | {}"
+  │ print(hdr.format("設定", "平均延遲", "p95", "逾時", "故障期W1", "W1 機率回到 ≥20% 要幾筆"))
+  │ print("-" * 84)
+  │ for label, mode, fl, win in configs:
+  │     r = sim.run_orders(mode, n=N, floor=fl, window=win)
+  │     if mode == "static":
+  │         rec = "-"
+  │     else:
+  │         rec = str(r["recover_after"]) if r["recover_after"] else "未恢復（>900 筆）"
+  │     print(hdr.format(label, r["mean"], r["p95"], r["timeouts"], "{:.1%}".format(r["w1_share_bad"]), rec))
+  │ print()
+  │ print("讀法：")
+  │ print("  無下限：故障期最省逾時，但 W1 恢復後機率只剩約 1%，幾乎分不到流量來證明自己——富者愈富、新人餓死。")
+  │ print("  下限越高：恢復越快，但故障期被迫送更多訂單去探測生病的 W1，逾時變多。")
+  │ print("  歷史窗口越短：舊的壞紀錄越快被洗掉，恢復快，但也更容易被一兩次雜訊左右。")
+▶ 執行結果：
+設定                   |     平均延遲 |     p95 |    逾時 |     故障期W1 | W1 機率回到 ≥20% 要幾筆
+------------------------------------------------------------------------------------
+靜態（固定 W1）            |    144.0 |   582.9 |    95 |    100.0% | -
+動態，無下限               |     87.5 |    89.5 |     4 |      4.3% | 763
+動態，下限 5%（規格）         |     89.1 |    89.7 |     7 |      7.0% | 393
+動態，下限 15%            |     92.7 |    90.0 |    10 |     14.6% | 105
+動態，下限 5%、歷史 5 筆      |     88.4 |    89.7 |     6 |      5.6% | 40
+
+讀法：
+  無下限：故障期最省逾時，但 W1 恢復後機率只剩約 1%，幾乎分不到流量來證明自己——富者愈富、新人餓死。
+  下限越高：恢復越快，但故障期被迫送更多訂單去探測生病的 W1，逾時變多。
+  歷史窗口越短：舊的壞紀錄越快被洗掉，恢復快，但也更容易被一兩次雜訊左右。
+
+👉 第 3 步完成
+
+===== 第 4 步 =====
+指令：bash ch05.sh 4
+exit code：0　耗時：0.6 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K145 第 5 章｜任務網絡與協作回路　第 4 / 8 步
+  練習 1-B：三種協作範式各自的弱點
+╚══════════════════════════════════════════════════════╝
+
+💡 選範式先問：你要的是延遲、吞吐，還是開放問題的靈活度？三者無法同時最大。
+
+▶ 要執行的程式：
+  │ import json
+  │ import sys
+  │ from pathlib import Path
+  │ 
+  │ out = Path("ch05/interactive")
+  │ if not (out / "dynamic_dag_sim.py").exists():
+  │     print("找不到 ch05/interactive/dynamic_dag_sim.py，請先跑第 2 步。")
+  │     raise SystemExit(0)
+  │ sys.path.insert(0, str(out))
+  │ import dynamic_dag_sim as sim
+  │ 
+  │ par = sim.paradigms()
+  │ 
+  │ print("B1. 流水線（50 個任務、5 階段，所有任務一開始就在門口排隊）")
+  │ hdr = "{:<16} | {:>8} | {:>8} | {:>10} | {:>8} | {:>8} | {}"
+  │ print(hdr.format("版本", "最短延遲", "平均延遲", "總完成時間", "實測吞吐", "穩態吞吐", "瓶頸"))
+  │ print("-" * 86)
+  │ for name, r in par["pipeline"].items():
+  │     b = r["bottleneck_stage"]
+  │     btxt = "各階段一樣" if len(b) == len(r["stages"]) else ",".join("第{}階段".format(k) for k in b)
+  │     print(hdr.format(name, r["min_latency"], r["avg_latency"], r["makespan"], r["throughput"], r["steady_throughput"], btxt))
+  │ print("  （延遲單位 ms，吞吐單位 任務/秒；平均延遲含在慢階段前面排隊的時間）")
+  │ print()
+  │ 
+  │ mr = par["mapreduce"]
+  │ print("B2. MapReduce：20 個 Map，第 {} 個是 600 ms 的 straggler".format(mr["straggler_index"]))
+  │ print("  其餘 Map 最慢 {} ms、中位數 {} ms；超過 3×中位數 = {} ms 就在別處重跑（80 ms）".format(mr["slowest_normal_ms"], mr["median_ms"], mr["speculate_at_ms"]))
+  │ print("  Reduce 開始時間：無投機 {} ms → 有投機 {} ms（省 {} ms）".format(mr["reduce_start_plain"], mr["reduce_start_speculative"], mr["saved_ms"]))
+  │ print()
+  │ 
+  │ print("B3. Blackboard：8 個代理、200 步、10 個欄位、每步每人 30% 機率寫")
+  │ hdr2 = "{:<12} | {:>6} | {:>10} | {:>10} | {:>12} | {:>8} | {:>8}"
+  │ print(hdr2.format("寫入分布", "寫入數", "無鎖衝突", "加鎖衝突", "加鎖平均等待", "最長等待", "清空步數"))
+  │ print("-" * 86)
+  │ for name, r in par["blackboard"].items():
+  │     print(hdr2.format(name, r["writes"], r["conflicts_nolock"], 0, r["lock_avg_wait"], r["lock_max_wait"], r["drain_steps"]))
+  │ print("  加鎖把衝突換成等待；熱點欄位每步要寫約 1.75 次、鎖每步只放行 1 次，隊伍只會越排越長。")
+  │ 
+  │ p = out / "dag_result.json"
+  │ data = {}
+  │ if p.exists():
+  │     try:
+  │         data = json.loads(p.read_text(encoding="utf-8"))
+  │     except ValueError:
+  │         data = {}
+  │ data["paradigms"] = par
+  │ p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+  │ print()
+  │ print("已寫入", p, "（keys：", ", ".join(data.keys()), "）")
+▶ 執行結果：
+B1. 流水線（50 個任務、5 階段，所有任務一開始就在門口排隊）
+版本               |     最短延遲 |     平均延遲 |      總完成時間 |     實測吞吐 |     穩態吞吐 | 瓶頸
+--------------------------------------------------------------------------------------
+各階段 100ms        |      500 |    500.0 |     5400.0 |     9.26 |     10.0 | 各階段一樣
+第3階段 300ms       |      700 |   5600.0 |    15400.0 |     3.25 |     3.33 | 第3階段
+300ms 階段開 3 份    |      700 |    700.0 |     5600.0 |     8.93 |     10.0 | 各階段一樣
+  （延遲單位 ms，吞吐單位 任務/秒；平均延遲含在慢階段前面排隊的時間）
+
+B2. MapReduce：20 個 Map，第 7 個是 600 ms 的 straggler
+  其餘 Map 最慢 98.4 ms、中位數 85.1 ms；超過 3×中位數 = 255.2 ms 就在別處重跑（80 ms）
+  Reduce 開始時間：無投機 600.0 ms → 有投機 335.2 ms（省 264.8 ms）
+
+B3. Blackboard：8 個代理、200 步、10 個欄位、每步每人 30% 機率寫
+寫入分布         |    寫入數 |       無鎖衝突 |       加鎖衝突 |       加鎖平均等待 |     最長等待 |     清空步數
+--------------------------------------------------------------------------------------
+均勻寫入         |    483 |         44 |          0 |         0.14 |        2 |      200
+七成寫同一欄       |    467 |        114 |          0 |        58.85 |      151 |      351
+  加鎖把衝突換成等待；熱點欄位每步要寫約 1.75 次、鎖每步只放行 1 次，隊伍只會越排越長。
+
+已寫入 ch05\interactive\dag_result.json （keys： orders, paradigms ）
+
+👉 第 4 步完成
+
+===== 第 5 步 =====
+指令：bash ch05.sh 5
+exit code：0　耗時：0.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K145 第 5 章｜任務網絡與協作回路　第 5 / 8 步
+  局部重排：等效性、波及範圍、可回退
+╚══════════════════════════════════════════════════════╝
+
+💡 最快的不一定能用——只看延遲挑快取，物流就拿不到倉庫欄位。
+
+▶ 要執行的程式：
+  │ LAT = {"order_in": 5, "inv_W1": 20, "pay": 30, "fraud": 15, "logistics": 25, "invoice": 10, "notify": 5, "analytics": 40}
+  │ EDGES = [("order_in", "inv_W1"), ("order_in", "pay"), ("pay", "fraud"), ("inv_W1", "logistics"), ("fraud", "logistics"),
+  │          ("logistics", "invoice"), ("pay", "invoice"), ("invoice", "notify"), ("inv_W1", "analytics")]
+  │ NEEDS = {"logistics": {"sku", "stock", "warehouse"}, "analytics": {"sku", "stock"}}
+  │ CANDS = [("inv_cache", 5, {"sku", "stock"}), ("inv_W2", 22, {"sku", "stock", "warehouse"}), ("inv_W3", 90, {"sku", "stock", "warehouse"})]
+  │ BUDGET = 120
+  │ FAILED = "inv_W1"
+  │ DONE = {"order_in", "pay", "fraud"}
+  │ 
+  │ 
+  │ def longest(lat, edges):
+  │     memo = {}
+  │     def f(v):
+  │         if v not in memo:
+  │             memo[v] = lat[v] + max((f(a) for a, b in edges if b == v), default=0)
+  │         return memo[v]
+  │     return max(f(v) for v in lat)
+  │ 
+  │ 
+  │ def descendants(edges, v):
+  │     seen, stack = set(), [v]
+  │     while stack:
+  │         x = stack.pop()
+  │         for a, b in edges:
+  │             if a == x and b not in seen:
+  │                 seen.add(b)
+  │                 stack.append(b)
+  │     return seen
+  │ 
+  │ 
+  │ def swap(edges, old, new):
+  │     return [(new if a == old else a, new if b == old else b) for a, b in edges]
+  │ 
+  │ 
+  │ snapshot = (tuple(EDGES), tuple(sorted(LAT.items())))
+  │ blast = descendants(EDGES, FAILED)
+  │ consumers = sorted(b for a, b in EDGES if a == FAILED)
+  │ print("任務圖 8 個節點；故障當下已完成：", "、".join(sorted(DONE)))
+  │ print("故障節點：", FAILED, "；直接下游：", "、".join(consumers))
+  │ print("波及範圍（所有下游）：{}，共 {} 個，佔全圖 {:.0%}".format("、".join(sorted(blast)), len(blast), len(blast) / len(LAT)))
+  │ print("不受影響、不必重跑：", "、".join(sorted(set(LAT) - blast - {FAILED})))
+  │ print("原圖關鍵路徑：", longest(LAT, EDGES), "ms；延遲預算", BUDGET, "ms")
+  │ print()
+  │ hdr = "{:<10} | {:>4} | {:<12} | {:>8} | {:<4} | {}"
+  │ print(hdr.format("候選", "延遲", "缺少的欄位", "關鍵路徑", "結果", "原因"))
+  │ print("-" * 72)
+  │ chosen = None
+  │ for name, lat, outs in sorted(CANDS, key=lambda c: c[1]):
+  │     missing = sorted(set().union(*(NEEDS[c] - outs for c in consumers)))
+  │     lat2 = {(name if k == FAILED else k): v for k, v in LAT.items()}
+  │     lat2[name] = lat
+  │     edges2 = swap(EDGES, FAILED, name)
+  │     crit = longest(lat2, edges2)
+  │     reasons = []
+  │     if missing:
+  │         reasons.append("輸出不等效（下游要的欄位不夠）")
+  │     if crit > BUDGET:
+  │         reasons.append("超過延遲預算")
+  │     ok = not reasons
+  │     if ok and chosen is None:
+  │         chosen = (name, lat2, edges2)
+  │     print(hdr.format(name, lat, ",".join(missing) or "-", crit, "通過" if ok else "拒絕", "；".join(reasons) or "等效且在預算內"))
+  │ print()
+  │ print("試算都在副本上做，當前圖沒被改動：", "是" if snapshot == (tuple(EDGES), tuple(sorted(LAT.items()))) else "否")
+  │ name, lat2, edges2 = chosen
+  │ local_nodes = sorted({name} | blast)
+  │ local_work = sum(lat2[v] for v in local_nodes)
+  │ local_time = longest({v: (0 if v in DONE else lat2[v]) for v in lat2}, edges2)
+  │ full_work = sum(lat2.values())
+  │ full_time = longest(lat2, edges2)
+  │ print("採用：", name)
+  │ hdr2 = "{:<10} | {:>8} | {:>12} | {:>12}"
+  │ print(hdr2.format("做法", "重跑節點", "重跑工作量ms", "故障到完成ms"))
+  │ print("-" * 52)
+  │ print(hdr2.format("局部重排", len(local_nodes), local_work, local_time))
+  │ print(hdr2.format("整張重跑", len(lat2), full_work, full_time))
+  │ print("局部重排少做 {:.0%} 的工作，早 {} ms 完成".format(1 - local_work / full_work, full_time - local_time))
+  │ print("陷阱：只看延遲挑最快的 inv_cache，logistics 會拿不到 warehouse 欄位——等效性要先檢查。")
+▶ 執行結果：
+任務圖 8 個節點；故障當下已完成： fraud、order_in、pay
+故障節點： inv_W1 ；直接下游： analytics、logistics
+波及範圍（所有下游）：analytics、invoice、logistics、notify，共 4 個，佔全圖 50%
+不受影響、不必重跑： fraud、order_in、pay
+原圖關鍵路徑： 90 ms；延遲預算 120 ms
+
+候選         |   延遲 | 缺少的欄位        |     關鍵路徑 | 結果   | 原因
+------------------------------------------------------------------------
+inv_cache  |    5 | warehouse    |       90 | 拒絕   | 輸出不等效（下游要的欄位不夠）
+inv_W2     |   22 | -            |       90 | 通過   | 等效且在預算內
+inv_W3     |   90 | -            |      135 | 拒絕   | 超過延遲預算
+
+試算都在副本上做，當前圖沒被改動： 是
+採用： inv_W2
+做法         |     重跑節點 |      重跑工作量ms |      故障到完成ms
+----------------------------------------------------
+局部重排       |        5 |          102 |           62
+整張重跑       |        8 |          152 |           90
+局部重排少做 33% 的工作，早 28 ms 完成
+陷阱：只看延遲挑最快的 inv_cache，logistics 會拿不到 warehouse 欄位——等效性要先檢查。
+
+👉 第 5 步完成
+
+===== 第 6 步 =====
+指令：bash ch05.sh 6
+exit code：0　耗時：23.5 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K145 第 5 章｜任務網絡與協作回路　第 6 / 8 步
+  練習 2 前半：讓真實模型當「改圖代理」
+╚══════════════════════════════════════════════════════╝
+
+💡 這一步會呼叫模型 1 次（claude -p），最多等 180 秒；每次結果可能不同，照實記錄。
+
+▶ 要執行的程式：
+  │ import json
+  │ from pathlib import Path
+  │ from llm_agent import ask_json
+  │ 
+  │ out = Path("ch05/interactive")
+  │ out.mkdir(parents=True, exist_ok=True)
+  │ raw = out / "hotplug_raw.json"
+  │ raw.unlink(missing_ok=True)
+  │ prompt = """你是動態 DAG 的改圖代理，系統正在運行。
+  │ 當前圖 v1：inventory → payment → logistics → invoice，各節點 latency_ms 依序為 20、30、25、10；關鍵路徑延遲上限 120 ms。
+  │ 現在要在不停機的情況下加入「詐欺檢查」與「優惠券驗證」兩個新任務。
+  │ 請輸出候選圖修改，格式如下：
+  │ {"add_nodes": [{"id": "節點 id", "latency_ms": 數字}], "add_edges": [["from", "to"]], "remove_edges": [["from", "to"]], "migration": "如何處理進行中的訂單", "rollback_trigger": "什麼情況要回溯"}
+  │ 規則：節點 id 用英文小寫加底線；邊只能連到 v1 的四個節點或你新增的節點；invoice 必須仍是終點。"""
+  │ try:
+  │     prop = ask_json(prompt)
+  │ except (RuntimeError, ValueError) as exc:
+  │     raw.unlink(missing_ok=True)
+  │     print("呼叫模型失敗：", exc)
+  │     print("第 7 步會改用內建範例繼續。")
+  │     raise SystemExit(0)
+  │ if not isinstance(prop, dict):
+  │     print("模型回覆不是 JSON 物件，第 7 步會改用內建範例繼續。")
+  │     raise SystemExit(0)
+  │ raw.write_text(json.dumps(prop, ensure_ascii=False, indent=2), encoding="utf-8")
+  │ nodes = prop.get("add_nodes") if isinstance(prop.get("add_nodes"), list) else []
+  │ print("新增節點：")
+  │ for n in nodes:
+  │     if isinstance(n, dict):
+  │         print("  {:<22} {} ms".format(str(n.get("id")), n.get("latency_ms")))
+  │ for key in ("add_edges", "remove_edges"):
+  │     v = prop.get(key) if isinstance(prop.get(key), list) else []
+  │     print(key + "：", "；".join(str(e) for e in v) or "無")
+  │ print("migration：", prop.get("migration"))
+  │ print("rollback_trigger：", prop.get("rollback_trigger"))
+  │ print()
+  │ print("模型自己說的不算數：第 7 步由程式驗證候選圖、切換、冷靜期。")
+  │ print("已寫入", raw)
+▶ 執行結果：
+新增節點：
+  coupon_validation      15 ms
+  fraud_check            20 ms
+add_edges： ['coupon_validation', 'fraud_check']；['fraud_check', 'payment']
+remove_edges： 無
+migration： 採用版本釘選＋金絲雀切換：已進入 v1 的進行中訂單維持 v1 圖跑完，不中途改道；只有新訂單套用 v2。coupon_validation 與 inventory 平行執行，依序為 coupon_validation → fraud_check → payment，最長路徑 15+20+30+25+10=100 ms，不超過 120 ms 上限。先以 shadow 模式讓 fraud_check 只記錄結果、不擋單，再依 5%→25%→100% 逐步放量。已在 payment 之後的訂單一律不補跑新節點，以免重複扣款。
+rollback_trigger： 出現以下任一情況就回溯到 v1（新訂單改回 v1 圖，進行中的 v2 訂單照原路徑跑完）：關鍵路徑 p99 延遲連續 5 分鐘超過 120 ms；fraud_check 或 coupon_validation 錯誤率或逾時率超過 1%；付款成功率比 v1 基準低 2 個百分點以上；詐欺誤判（誤擋）率超過 0.5%；發現重複扣款或優惠券重複核銷。
+
+模型自己說的不算數：第 7 步由程式驗證候選圖、切換、冷靜期。
+已寫入 ch05\interactive\hotplug_raw.json
+
+👉 第 6 步完成
+
+===== 第 7 步 =====
+指令：bash ch05.sh 7
+exit code：0　耗時：0.8 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K145 第 5 章｜任務網絡與協作回路　第 7 / 8 步
+  練習 2 後半：雙緩衝把關——驗證、切換、快照、冷靜期
+╚══════════════════════════════════════════════════════╝
+
+💡 驗證只看得到「宣告的延遲」；真的跑起來比宣告慢時，靠的是冷靜期的數字回溯。
+
+▶ 要執行的程式：
+  │ import json
+  │ import random
+  │ from pathlib import Path
+  │ 
+  │ random.seed(505)
+  │ out = Path("ch05/interactive")
+  │ out.mkdir(parents=True, exist_ok=True)
+  │ report_path = out / "hotplug_report.md"
+  │ report_path.unlink(missing_ok=True)
+  │ raw_path = out / "hotplug_raw.json"
+  │ 
+  │ V1_NODES = {"inventory": 20.0, "payment": 30.0, "logistics": 25.0, "invoice": 10.0}
+  │ V1_EDGES = [("inventory", "payment"), ("payment", "logistics"), ("logistics", "invoice")]
+  │ BUDGET = 120.0
+  │ INTERVAL = 16
+  │ COOL = 50
+  │ RATIO = 1.4
+  │ FALLBACK = {
+  │     "add_nodes": [{"id": "coupon_check", "latency_ms": 10}, {"id": "fraud_check", "latency_ms": 15}],
+  │     "add_edges": [["inventory", "coupon_check"], ["coupon_check", "payment"], ["payment", "fraud_check"], ["fraud_check", "logistics"]],
+  │     "remove_edges": [["inventory", "payment"], ["payment", "logistics"]],
+  │     "migration": "進行中的訂單依快照在 v1 跑完，新訂單走 v2",
+  │     "rollback_trigger": "切換後平均延遲明顯上升或錯誤率升高",
+  │ }
+  │ BAD_CYCLE = {"add_nodes": [], "add_edges": [["invoice", "inventory"]], "remove_edges": []}
+  │ BAD_SLOW = {"add_nodes": [{"id": "fraud_check", "latency_ms": 60}], "add_edges": [["payment", "fraud_check"], ["fraud_check", "logistics"]], "remove_edges": [["payment", "logistics"]]}
+  │ 
+  │ model = None
+  │ if raw_path.exists():
+  │     try:
+  │         model = json.loads(raw_path.read_text(encoding="utf-8"))
+  │     except ValueError:
+  │         model = None
+  │ if isinstance(model, dict):
+  │     source = "第 6 步模型輸出"
+  │ else:
+  │     model = FALLBACK
+  │     source = "內建範例（第 6 步沒有成功）"
+  │ 
+  │ 
+  │ def as_list(x):
+  │     return x if isinstance(x, list) else []
+  │ 
+  │ 
+  │ def pair(e):
+  │     if isinstance(e, dict):
+  │         e = [e.get("from"), e.get("to")]
+  │     if isinstance(e, (list, tuple)) and len(e) == 2 and None not in e:
+  │         return (str(e[0]), str(e[1]))
+  │     return None
+  │ 
+  │ 
+  │ def apply(prop):
+  │     nodes = dict(V1_NODES)
+  │     edges = list(V1_EDGES)
+  │     errs = []
+  │     for n in as_list(prop.get("add_nodes")):
+  │         if not isinstance(n, dict) or n.get("id") is None:
+  │             errs.append("add_nodes 格式錯誤：" + str(n))
+  │             continue
+  │         try:
+  │             lat = float(n.get("latency_ms"))
+  │         except (TypeError, ValueError):
+  │             errs.append("節點 " + str(n.get("id")) + " 沒有可用的 latency_ms")
+  │             continue
+  │         if lat < 0:
+  │             errs.append("節點 " + str(n.get("id")) + " 的 latency_ms 是負數")
+  │             continue
+  │         nodes[str(n.get("id"))] = lat
+  │     for e in as_list(prop.get("add_edges")):
+  │         p = pair(e)
+  │         if p is None:
+  │             errs.append("add_edges 格式錯誤：" + str(e))
+  │         elif p not in edges:
+  │             edges.append(p)
+  │     for e in as_list(prop.get("remove_edges")):
+  │         p = pair(e)
+  │         if p is not None and p in edges:
+  │             edges.remove(p)
+  │     return nodes, edges, errs
+  │ 
+  │ 
+  │ def critical(nodes, edges, lat=None):
+  │     if lat is None:
+  │         lat = nodes
+  │     indeg = {v: 0 for v in nodes}
+  │     for a, b in edges:
+  │         indeg[b] += 1
+  │     queue = sorted(v for v in nodes if indeg[v] == 0)
+  │     order = []
+  │     while queue:
+  │         v = queue.pop(0)
+  │         order.append(v)
+  │         for a, b in edges:
+  │             if a == v:
+  │                 indeg[b] -= 1
+  │                 if indeg[b] == 0:
+  │                     queue.append(b)
+  │     if len(order) != len(nodes):
+  │         return None, {}
+  │     finish = {}
+  │     for v in order:
+  │         finish[v] = lat[v] + max((finish[a] for a, b in edges if b == v), default=0.0)
+  │     return max(finish.values()), finish
+  │ 
+  │ 
+  │ def reach(edges, start):
+  │     seen = {start}
+  │     stack = [start]
+  │     while stack:
+  │         x = stack.pop()
+  │         for a, b in edges:
+  │             if a == x and b not in seen:
+  │                 seen.add(b)
+  │                 stack.append(b)
+  │     return seen
+  │ 
+  │ 
+  │ def validate(nodes, edges, errs):
+  │     known = [e for e in edges if e[0] in nodes and e[1] in nodes]
+  │     unknown = [e for e in edges if e not in known]
+  │     crit, _ = critical(nodes, known)
+  │     fwd = reach(known, "inventory") if "inventory" in nodes else set()
+  │     unreach = sorted(set(nodes) - fwd)
+  │     sinks = sorted(v for v in nodes if not any(a == v for a, b in known))
+  │     checks = [
+  │         ("格式與延遲欄位", not errs, "；".join(errs) if errs else "OK"),
+  │         ("邊只連到存在的節點", not unknown, str(unknown) if unknown else "OK"),
+  │         ("無循環", crit is not None, "OK" if crit is not None else "有循環"),
+  │         ("全部節點從 inventory 可達", not unreach, "OK" if not unreach else "不可達：" + ",".join(unreach)),
+  │         ("invoice 仍是唯一終點", sinks == ["invoice"], "終點：" + (",".join(sinks) or "無")),
+  │         ("關鍵路徑 ≤ 120 ms", crit is not None and crit <= BUDGET, "{:.0f} ms".format(crit) if crit is not None else "無法計算"),
+  │     ]
+  │     return checks, crit
+  │ 
+  │ 
+  │ v1_frozen = json.dumps([V1_NODES, V1_EDGES], sort_keys=True)
+  │ cases = [(source, model), ("反例：加一條 invoice→inventory", BAD_CYCLE), ("反例：串入 60 ms 詐欺檢查", BAD_SLOW)]
+  │ results = []
+  │ for label, prop in cases:
+  │     nodes, edges, errs = apply(prop)
+  │     checks, crit = validate(nodes, edges, errs)
+  │     ok = all(c[1] for c in checks)
+  │     results.append((label, prop, nodes, edges, checks, ok, crit))
+  │     print("【a. 驗證】" + label + "：" + ("通過 → 可以切換" if ok else "拒絕 → 保持 v1"))
+  │     for name, good, detail in checks:
+  │         print("   {} {:<22} {}".format("OK" if good else "NG", name, detail))
+  │     print()
+  │ print("v1 在驗證過程中沒被改動：", "是" if json.dumps([V1_NODES, V1_EDGES], sort_keys=True) == v1_frozen else "否")
+  │ print()
+  │ 
+  │ m = results[0]
+  │ if m[5]:
+  │     use_label, v2_nodes, v2_edges = source + "（通過驗證）", m[2], m[3]
+  │ else:
+  │     n2, e2, _ = apply(FALLBACK)
+  │     use_label, v2_nodes, v2_edges = "內建合格範例（模型提案被拒，b、c 僅示範）", n2, e2
+  │ 
+  │ 
+  │ def allow_switch(j, last_switch):
+  │     return j - last_switch >= COOL
+  │ 
+  │ 
+  │ def simulate(v2_nodes, v2_edges, slow_new):
+  │     rng = random.Random(505)
+  │     graphs = {"v1": (V1_NODES, V1_EDGES), "v2": (v2_nodes, v2_edges)}
+  │     new_nodes = set(v2_nodes) - set(V1_NODES)
+  │     orders, log, stats = [], [], {}
+  │     final = None
+  │     for j in range(1, 201):
+  │         ver = "v1" if j <= 100 else ("v2" if j <= 150 else final)
+  │         nodes, edges = graphs[ver]
+  │         lat = {}
+  │         for v in sorted(nodes):
+  │             k = slow_new if (ver == "v2" and v in new_nodes) else 1.0
+  │             lat[v] = nodes[v] * k * rng.uniform(0.95, 1.05)
+  │         dur, finish = critical(nodes, edges, lat)
+  │         orders.append({"id": j, "version": ver, "start": (j - 1) * INTERVAL, "dur": dur, "finish": finish})
+  │         if j in (102, 160):
+  │             ok = allow_switch(j, 101)
+  │             log.append("第 {} 筆：收到「立即再切換」請求 → {}".format(j, "允許（冷靜期已過；本模擬不再切換）" if ok else "拒絕（第 101 筆剛切換，50 筆冷靜期內不准再切）"))
+  │         if j == 150:
+  │             v1_avg = sum(o["dur"] for o in orders[:100]) / 100
+  │             v2_avg = sum(o["dur"] for o in orders[100:150]) / 50
+  │             final = "v1" if v2_avg > RATIO * v1_avg else "v2"
+  │             stats = {"v1_avg": v1_avg, "v2_avg": v2_avg, "ratio": v2_avg / v1_avg, "final": final}
+  │             log.append("第 150 筆：冷靜期結束，v2 平均 {:.1f} ms ÷ v1 平均 {:.1f} ms = {:.2f} 倍 → {}".format(v2_avg, v1_avg, v2_avg / v1_avg, "超過 1.4 倍，回溯到 v1" if final == "v1" else "沒超過 1.4 倍，保留 v2"))
+  │     return orders, log, stats, new_nodes
+  │ 
+  │ 
+  │ print("【b. 切換】使用：" + use_label)
+  │ ordersA, logA, stA, new_nodes = simulate(v2_nodes, v2_edges, 1.0)
+  │ ordersB, logB, stB, _ = simulate(v2_nodes, v2_edges, 3.0)
+  │ T = 100 * INTERVAL
+  │ print("訂單每 {} ms 一筆；第 1～100 筆用 v1，第 101 筆到達（t={} ms）時切到 v2".format(INTERVAL, T))
+  │ inflight = [o for o in ordersA if o["start"] < T < o["start"] + o["dur"]]
+  │ snap_lines = []
+  │ for o in inflight:
+  │     el = T - o["start"]
+  │     seq = sorted(o["finish"], key=lambda v: o["finish"][v])
+  │     done = [v for v in seq if o["finish"][v] <= el]
+  │     left = [v for v in seq if o["finish"][v] > el]
+  │     snap_lines.append("訂單 {:>3}（{}，已跑 {} ms）：快照＝已完成 {}；在 v1 續跑 {}".format(o["id"], o["version"], el, "→".join(done) or "無", "→".join(left)))
+  │ print("切換當下進行中的訂單：", len(inflight), "筆")
+  │ for s in snap_lines:
+  │     print("  " + s)
+  │ vers = {"v1": set(V1_NODES), "v2": set(v2_nodes)}
+  │ mixed = sum(1 for o in ordersA + ordersB if set(o["finish"]) != vers[o["version"]])
+  │ touched = sum(1 for o in inflight if set(o["finish"]) & new_nodes)
+  │ print("混用兩版的訂單：", mixed, "筆；進行中訂單碰到新節點：", touched, "筆")
+  │ print()
+  │ print("【c. 冷靜期與回溯】規則：切換後觀察 50 筆，平均延遲 > v1 × 1.4 才回溯；冷靜期內不准再切換")
+  │ scen = (("情境 A：新節點照宣告延遲跑", logA, stA), ("情境 B：新節點實際慢 3 倍（驗證時看不出來）", logB, stB))
+  │ for title, log, st in scen:
+  │     print(" " + title)
+  │     for s in log:
+  │         print("   " + s)
+  │     print("   最終使用版本：", st["final"])
+  │ print()
+  │ print("模型寫的 rollback_trigger：", model.get("rollback_trigger"))
+  │ print("程式實際用的回溯規則：平均延遲 > v1 × 1.4（只看量到的數字）")
+  │ 
+  │ bad_names = [c[0] for c in m[4] if not c[1]]
+  │ concl = []
+  │ if m[5]:
+  │     concl.append("{}通過全部 6 項檢查（關鍵路徑 {:.0f} ms ≤ 120 ms），才允許切換。".format(source, m[6]))
+  │ else:
+  │     concl.append("{}被拒（未通過：{}），程式保持 v1；b、c 改用內建合格範例示範。".format(source, "、".join(bad_names)))
+  │ if not results[1][5] and not results[2][5]:
+  │     concl.append("兩個反例都被擋下：有循環的圖與關鍵路徑 {:.0f} ms 的圖都沒有切換，v1 原封不動。".format(results[2][6]))
+  │ concl.append("切換當下 {} 筆進行中的訂單依快照在 v1 跑完，混用兩版的訂單 {} 筆。".format(len(inflight), mixed))
+  │ concl.append("冷靜期擋下第 102 筆的立即再切換；情境 A 為 v1 的 {:.2f} 倍 → {}，情境 B 為 {:.2f} 倍 → {}。".format(stA["ratio"], stA["final"], stB["ratio"], stB["final"]))
+  │ concl.append("回溯只看量到的數字，不看模型寫的 rollback_trigger；驗證看不到的實際變慢，要靠冷靜期抓出來。")
+  │ 
+  │ fence = chr(96) * 3
+  │ md = ["# 第 5 章練習 2：熱插拔任務的雙緩衝把關報告", "", "資料來源：" + source, "", "## 模型原始輸出", "",
+  │       fence + "json", json.dumps(model, ensure_ascii=False, indent=2), fence, "", "## a. 候選圖驗證", ""]
+  │ for label, prop, nodes, edges, checks, ok, crit in results:
+  │     md.append("### " + label + "：" + ("通過" if ok else "拒絕，保持 v1"))
+  │     md.append("")
+  │     for name, good, detail in checks:
+  │         md.append("- " + ("OK" if good else "NG") + " " + name + "：" + detail)
+  │     md.append("")
+  │ md += ["## b. 版本切換與快照繼承", "", "切換使用：" + use_label, ""] + ["- " + s for s in snap_lines]
+  │ md += ["- 混用兩版的訂單：" + str(mixed) + " 筆", "", "## c. 冷靜期與回溯", ""]
+  │ for title, log, st in scen:
+  │     md.append("### " + title)
+  │     md.append("")
+  │     md += ["- " + s for s in log]
+  │     md.append("")
+  │ md += ["模型寫的 rollback_trigger：" + str(model.get("rollback_trigger")), "", "程式實際用的回溯規則：平均延遲 > v1 × 1.4", ""]
+  │ md += ["## 最終使用的版本", "", "情境 A：" + stA["final"] + "；情境 B：" + stB["final"], "", "## 結論", ""] + ["- " + s for s in concl]
+  │ report_path.write_text(chr(10).join(md) + chr(10), encoding="utf-8")
+  │ print()
+  │ print("結論：")
+  │ for s in concl:
+  │     print("  " + s)
+  │ print()
+  │ print("已寫入", report_path)
+▶ 執行結果：
+【a. 驗證】第 6 步模型輸出：拒絕 → 保持 v1
+   OK 格式與延遲欄位                OK
+   OK 邊只連到存在的節點              OK
+   OK 無循環                    OK
+   NG 全部節點從 inventory 可達     不可達：coupon_validation,fraud_check
+   OK invoice 仍是唯一終點         終點：invoice
+   OK 關鍵路徑 ≤ 120 ms          100 ms
+
+【a. 驗證】反例：加一條 invoice→inventory：拒絕 → 保持 v1
+   OK 格式與延遲欄位                OK
+   OK 邊只連到存在的節點              OK
+   NG 無循環                    有循環
+   OK 全部節點從 inventory 可達     OK
+   NG invoice 仍是唯一終點         終點：無
+   NG 關鍵路徑 ≤ 120 ms          無法計算
+
+【a. 驗證】反例：串入 60 ms 詐欺檢查：拒絕 → 保持 v1
+   OK 格式與延遲欄位                OK
+   OK 邊只連到存在的節點              OK
+   OK 無循環                    OK
+   OK 全部節點從 inventory 可達     OK
+   OK invoice 仍是唯一終點         終點：invoice
+   NG 關鍵路徑 ≤ 120 ms          145 ms
+
+v1 在驗證過程中沒被改動： 是
+
+【b. 切換】使用：內建合格範例（模型提案被拒，b、c 僅示範）
+訂單每 16 ms 一筆；第 1～100 筆用 v1，第 101 筆到達（t=1600 ms）時切到 v2
+切換當下進行中的訂單： 5 筆
+  訂單  96（v1，已跑 80 ms）：快照＝已完成 inventory→payment→logistics；在 v1 續跑 invoice
+  訂單  97（v1，已跑 64 ms）：快照＝已完成 inventory→payment；在 v1 續跑 logistics→invoice
+  訂單  98（v1，已跑 48 ms）：快照＝已完成 inventory；在 v1 續跑 payment→logistics→invoice
+  訂單  99（v1，已跑 32 ms）：快照＝已完成 inventory；在 v1 續跑 payment→logistics→invoice
+  訂單 100（v1，已跑 16 ms）：快照＝已完成 無；在 v1 續跑 inventory→payment→logistics→invoice
+混用兩版的訂單： 0 筆；進行中訂單碰到新節點： 0 筆
+
+【c. 冷靜期與回溯】規則：切換後觀察 50 筆，平均延遲 > v1 × 1.4 才回溯；冷靜期內不准再切換
+ 情境 A：新節點照宣告延遲跑
+   第 102 筆：收到「立即再切換」請求 → 拒絕（第 101 筆剛切換，50 筆冷靜期內不准再切）
+   第 150 筆：冷靜期結束，v2 平均 110.0 ms ÷ v1 平均 84.9 ms = 1.30 倍 → 沒超過 1.4 倍，保留 v2
+   第 160 筆：收到「立即再切換」請求 → 允許（冷靜期已過；本模擬不再切換）
+   最終使用版本： v2
+ 情境 B：新節點實際慢 3 倍（驗證時看不出來）
+   第 102 筆：收到「立即再切換」請求 → 拒絕（第 101 筆剛切換，50 筆冷靜期內不准再切）
+   第 150 筆：冷靜期結束，v2 平均 159.7 ms ÷ v1 平均 84.9 ms = 1.88 倍 → 超過 1.4 倍，回溯到 v1
+   第 160 筆：收到「立即再切換」請求 → 允許（冷靜期已過；本模擬不再切換）
+   最終使用版本： v1
+
+模型寫的 rollback_trigger： 出現以下任一情況就回溯到 v1（新訂單改回 v1 圖，進行中的 v2 訂單照原路徑跑完）：關鍵路徑 p99 延遲連續 5 分鐘超過 120 ms；fraud_check 或 coupon_validation 錯誤率或逾時率超過 1%；付款成功率比 v1 基準低 2 個百分點以上；詐欺誤判（誤擋）率超過 0.5%；發現重複扣款或優惠券重複核銷。
+程式實際用的回溯規則：平均延遲 > v1 × 1.4（只看量到的數字）
+
+結論：
+  第 6 步模型輸出被拒（未通過：全部節點從 inventory 可達），程式保持 v1；b、c 改用內建合格範例示範。
+  兩個反例都被擋下：有循環的圖與關鍵路徑 145 ms 的圖都沒有切換，v1 原封不動。
+  切換當下 5 筆進行中的訂單依快照在 v1 跑完，混用兩版的訂單 0 筆。
+  冷靜期擋下第 102 筆的立即再切換；情境 A 為 v1 的 1.30 倍 → v2，情境 B 為 1.88 倍 → v1。
+  回溯只看量到的數字，不看模型寫的 rollback_trigger；驗證看不到的實際變慢，要靠冷靜期抓出來。
+
+已寫入 ch05\interactive\hotplug_report.md
+
+👉 第 7 步完成
+
+===== 第 8 步 =====
+指令：bash ch05.sh 8
+exit code：0　耗時：0.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K145 第 5 章｜任務網絡與協作回路　第 8 / 8 步
+  總結：動態 DAG 的六個重點
+╚══════════════════════════════════════════════════════╝
+
+💡 本章每個結論都有一個數字撐著；照規格跑出不符預期的結果（例如書上的故障數量級），也要照實記錄、自己重算。
+
+▶ 要執行的程式：
+  │ from pathlib import Path
+  │ 
+  │ points = [
+  │     "故障是常態，但量級要自己算：1 萬節點、年故障率 1% 每天只有約 0.27 個，每天 27 個要一百萬個節點。慢 200 ms 只要「服務時間 > 到達間隔」就會排隊：慢 60 秒、塞 150 秒、最長等 72 秒。",
+  │     "動態 DAG 把故障當新資訊：邊權重依延遲與失敗率在本地調整，靜態版逾時約 90 次、p95 約 585 ms，動態版逾時個位數、p95 約 90 ms。",
+  │     "邊權重是湧現結果，要防富者愈富：沒有探測下限，W1 恢復後幾乎分不到流量；下限越高恢復越快，但故障期多吃逾時——要看總延遲，也要看誰長期分不到資源。",
+  │     "三種範式無法同時最大：流水線吞吐由最慢階段決定（300 ms 階段 → 3.33 個/秒），平行 3 份拉回吞吐但延遲仍 700 ms；一個 600 ms straggler 拖住 Reduce，投機執行砍到約 300 ms；Blackboard 加鎖把衝突換成等待，熱點欄位會排上數十步。",
+  │     "局部重排三件事：替代輸入要等效（最快的快取缺 warehouse 欄位被拒）、只重跑波及範圍（5 個節點、62 ms，對比整張重跑 8 個、90 ms）、試算在副本上做、不合格就丟（可回退）。",
+  │     "熱插拔的安全網全由程式把關：候選圖先過無循環、可達、終點、關鍵路徑檢查才切換；進行中的訂單靠快照在舊圖跑完；冷靜期擋下來回切換；回溯只看量到的數字，不看提案者自己怎麼說。",
+  │ ]
+  │ print("第 5 章重點：")
+  │ for i, p in enumerate(points, 1):
+  │     print(f"  {i}. {p}")
+  │ print()
+  │ print("本章產出檔案：")
+  │ for name in ("dynamic_dag_sim.py", "dag_result.json", "hotplug_raw.json", "hotplug_report.md"):
+  │     p = Path("ch05/interactive") / name
+  │     print("  {} {}".format("OK" if p.exists() else "缺", p))
+  │ print()
+  │ print("想一次重算練習 1 全部結果：PYTHONUTF8=1 python ch05/interactive/dynamic_dag_sim.py")
+▶ 執行結果：
+第 5 章重點：
+  1. 故障是常態，但量級要自己算：1 萬節點、年故障率 1% 每天只有約 0.27 個，每天 27 個要一百萬個節點。慢 200 ms 只要「服務時間 > 到達間隔」就會排隊：慢 60 秒、塞 150 秒、最長等 72 秒。
+  2. 動態 DAG 把故障當新資訊：邊權重依延遲與失敗率在本地調整，靜態版逾時約 90 次、p95 約 585 ms，動態版逾時個位數、p95 約 90 ms。
+  3. 邊權重是湧現結果，要防富者愈富：沒有探測下限，W1 恢復後幾乎分不到流量；下限越高恢復越快，但故障期多吃逾時——要看總延遲，也要看誰長期分不到資源。
+  4. 三種範式無法同時最大：流水線吞吐由最慢階段決定（300 ms 階段 → 3.33 個/秒），平行 3 份拉回吞吐但延遲仍 700 ms；一個 600 ms straggler 拖住 Reduce，投機執行砍到約 300 ms；Blackboard 加鎖把衝突換成等待，熱點欄位會排上數十步。
+  5. 局部重排三件事：替代輸入要等效（最快的快取缺 warehouse 欄位被拒）、只重跑波及範圍（5 個節點、62 ms，對比整張重跑 8 個、90 ms）、試算在副本上做、不合格就丟（可回退）。
+  6. 熱插拔的安全網全由程式把關：候選圖先過無循環、可達、終點、關鍵路徑檢查才切換；進行中的訂單靠快照在舊圖跑完；冷靜期擋下來回切換；回溯只看量到的數字，不看提案者自己怎麼說。
+
+本章產出檔案：
+  OK ch05\interactive\dynamic_dag_sim.py
+  OK ch05\interactive\dag_result.json
+  OK ch05\interactive\hotplug_raw.json
+  OK ch05\interactive\hotplug_report.md
+
+想一次重算練習 1 全部結果：PYTHONUTF8=1 python ch05/interactive/dynamic_dag_sim.py
+
+👉 第 8 步完成
