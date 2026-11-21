@@ -71,6 +71,7 @@ PROTECTED_PATHS = (
     "{RUN}/ALERT.txt",
     "{RUN}/CONTROL-CHANGED.json",
     "{RUN}/control-baseline.json",
+    "{RUN}/.fake-control-*.json",
     "{RUN}/heartbeat.txt",
     "{RUN}/logs/**",
     "{ENGINE}/**",

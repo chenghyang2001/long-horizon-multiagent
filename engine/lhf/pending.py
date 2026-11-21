@@ -176,7 +176,8 @@ def upstream_paths(work, notes):
 
 
 SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
-UNTRACKED_READ_LIMIT = 256 * 1024  # 未追蹤的新檔只讀前 256 KB 再解碼（--diff 本來就只顯示 400 行）
+UNTRACKED_READ_LIMIT = 256 * 1024  # 未追蹤的新檔只讀前 256 KB 再解碼（超過會在畫面上標出截斷）
+MAX_LINE_CHARS = 2000  # --diff 每行最多顯示幾個字元
 
 
 def valid_shas(rec):
@@ -350,10 +351,31 @@ def diff_sections(work, rec, rel):
         )
     tracked = git(work, ["ls-files", "--", rel])
     if not tracked and (Path(work) / rel).is_file():
-        with open(Path(work) / rel, "rb") as handle:
-            content = handle.read(UNTRACKED_READ_LIMIT).decode("utf-8", errors="replace")
-        sections.append(("未追蹤的新檔（內容）", content))
+        sections.append(untracked_section(Path(work) / rel))
     return sections
+
+
+def truncation_notice(path):
+    size = Path(path).stat().st_size
+    return f"⚠ 已截斷：檔案 {size} 位元組，只顯示前 {UNTRACKED_READ_LIMIT // 1024} KB，其餘內容未顯示"
+
+
+def untracked_section(path):
+    """多讀 1 位元組判斷有沒有超過上限；超過就在標題標出截斷（撰寫者可能把內容藏在上限之後）。"""
+    with open(path, "rb") as handle:
+        data = handle.read(UNTRACKED_READ_LIMIT + 1)
+    title = "未追蹤的新檔（內容）"
+    if len(data) > UNTRACKED_READ_LIMIT:
+        title += "　" + truncation_notice(path)
+        data = data[:UNTRACKED_READ_LIMIT]
+    return title, data.decode("utf-8", errors="replace")
+
+
+def clip_line(line):
+    """單行太長也可能藏東西（畫面只看得到開頭）：超過 MAX_LINE_CHARS 就截斷並標出原長度。"""
+    if len(line) <= MAX_LINE_CHARS:
+        return line, False
+    return f"{line[:MAX_LINE_CHARS]} …⚠ 行已截斷（原 {len(line)} 字元）", True
 
 
 def cmd_safe_diff(cfg, unit, rel):
@@ -364,13 +386,23 @@ def cmd_safe_diff(cfg, unit, rel):
         print(problem)
         return EXIT_UNIT_FAILED
     rel = safe_rel_path(work, rel)
-    lines = []
+    lines, notices, clipped = [], [], 0
     for title, body in diff_sections(work, rec, rel):
-        lines += [f"===== {title}：{rel} =====", *(body.splitlines() or ["（無）"])]
-    shown = lines[:DIFF_MAX_LINES]
-    print(escape_display("\n".join(shown)))
+        if "⚠ 已截斷" in title:
+            notices.append(f"{rel}：{title.split('　', 1)[1]}")
+        lines.append(f"===== {title}：{rel} =====")
+        # 用 \n 切：splitlines 會在 U+2028 等字元斷行，讓它們躲過 escape_display
+        for line in body.rstrip("\n").split("\n") if body else ["（無）"]:
+            shown_line, was_clipped = clip_line(line)
+            clipped += was_clipped
+            lines.append(shown_line)
+    print(escape_display("\n".join(lines[:DIFF_MAX_LINES])))
     if len(lines) > DIFF_MAX_LINES:
-        print(f"…（共 {len(lines)} 行，只顯示前 {DIFF_MAX_LINES} 行）")
+        notices.append(f"共 {len(lines)} 行，只顯示前 {DIFF_MAX_LINES} 行，其餘內容未顯示")
+    if clipped:
+        notices.append(f"{clipped} 行超過 {MAX_LINE_CHARS} 字元，已截斷")
+    for notice in notices:  # 放在最後一定看得到（不受 400 行上限影響）
+        print(f"⚠ {escape_display(notice)}")
     return EXIT_OK
 
 

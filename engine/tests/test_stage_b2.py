@@ -546,5 +546,69 @@ def test_untracked_diff_reads_limited_bytes(tmp_path, fake_mode, monkeypatch, ca
     cfg = load_config(write_project(tmp_path, demo_config()))
     round_mod.cmd_init(cfg, ["a"], False)
     sections = pending.diff_sections(work, {"commits": []}, "big.txt")
-    content = dict(sections)["未追蹤的新檔（內容）"]
+    content = next(body for title, body in sections if title.startswith("未追蹤的新檔"))
     assert len(content.encode("utf-8")) <= pending.UNTRACKED_READ_LIMIT
+
+
+# ---------- 複審第三輪：--diff 截斷一定要看得到 ----------
+
+
+@pytest.fixture
+def diff_project(tmp_path, monkeypatch, fake_mode):
+    if not HAS_GIT:
+        pytest.skip("需要 git")
+    work = git_repo(tmp_path / "work")
+    monkeypatch.setenv("LH_WORK_OVERRIDE", str(work))
+    cfg = load_config(write_project(tmp_path, demo_config()))
+    round_mod.cmd_init(cfg, ["a"], False)
+    return cfg, work
+
+
+def test_diff_large_untracked_file_shows_truncation(diff_project, capsys):
+    cfg, work = diff_project
+    big = b"x" * (pending.UNTRACKED_READ_LIMIT + 10) + b"\nEVIL_AFTER_LIMIT\n"  # 一行就超過上限：400 行限制不會出現
+    (work / "big.sh").write_bytes(big)
+    assert pending.cmd_pending_info(cfg, "a", "big.sh") == 0
+    out = capsys.readouterr().out
+    assert f"已截斷：檔案 {len(big)} 位元組" in out and "其餘內容未顯示" in out
+    assert out.rstrip().splitlines()[-1].startswith("⚠")  # 結尾一定有提示
+    assert "EVIL_AFTER_LIMIT" not in out and "行已截斷" in out
+
+
+def test_diff_small_untracked_file_no_truncation(diff_project, capsys):
+    cfg, work = diff_project
+    (work / "small.sh").write_bytes(b"y" * pending.UNTRACKED_READ_LIMIT)  # 剛好等於上限
+    assert pending.cmd_pending_info(cfg, "a", "small.sh") == 0
+    out = capsys.readouterr().out
+    assert "已截斷：檔案" not in out
+
+
+def test_diff_long_line_in_git_diff_clipped(diff_project, capsys):
+    cfg, work = diff_project
+    (work / "README.md").write_text("z" * 5000 + "TAIL\n", encoding="utf-8")
+    assert pending.cmd_pending_info(cfg, "a", "README.md") == 0
+    out = capsys.readouterr().out
+    assert "行已截斷（原" in out and "TAIL" not in out and "超過 2000 字元" in out
+
+
+def test_diff_keeps_line_separator_escaped(diff_project, capsys):
+    cfg, work = diff_project
+    (work / "ls.txt").write_text("前" + chr(0x2028) + "後\n", encoding="utf-8")
+    assert pending.cmd_pending_info(cfg, "a", "ls.txt") == 0
+    out = capsys.readouterr().out
+    escaped = chr(92) + "u2028"  # \u756b\u9762\u4e0a\u61c9\u8a72\u51fa\u73fe\u53ef\u898b\u7684 \u2028 \u5b57\u6a23
+    assert chr(0x2028) not in out and escaped in out
+
+
+def test_gate_and_config_protect_fake_control_files(demo_dir):
+    cfg = load_config(demo_dir)
+    ctx = {"role": "maker", "unit": "a", "round": "1", "station": "", "session": "s", "trace_offset": 0}
+    for name in (".fake-control-baseline.json", ".fake-control-changed.json"):
+        event = {"tool_name": "Write", "tool_input": {"file_path": (cfg.run_dir / name).as_posix()}}
+        assert gate.decide(event, cfg, ctx)[0] == "deny", name
+    from lhf.errors import ConfigError
+
+    data = copy.deepcopy(demo_config())
+    data["roles"]["maker"]["write"].append("{RUN}/.fake-control-changed.json")
+    with pytest.raises(ConfigError, match="引擎內部檔"):
+        load_config(write_project(demo_dir.parent, data, "demo2"))
