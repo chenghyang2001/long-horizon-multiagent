@@ -122,7 +122,7 @@ approval_commands: []
 
 limits:
   calls_per_unit: 10
-  agent_timeout: 900
+  agent_timeout: 1500
   feedback_max_chars: 6000
 
 # 退回意見：失敗報告＋實跑 raw log＋審查退回時再附最近一次 QA 報告
