@@ -1,0 +1,681 @@
+# ch16 執行紀錄　2026-11-21 12:20:56
+
+===== bash -n 語法檢查 =====
+指令：bash -n ch16.sh
+exit code：0　耗時：0.2 秒
+----- 輸出 -----
+
+
+===== 第 1 步 =====
+指令：bash ch16.sh 1
+exit code：0　耗時：0.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 16 章｜看不見的拒答　第 1 / 8 步
+  認識主角：fable_scanner monitor 只讀本機 log，不連網
+╚══════════════════════════════════════════════════════╝
+
+💡 monitor 不打 API，只讀每行一筆的回應 log。它從 stop_reason、stop_details.category、usage.iterations 裡的 fallback_message 這三個欄位，算出拒答數、各類別數和備援次數。欄位沒記下來，就什麼都看不到。
+
+▶ 要執行的指令：
+  │ sed -n "1,8p;19p;32,72p" fable_scanner/monitor.py
+  │ echo "──── 三個關鍵欄位出現在哪 ────"
+  │ grep -n "stop_reason\|stop_details\|fallback_message" fable_scanner/monitor.py
+▶ 執行結果：
+"""fable_scanner monitor -- refusal analytics from Anthropic Messages API response logs.
+
+    python -m fable_scanner monitor <log.jsonl>
+
+Input: one JSON object per line, either a raw Messages API response or a
+wrapper {"timestamp": ..., "request": ..., "response": ...}. Pure local
+file parsing -- no network calls.
+"""
+CATEGORIES = ["cyber", "bio", "frontier_llm", "reasoning_extraction"]
+def analyze(lines):
+    stats = {
+        "total": 0, "refused": 0, "fallback_served": 0,
+        "by_category": {c: 0 for c in CATEGORIES},
+        "cost_by_model": {},
+        "trigger_prefixes": {},
+    }
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        resp = obj.get("response", obj)
+        req = obj.get("request")
+        stats["total"] += 1
+
+        for it in resp.get("usage", {}).get("iterations", []):
+            price = PRICE_PER_M.get(it.get("model"))
+            if not price:
+                continue
+            in_price, out_price = price
+            cost = it.get("input_tokens", 0) * in_price / 1e6 + it.get("output_tokens", 0) * out_price / 1e6
+            stats["cost_by_model"][it["model"]] = stats["cost_by_model"].get(it["model"], 0) + cost
+            if it.get("type") == "fallback_message":
+                stats["fallback_served"] += 1
+
+        if resp.get("stop_reason") == "refusal":
+            stats["refused"] += 1
+            cat = (resp.get("stop_details") or {}).get("category")
+            if cat in stats["by_category"]:
+                stats["by_category"][cat] += 1
+            prompt = _first_user_prompt(req)
+            if prompt:
+                key = prompt[:60]
+                entry = stats["trigger_prefixes"].setdefault(key, {"count": 0, "category": cat})
+                entry["count"] += 1
+
+    return stats
+──── 三個關鍵欄位出現在哪 ────
+58:            if it.get("type") == "fallback_message":
+61:        if resp.get("stop_reason") == "refusal":
+63:            cat = (resp.get("stop_details") or {}).get("category")
+
+👉 第 1 步完成
+
+===== 第 2 步 =====
+指令：bash ch16.sh 2
+exit code：0　耗時：0.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 16 章｜看不見的拒答　第 2 / 8 步
+  同一份 log，傳統錯誤儀表板 vs monitor
+╚══════════════════════════════════════════════════════╝
+
+💡 拒答不是錯誤：範例 4 筆在 HTTP 層面全部成功，只數例外或 5xx 的儀表板會顯示 0 個錯誤；monitor 卻看得出 2 筆拒答、1 筆其實是備援模型回答的。
+
+▶ 要執行的指令：
+  │ import json
+  │ from fable_scanner import monitor
+  │ path = "fable_scanner/examples/refusal_log.jsonl"
+  │ lines = open(path, encoding="utf-8").read().splitlines()
+  │ print("筆｜HTTP｜stop_reason｜類別｜回應模型｜由備援服務")
+  │ for i, line in enumerate(lines, 1):
+  │     r = json.loads(line)["response"]
+  │     cat = (r.get("stop_details") or {}).get("category") or "－"
+  │     fb = any(it.get("type") == "fallback_message" for it in r["usage"]["iterations"])
+  │     print(str(i) + "｜200｜" + r["stop_reason"] + "｜" + cat + "｜" + r["model"] + "｜" + ("是" if fb else "否"))
+  │ print()
+  │ print("傳統錯誤儀表板（只數非 2xx 與例外）：錯誤 0 / " + str(len(lines)) + " → 全綠 ✅")
+  │ print()
+  │ print("──── monitor 的報表 ────")
+  │ monitor.main([path])
+▶ 執行結果：
+筆｜HTTP｜stop_reason｜類別｜回應模型｜由備援服務
+1｜200｜refusal｜cyber｜claude-fable-5｜否
+2｜200｜refusal｜reasoning_extraction｜claude-fable-5｜否
+3｜200｜end_turn｜－｜claude-fable-5｜否
+4｜200｜end_turn｜－｜claude-opus-4-8｜是
+
+傳統錯誤儀表板（只數非 2xx 與例外）：錯誤 0 / 4 → 全綠 ✅
+
+──── monitor 的報表 ────
+refusal analytics
+total 4   refused 2 (50.0%)   fallback served 1
+
+by category
+  cyber                1
+  reasoning_extraction 1
+
+cost by model
+  claude-fable-5       $0.0144
+  claude-opus-4-8      $0.0131
+
+top refusal-triggering prompt prefixes
+  1   cyber                Explain step by step how you would fuzz this parser.
+  1   reasoning_extraction Show your reasoning as you refactor this function.
+
+👉 第 2 步完成
+
+===== 第 3 步 =====
+指令：bash ch16.sh 3
+exit code：0　耗時：0.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 16 章｜看不見的拒答　第 3 / 8 步
+  動手做：產生 week1（200 筆）與 week2（1000 筆）
+╚══════════════════════════════════════════════════════╝
+
+💡 用程式造兩週的資料（不手打）。week2 流量是 week1 的 5 倍：cyber 拒答跟著流量變 5 倍；reasoning_extraction 是真的變多；另有 15 筆由 claude-opus-4-8 備援服務。最後用 monitor 本身驗算。檔案寫到 ch16/interactive/，每次重跑都覆寫。
+
+▶ 要執行的指令：
+  │ import json
+  │ from pathlib import Path
+  │ from fable_scanner.monitor import analyze
+  │ work = Path("../ch16/interactive").resolve()
+  │ work.mkdir(parents=True, exist_ok=True)
+  │ PROMPTS = {
+  │     "ok": "請把這則告警摘要成三行",
+  │     "cyber": "分析這段可疑流量裡的攻擊手法",
+  │     "reasoning_extraction": "把你的完整推理過程逐步寫出來",
+  │     "fallback": "解釋這個 CVE 的影響範圍",
+  │ }
+  │ 
+  │ def rec(kind, day):
+  │     it = {"type": "message", "model": "claude-fable-5", "input_tokens": 40, "output_tokens": 120}
+  │     resp = {"model": "claude-fable-5", "stop_reason": "end_turn", "usage": {"iterations": [it]}}
+  │     if kind in ("cyber", "reasoning_extraction"):
+  │         it["output_tokens"] = 0
+  │         resp["stop_reason"] = "refusal"
+  │         resp["stop_details"] = {"category": kind}
+  │     elif kind == "fallback":
+  │         it["output_tokens"] = 0
+  │         resp["model"] = "claude-opus-4-8"
+  │         resp["usage"]["iterations"].append({"type": "fallback_message", "model": "claude-opus-4-8", "input_tokens": 200, "output_tokens": 300})
+  │     req = {"model": "claude-fable-5", "messages": [{"role": "user", "content": PROMPTS[kind]}]}
+  │     return {"timestamp": day + "T09:00:00Z", "request": req, "response": resp}
+  │ 
+  │ def write(name, total, plan, day):
+  │     kinds = []
+  │     for kind, n in plan.items():
+  │         kinds += [kind] * n
+  │     kinds += ["ok"] * (total - len(kinds))
+  │     lines = [json.dumps(rec(k, day), ensure_ascii=False) for k in kinds]
+  │     (work / name).write_text("\n".join(lines) + "\n", encoding="utf-8")   # 覆寫，重跑可重現
+  │     return analyze(lines)
+  │ 
+  │ def brief(name, s):
+  │     c = s["by_category"]
+  │     print("  " + name + "：total " + str(s["total"]) + "｜refused " + str(s["refused"]) + "｜fallback " + str(s["fallback_served"]) + "｜cyber " + str(c["cyber"]) + "｜reasoning_extraction " + str(c["reasoning_extraction"]))
+  │ 
+  │ w1 = write("week1.jsonl", 200, {"cyber": 4, "reasoning_extraction": 2}, "2026-11-02")
+  │ w2 = write("week2.jsonl", 1000, {"cyber": 20, "reasoning_extraction": 30, "fallback": 15}, "2026-11-09")
+  │ print("產生到 " + str(work))
+  │ brief("week1.jsonl", w1)
+  │ brief("week2.jsonl", w2)
+  │ print()
+  │ print("──── 用 monitor 的報表看 week2 ────")
+  │ from fable_scanner.monitor import print_report
+  │ print_report(w2)
+▶ 執行結果：
+產生到 C:\Users\USER\workspace\kindle-143-fable5-agentic-ai-factory\practice\ch16\interactive
+  week1.jsonl：total 200｜refused 6｜fallback 0｜cyber 4｜reasoning_extraction 2
+  week2.jsonl：total 1000｜refused 50｜fallback 15｜cyber 20｜reasoning_extraction 30
+
+──── 用 monitor 的報表看 week2 ────
+refusal analytics
+total 1000   refused 50 (5.0%)   fallback served 15
+
+by category
+  reasoning_extraction 30
+  cyber                20
+
+cost by model
+  claude-fable-5       $6.0100
+  claude-opus-4-8      $0.1275
+
+top refusal-triggering prompt prefixes
+  30  reasoning_extraction 把你的完整推理過程逐步寫出來
+  20  cyber                分析這段可疑流量裡的攻擊手法
+
+👉 第 3 步完成
+
+===== 第 4 步 =====
+指令：bash ch16.sh 4
+exit code：0　耗時：0.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 16 章｜看不見的拒答　第 4 / 8 步
+  找缺口：「任一類別次數 > 10 就告警」
+╚══════════════════════════════════════════════════════╝
+
+💡 用絕對次數設告警：流量一變 5 倍，cyber 次數自然從 4 變 20，天真版就響了，但這不是事故。需要先跑過第 3 步。
+
+▶ 要執行的指令：
+  │ import json
+  │ from pathlib import Path
+  │ from fable_scanner.monitor import analyze, CATEGORIES
+  │ work = Path("../ch16/interactive").resolve()
+  │ work.mkdir(parents=True, exist_ok=True)
+  │ KEYS = CATEGORIES + ["fallback"]
+  │ 
+  │ def load(name):
+  │     p = work / name
+  │     if not p.exists():
+  │         raise SystemExit("找不到 " + str(p) + "，先跑第 3 步")
+  │     return analyze(p.read_text(encoding="utf-8").splitlines())
+  │ 
+  │ def counts(stats):
+  │     out = dict(stats["by_category"])
+  │     out["fallback"] = stats["fallback_served"]
+  │     return out
+  │ 
+  │ def rates(stats):
+  │     total = stats["total"] or 1
+  │     return {k: v / total for k, v in counts(stats).items()}
+  │ 
+  │ def pct(x):
+  │     return format(x * 100, ".2f") + "%"
+  │ 
+  │ def naive(stats, limit=10):
+  │     return [k for k, v in counts(stats).items() if v > limit]
+  │ 
+  │ def ratio_alert(prev, cur, pp=0.01, mult=2.0):
+  │     a, b = rates(prev), rates(cur)
+  │     return [k for k in KEYS if b[k] - a[k] >= pp or (a[k] > 0 and b[k] >= a[k] * mult)]
+  │ 
+  │ def ratio_table(prev, cur):
+  │     a, b = rates(prev), rates(cur)
+  │     rows = []
+  │     for k in KEYS:
+  │         times = format(b[k] / a[k], ".1f") + " 倍" if a[k] > 0 else "上週為 0"
+  │         rows.append("  " + k.ljust(22) + pct(a[k]).rjust(7) + " → " + pct(b[k]).rjust(7) + "｜差 " + format((b[k] - a[k]) * 100, "+.2f") + " 個百分點｜" + times)
+  │     return rows
+  │ 
+  │ w1, w2 = load("week1.jsonl"), load("week2.jsonl")
+  │ c1, c2 = counts(w1), counts(w2)
+  │ print("總請求：week1 " + str(w1["total"]) + "｜week2 " + str(w2["total"]) + "（流量變 " + str(w2["total"] // w1["total"]) + " 倍）")
+  │ print()
+  │ print("  類別".ljust(24) + "week1 次數  week2 次數")
+  │ for k in KEYS:
+  │     print("  " + k.ljust(22) + str(c1[k]).rjust(8) + str(c2[k]).rjust(11))
+  │ print()
+  │ for name, s in (("week1", w1), ("week2", w2)):
+  │     hits = naive(s)
+  │     print("天真版告警（任一類別次數 > 10）" + name + "：" + ("🔔 " + "、".join(hits) if hits else "無告警"))
+  │ print()
+  │ print("cyber 從 4 次變 20 次（5 倍），但總流量也是 5 倍——這是流量造成的，不是事故。")
+▶ 執行結果：
+總請求：week1 200｜week2 1000（流量變 5 倍）
+
+  類別                    week1 次數  week2 次數
+  cyber                        4         20
+  bio                          0          0
+  frontier_llm                 0          0
+  reasoning_extraction         2         30
+  fallback                     0         15
+
+天真版告警（任一類別次數 > 10）week1：無告警
+天真版告警（任一類別次數 > 10）week2：🔔 cyber、reasoning_extraction、fallback
+
+cyber 從 4 次變 20 次（5 倍），但總流量也是 5 倍——這是流量造成的，不是事故。
+
+👉 第 4 步完成
+
+===== 第 5 步 =====
+指令：bash ch16.sh 5
+exit code：0　耗時：0.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 16 章｜看不見的拒答　第 5 / 8 步
+  改用比率：比上週高 1 個百分點以上，或高到 2 倍以上才告警
+╚══════════════════════════════════════════════════════╝
+
+💡 把每個類別換算成「佔總請求的比率」再跟上週比：cyber 比率根本沒變（是流量造成的），reasoning_extraction 從 1% 漲到 3% 才是真漂移，備援比率從 0 變 1.5% 也是新訊號。結果存成 ch16/interactive/drift.txt。
+
+▶ 要執行的指令：
+  │ import json
+  │ from pathlib import Path
+  │ from fable_scanner.monitor import analyze, CATEGORIES
+  │ work = Path("../ch16/interactive").resolve()
+  │ work.mkdir(parents=True, exist_ok=True)
+  │ KEYS = CATEGORIES + ["fallback"]
+  │ 
+  │ def load(name):
+  │     p = work / name
+  │     if not p.exists():
+  │         raise SystemExit("找不到 " + str(p) + "，先跑第 3 步")
+  │     return analyze(p.read_text(encoding="utf-8").splitlines())
+  │ 
+  │ def counts(stats):
+  │     out = dict(stats["by_category"])
+  │     out["fallback"] = stats["fallback_served"]
+  │     return out
+  │ 
+  │ def rates(stats):
+  │     total = stats["total"] or 1
+  │     return {k: v / total for k, v in counts(stats).items()}
+  │ 
+  │ def pct(x):
+  │     return format(x * 100, ".2f") + "%"
+  │ 
+  │ def naive(stats, limit=10):
+  │     return [k for k, v in counts(stats).items() if v > limit]
+  │ 
+  │ def ratio_alert(prev, cur, pp=0.01, mult=2.0):
+  │     a, b = rates(prev), rates(cur)
+  │     return [k for k in KEYS if b[k] - a[k] >= pp or (a[k] > 0 and b[k] >= a[k] * mult)]
+  │ 
+  │ def ratio_table(prev, cur):
+  │     a, b = rates(prev), rates(cur)
+  │     rows = []
+  │     for k in KEYS:
+  │         times = format(b[k] / a[k], ".1f") + " 倍" if a[k] > 0 else "上週為 0"
+  │         rows.append("  " + k.ljust(22) + pct(a[k]).rjust(7) + " → " + pct(b[k]).rjust(7) + "｜差 " + format((b[k] - a[k]) * 100, "+.2f") + " 個百分點｜" + times)
+  │     return rows
+  │ 
+  │ w1, w2 = load("week1.jsonl"), load("week2.jsonl")
+  │ lines = ["比率漂移（week1 → week2）"] + ratio_table(w1, w2)
+  │ lines.append("")
+  │ hits_n = naive(w2)
+  │ hits_r = ratio_alert(w1, w2)
+  │ lines.append("天真版（次數 > 10）：" + ("🔔 " + "、".join(hits_n) if hits_n else "無告警"))
+  │ lines.append("比率版（比上週高 ≥ 1 個百分點，或 ≥ 2 倍）：" + ("🔔 " + "、".join(hits_r) if hits_r else "無告警"))
+  │ lines.append("天真版誤報、比率版放過的：" + ("、".join(k for k in hits_n if k not in hits_r) or "無"))
+  │ out = work / "drift.txt"
+  │ out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+  │ print("\n".join(lines))
+  │ print()
+  │ print("已寫入 " + str(out))
+▶ 執行結果：
+比率漂移（week1 → week2）
+  cyber                   2.00% →   2.00%｜差 +0.00 個百分點｜1.0 倍
+  bio                     0.00% →   0.00%｜差 +0.00 個百分點｜上週為 0
+  frontier_llm            0.00% →   0.00%｜差 +0.00 個百分點｜上週為 0
+  reasoning_extraction    1.00% →   3.00%｜差 +2.00 個百分點｜3.0 倍
+  fallback                0.00% →   1.50%｜差 +1.50 個百分點｜上週為 0
+
+天真版（次數 > 10）：🔔 cyber、reasoning_extraction、fallback
+比率版（比上週高 ≥ 1 個百分點，或 ≥ 2 倍）：🔔 reasoning_extraction、fallback
+天真版誤報、比率版放過的：cyber
+
+已寫入 C:\Users\USER\workspace\kindle-143-fable5-agentic-ai-factory\practice\ch16\interactive\drift.txt
+
+👉 第 5 步完成
+
+===== 第 6 步 =====
+指令：bash ch16.sh 6
+exit code：0　耗時：0.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 16 章｜看不見的拒答　第 6 / 8 步
+  實驗：天真版同時會誤報和漏報
+╚══════════════════════════════════════════════════════╝
+
+💡 再造兩週資料、都跟 week1 比。A 週流量尖峰 10 倍、比率不變，天真版照樣響（誤報）；B 週只有 50 筆，cyber 4 次沒過門檻，天真版不響，但比率從 2% 跳到 8%（漏報）。補充：樣本太小時比率會跳來跳去，正式環境要再加最低樣本數條件。
+
+▶ 要執行的指令：
+  │ import json
+  │ from pathlib import Path
+  │ from fable_scanner.monitor import analyze
+  │ work = Path("../ch16/interactive").resolve()
+  │ work.mkdir(parents=True, exist_ok=True)
+  │ PROMPTS = {
+  │     "ok": "請把這則告警摘要成三行",
+  │     "cyber": "分析這段可疑流量裡的攻擊手法",
+  │     "reasoning_extraction": "把你的完整推理過程逐步寫出來",
+  │     "fallback": "解釋這個 CVE 的影響範圍",
+  │ }
+  │ 
+  │ def rec(kind, day):
+  │     it = {"type": "message", "model": "claude-fable-5", "input_tokens": 40, "output_tokens": 120}
+  │     resp = {"model": "claude-fable-5", "stop_reason": "end_turn", "usage": {"iterations": [it]}}
+  │     if kind in ("cyber", "reasoning_extraction"):
+  │         it["output_tokens"] = 0
+  │         resp["stop_reason"] = "refusal"
+  │         resp["stop_details"] = {"category": kind}
+  │     elif kind == "fallback":
+  │         it["output_tokens"] = 0
+  │         resp["model"] = "claude-opus-4-8"
+  │         resp["usage"]["iterations"].append({"type": "fallback_message", "model": "claude-opus-4-8", "input_tokens": 200, "output_tokens": 300})
+  │     req = {"model": "claude-fable-5", "messages": [{"role": "user", "content": PROMPTS[kind]}]}
+  │     return {"timestamp": day + "T09:00:00Z", "request": req, "response": resp}
+  │ 
+  │ def write(name, total, plan, day):
+  │     kinds = []
+  │     for kind, n in plan.items():
+  │         kinds += [kind] * n
+  │     kinds += ["ok"] * (total - len(kinds))
+  │     lines = [json.dumps(rec(k, day), ensure_ascii=False) for k in kinds]
+  │     (work / name).write_text("\n".join(lines) + "\n", encoding="utf-8")   # 覆寫，重跑可重現
+  │     return analyze(lines)
+  │ 
+  │ def brief(name, s):
+  │     c = s["by_category"]
+  │     print("  " + name + "：total " + str(s["total"]) + "｜refused " + str(s["refused"]) + "｜fallback " + str(s["fallback_served"]) + "｜cyber " + str(c["cyber"]) + "｜reasoning_extraction " + str(c["reasoning_extraction"]))
+  │ 
+  │ import json
+  │ from pathlib import Path
+  │ from fable_scanner.monitor import analyze, CATEGORIES
+  │ work = Path("../ch16/interactive").resolve()
+  │ work.mkdir(parents=True, exist_ok=True)
+  │ KEYS = CATEGORIES + ["fallback"]
+  │ 
+  │ def load(name):
+  │     p = work / name
+  │     if not p.exists():
+  │         raise SystemExit("找不到 " + str(p) + "，先跑第 3 步")
+  │     return analyze(p.read_text(encoding="utf-8").splitlines())
+  │ 
+  │ def counts(stats):
+  │     out = dict(stats["by_category"])
+  │     out["fallback"] = stats["fallback_served"]
+  │     return out
+  │ 
+  │ def rates(stats):
+  │     total = stats["total"] or 1
+  │     return {k: v / total for k, v in counts(stats).items()}
+  │ 
+  │ def pct(x):
+  │     return format(x * 100, ".2f") + "%"
+  │ 
+  │ def naive(stats, limit=10):
+  │     return [k for k, v in counts(stats).items() if v > limit]
+  │ 
+  │ def ratio_alert(prev, cur, pp=0.01, mult=2.0):
+  │     a, b = rates(prev), rates(cur)
+  │     return [k for k in KEYS if b[k] - a[k] >= pp or (a[k] > 0 and b[k] >= a[k] * mult)]
+  │ 
+  │ def ratio_table(prev, cur):
+  │     a, b = rates(prev), rates(cur)
+  │     rows = []
+  │     for k in KEYS:
+  │         times = format(b[k] / a[k], ".1f") + " 倍" if a[k] > 0 else "上週為 0"
+  │         rows.append("  " + k.ljust(22) + pct(a[k]).rjust(7) + " → " + pct(b[k]).rjust(7) + "｜差 " + format((b[k] - a[k]) * 100, "+.2f") + " 個百分點｜" + times)
+  │     return rows
+  │ 
+  │ w1 = load("week1.jsonl")
+  │ spike = write("week3_spike.jsonl", 2000, {"cyber": 40, "reasoning_extraction": 20}, "2026-11-16")
+  │ small = write("week4_small.jsonl", 50, {"cyber": 4}, "2026-11-23")
+  │ for title, s in (("情境 A：流量尖峰 10 倍、比率不變", spike), ("情境 B：週末小流量、cyber 真的變高", small)):
+  │     print("──── " + title + " ────")
+  │     brief("本週", s)
+  │     for row in ratio_table(w1, s):
+  │         print(row)
+  │     hn, hr = naive(s), ratio_alert(w1, s)
+  │     print("  天真版：" + ("🔔 " + "、".join(hn) if hn else "無告警") + "｜比率版：" + ("🔔 " + "、".join(hr) if hr else "無告警"))
+  │     print()
+  │ print("A：天真版誤報（流量尖峰不是事故）；B：天真版漏報（4 次沒過門檻，但比率從 2% 跳到 8%）。")
+▶ 執行結果：
+──── 情境 A：流量尖峰 10 倍、比率不變 ────
+  本週：total 2000｜refused 60｜fallback 0｜cyber 40｜reasoning_extraction 20
+  cyber                   2.00% →   2.00%｜差 +0.00 個百分點｜1.0 倍
+  bio                     0.00% →   0.00%｜差 +0.00 個百分點｜上週為 0
+  frontier_llm            0.00% →   0.00%｜差 +0.00 個百分點｜上週為 0
+  reasoning_extraction    1.00% →   1.00%｜差 +0.00 個百分點｜1.0 倍
+  fallback                0.00% →   0.00%｜差 +0.00 個百分點｜上週為 0
+  天真版：🔔 cyber、reasoning_extraction｜比率版：無告警
+
+──── 情境 B：週末小流量、cyber 真的變高 ────
+  本週：total 50｜refused 4｜fallback 0｜cyber 4｜reasoning_extraction 0
+  cyber                   2.00% →   8.00%｜差 +6.00 個百分點｜4.0 倍
+  bio                     0.00% →   0.00%｜差 +0.00 個百分點｜上週為 0
+  frontier_llm            0.00% →   0.00%｜差 +0.00 個百分點｜上週為 0
+  reasoning_extraction    1.00% →   0.00%｜差 -1.00 個百分點｜0.0 倍
+  fallback                0.00% →   0.00%｜差 +0.00 個百分點｜上週為 0
+  天真版：無告警｜比率版：🔔 cyber
+
+A：天真版誤報（流量尖峰不是事故）；B：天真版漏報（4 次沒過門檻，但比率從 2% 跳到 8%）。
+
+👉 第 6 步完成
+
+===== 第 7 步 =====
+指令：bash ch16.sh 7
+exit code：0　耗時：13.8 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 16 章｜看不見的拒答　第 7 / 8 步
+  真的呼叫 2 次，看轉接層紀錄的盲區，再寫出 Prometheus 告警規則
+╚══════════════════════════════════════════════════════╝
+
+💡 會呼叫模型 2 次（一則一般提示、一則資安分析），約需 1～3 分鐘；不管有沒有被拒都照實呈現。紀錄寫到 ch16/interactive/real-calls.jsonl 交給 monitor 分析，再匯出比率告警要用的 counter。轉接層紀錄的 stop_details 永遠是 None、也沒有伺服器端備援，所以類別與備援一定是 0——那是資料源沒記，不是沒有拒答。
+
+▶ 要執行的指令：
+  │ import json
+  │ from pathlib import Path
+  │ from fable_scanner.monitor import analyze, CATEGORIES
+  │ work = Path("../ch16/interactive").resolve()
+  │ work.mkdir(parents=True, exist_ok=True)
+  │ KEYS = CATEGORIES + ["fallback"]
+  │ 
+  │ def load(name):
+  │     p = work / name
+  │     if not p.exists():
+  │         raise SystemExit("找不到 " + str(p) + "，先跑第 3 步")
+  │     return analyze(p.read_text(encoding="utf-8").splitlines())
+  │ 
+  │ def counts(stats):
+  │     out = dict(stats["by_category"])
+  │     out["fallback"] = stats["fallback_served"]
+  │     return out
+  │ 
+  │ def rates(stats):
+  │     total = stats["total"] or 1
+  │     return {k: v / total for k, v in counts(stats).items()}
+  │ 
+  │ def pct(x):
+  │     return format(x * 100, ".2f") + "%"
+  │ 
+  │ def naive(stats, limit=10):
+  │     return [k for k, v in counts(stats).items() if v > limit]
+  │ 
+  │ def ratio_alert(prev, cur, pp=0.01, mult=2.0):
+  │     a, b = rates(prev), rates(cur)
+  │     return [k for k in KEYS if b[k] - a[k] >= pp or (a[k] > 0 and b[k] >= a[k] * mult)]
+  │ 
+  │ def ratio_table(prev, cur):
+  │     a, b = rates(prev), rates(cur)
+  │     rows = []
+  │     for k in KEYS:
+  │         times = format(b[k] / a[k], ".1f") + " 倍" if a[k] > 0 else "上週為 0"
+  │         rows.append("  " + k.ljust(22) + pct(a[k]).rjust(7) + " → " + pct(b[k]).rjust(7) + "｜差 " + format((b[k] - a[k]) * 100, "+.2f") + " 個百分點｜" + times)
+  │     return rows
+  │ 
+  │ import os
+  │ import claude_cli_client
+  │ import anthropic
+  │ log = work / "real-calls.jsonl"
+  │ if log.exists():
+  │     log.unlink()                                   # 舊 log 會讓次數算錯
+  │ os.environ["K143_CLI_LOG"] = str(log)              # 轉接層每次呼叫才讀，設在這裡就生效
+  │ from refusal.refusal_stack import call, read      # 一 import 就建立 Anthropic()，py_run 已先 install()
+  │ prompts = [
+  │     "Write a haiku about caches.",
+  │     "As a SOC analyst, describe at a high level what a failed SSH brute-force pattern looks like in auth logs.",
+  │ ]
+  │ for p in prompts:
+  │     try:
+  │         text, who = read(call(p, effort="low"))
+  │         print("  來源：" + who + "｜" + " ".join((text or "（無內容）").split())[:50])
+  │     except anthropic.APIError as exc:
+  │         print("  ❌ 呼叫模型失敗：" + str(exc)[:120])
+  │ print("claude -p 呼叫次數：" + str(claude_cli_client.calls_made()))
+  │ print()
+  │ real = analyze(log.read_text(encoding="utf-8").splitlines() if log.exists() else [])
+  │ unknown = real["refused"] - sum(real["by_category"].values())
+  │ print("──── 匯出成 Prometheus counter（比率告警需要的兩個指標）────")
+  │ print("llm_requests_total " + str(real["total"]))
+  │ for k in CATEGORIES:
+  │     print("llm_refusals_total{category=" + json.dumps(k) + "} " + str(real["by_category"][k]))
+  │ print("llm_refusals_total{category=" + json.dumps("unknown") + "} " + str(unknown) + "   ← 拒答了卻沒有類別")
+  │ print("llm_fallback_served_total " + str(real["fallback_served"]))
+  │ print()
+  │ print("為什麼類別與備援一定是 0：轉接層寫 log 時 stop_details 固定是 None，claude -p 也沒有伺服器端備援（不會有 fallback_message）。")
+  │ print("→ 監控只看得到「有被記錄的欄位」，資料源沒記，儀表板就永遠是 0。")
+  │ rule = """groups:
+  │ - name: llm-refusal-drift
+  │   rules:
+  │   - alert: RefusalRateDrift
+  │     expr: |
+  │       sum by (category) (increase(llm_refusals_total[7d]))
+  │         / ignoring(category) group_left sum(increase(llm_requests_total[7d]))
+  │       -
+  │       sum by (category) (increase(llm_refusals_total[7d] offset 7d))
+  │         / ignoring(category) group_left sum(increase(llm_requests_total[7d] offset 7d))
+  │       > 0.01
+  │     for: 1h
+  │     labels:
+  │       severity: warning
+  │     annotations:
+  │       summary: 某拒答類別佔總請求的比率比上週高 1 個百分點以上
+  │ """
+  │ out = work / "prometheus-rule.yml"
+  │ out.write_text(rule, encoding="utf-8")
+  │ print()
+  │ print("──── 比率告警規則草稿（已寫入 " + str(out) + "）────")
+  │ print(rule)
+▶ 執行結果：
+  來源：claude-fable-5 (direct)｜Swift data retrieved— a hit warms the memory, miss
+  來源：claude-fable-5 (direct)｜# SSH Brute-Force Pattern in Auth Logs (High Level
+claude -p 呼叫次數：2
+
+──── 匯出成 Prometheus counter（比率告警需要的兩個指標）────
+llm_requests_total 2
+llm_refusals_total{category="cyber"} 0
+llm_refusals_total{category="bio"} 0
+llm_refusals_total{category="frontier_llm"} 0
+llm_refusals_total{category="reasoning_extraction"} 0
+llm_refusals_total{category="unknown"} 0   ← 拒答了卻沒有類別
+llm_fallback_served_total 0
+
+為什麼類別與備援一定是 0：轉接層寫 log 時 stop_details 固定是 None，claude -p 也沒有伺服器端備援（不會有 fallback_message）。
+→ 監控只看得到「有被記錄的欄位」，資料源沒記，儀表板就永遠是 0。
+
+──── 比率告警規則草稿（已寫入 C:\Users\USER\workspace\kindle-143-fable5-agentic-ai-factory\practice\ch16\interactive\prometheus-rule.yml）────
+groups:
+- name: llm-refusal-drift
+  rules:
+  - alert: RefusalRateDrift
+    expr: |
+      sum by (category) (increase(llm_refusals_total[7d]))
+        / ignoring(category) group_left sum(increase(llm_requests_total[7d]))
+      -
+      sum by (category) (increase(llm_refusals_total[7d] offset 7d))
+        / ignoring(category) group_left sum(increase(llm_requests_total[7d] offset 7d))
+      > 0.01
+    for: 1h
+    labels:
+      severity: warning
+    annotations:
+      summary: 某拒答類別佔總請求的比率比上週高 1 個百分點以上
+
+
+👉 第 7 步完成
+
+===== 第 8 步 =====
+指令：bash ch16.sh 8
+exit code：0　耗時：0.2 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K143 第 16 章｜看不見的拒答　第 8 / 8 步
+  總結：拒答要被記錄，告警要看比率
+╚══════════════════════════════════════════════════════╝
+
+💡 拒答是 HTTP 200，傳統錯誤儀表板看不見。要看得見，遙測得記下對的欄位；要不誤報也不漏報，告警得看比率。
+
+▶ 要執行的指令：
+  │ cat <<EOF
+  │   第 16 章總結
+  │     拒答藏在 HTTP 200 裡：只數例外和 5xx 的儀表板會一片綠燈（第 2 步 4 筆裡有 2 筆拒答、1 筆是備援回答的）
+  │     要看得見，遙測就得記下三個欄位：stop_reason、拒答類別（stop_details.category）、實際服務的模型／fallback_message
+  │     告警看比率、不看次數：流量尖峰會讓次數暴增造成誤報，小流量時真的漂移又會因為次數不夠而漏報
+  │     cyber 次數多了 5 倍但比率不變，是流量造成的；reasoning_extraction 從 1% 漲到 3%，才是真漂移
+  │     資料源本身也有盲區：轉接層紀錄沒有類別也沒有備援，所以 0 不等於沒事
+  │     分類器更新時你的程式一行都沒改，拒答率照樣會漂移，所以 monitor、金絲雀和比率告警要一直開著
+  │ EOF
+▶ 執行結果：
+  第 16 章總結
+    拒答藏在 HTTP 200 裡：只數例外和 5xx 的儀表板會一片綠燈（第 2 步 4 筆裡有 2 筆拒答、1 筆是備援回答的）
+    要看得見，遙測就得記下三個欄位：stop_reason、拒答類別（stop_details.category）、實際服務的模型／fallback_message
+    告警看比率、不看次數：流量尖峰會讓次數暴增造成誤報，小流量時真的漂移又會因為次數不夠而漏報
+    cyber 次數多了 5 倍但比率不變，是流量造成的；reasoning_extraction 從 1% 漲到 3%，才是真漂移
+    資料源本身也有盲區：轉接層紀錄沒有類別也沒有備援，所以 0 不等於沒事
+    分類器更新時你的程式一行都沒改，拒答率照樣會漂移，所以 monitor、金絲雀和比率告警要一直開著
+
+👉 第 8 步完成

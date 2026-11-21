@@ -1,0 +1,197 @@
+# K144《下一個AI戰場，是代理治理》演練備課工廠的專案設定（lhf 引擎讀這份）
+# 以 projects/k143 為藍本：不含版本對照表角色（本書沒有對照表），撰寫站只剩 writer 一個角色。
+# 本書沒有附程式：每步用內嵌 Python（標準庫、固定亂數種子、離線）做小模擬，對應 prompts/chNN.md 的觀念。
+# 欄位說明見 templates/kindle-drill/factory.yaml。
+schema: 1
+name: k144
+type: kindle-drill
+description: 每一輪備好一章 8 步互動演練（規劃 → 腳本＋教練稿 → 實跑 → 測試判定 → 審查 → commit）
+workdir: ~/workspace/kindle-144-agent-governance-factory
+branch: factory/drills
+agent_cwd: "{PRACTICE}"
+read_dirs:
+  - "{WORK}/prompts"   # prompts/ 在 worktree 根目錄、不在 cwd(practice) 底下，planner／reviewer 要讀
+
+vars:
+  PRACTICE: "{WORK}/practice"
+  INTER: "{PRACTICE}/interactive"
+  common_rules: "\n\n規則：全程使用繁體中文（程式碼本體除外）。絕對不可修改 practice/llm_agent.py。不要執行 git，也不要執行任何 shell 指令。只寫入本任務指定的檔案。完成後用一兩句話回報寫了哪些檔案。"
+
+env: {}
+
+units:
+  ids: [ch01, ch02, ch03, ch04, ch05, ch06, ch07, ch08]
+  depends_on: {}
+  vars:
+    num: '^ch0*(\d+)$'   # ch04 → 4（prompt 裡的「第 N 章」）；別用 no／yes 當名稱，YAML 會當成布林
+
+files:
+  prompt_md: "{WORK}/prompts/{unit}.md"
+  plan: "{RUN}/plans/{unit}.md"
+  script: "{INTER}/{unit}.sh"
+  coach: "{INTER}/coach-{unit}.txt"
+  raw: "{RUN}/test-logs/{unit}-raw.log"
+  testlog: "{RUN}/test-logs/{unit}.md"
+  review: "{RUN}/reviews/{unit}.md"
+
+extracts: {}
+
+stations:
+  - id: plan
+    kind: agent
+    chain: plan
+    label: 1 規劃
+    role: planner
+    prompt: plan
+    requires: ["{prompt_md}"]
+    outputs: ["{plan}"]
+  - id: write
+    kind: agent
+    chain: producer
+    label: 2 寫腳本＋教練稿
+    role: writer
+    prompt: write
+    mkdirs: ["{INTER}"]
+    outputs: ["{script}", "{coach}"]
+  - id: run
+    kind: command
+    chain: verify
+    label: 3 執行腳本
+    cwd: "{INTER}"
+    timeout: 180
+    require: ["{script}", "{coach}"]
+    log: "{raw}"
+    fail_report: "{testlog}"
+    # 任何一步結束碼非 0 都由引擎直接判 FAIL 並退回，不需要 allow_nonzero
+    cmds:
+      - {title: "bash -n 語法檢查", cmd: "bash -n {unit}.sh", fail_on_error: true}
+      - {title: "第 {step} 步", cmd: "bash {unit}.sh {step}", steps: [1, 8]}
+    on_fail: {goto: write, max: 2, label: 測試}
+  - id: judge
+    kind: agent
+    chain: qa
+    label: 4 測試判定
+    role: tester
+    prompt: judge
+    clear: ["{testlog}"]
+    verdict: {file: "{testlog}"}
+    on_fail: {goto: write, max: 2, label: 測試}
+  - id: review
+    kind: agent
+    chain: review
+    label: 5 審查
+    role: reviewer
+    prompt: review
+    clear: ["{review}"]
+    verdict: {file: "{review}"}
+    on_fail: {goto: write, max: 1, label: 審查}
+  - id: commit
+    kind: commit
+    chain: finish
+    label: 6 commit
+    paths:
+      - "practice/interactive/{unit}.sh"
+      - "practice/interactive/coach-{unit}.txt"
+    message: "工廠：新增 K144 {unit} 互動演練腳本（第 {round} 輪）"
+
+# 意圖合約：每個角色只能用清單上的工具；write 是 Write／Edit 可寫入的位置；budget 是每次呼叫的工具次數上限
+# 所有角色都沒有 Bash：測試腳本由引擎自己跑，模型不需要也不該執行指令
+roles:
+  planner:
+    tools: [Read, Glob, Grep, Write]
+    write: ["{RUN}/plans/**"]
+    budget: 40
+  writer:
+    tools: [Read, Glob, Grep, Write, Edit]
+    write: ["{script}", "{coach}"]   # 鎖到本章檔名，避免順手改到別章的腳本
+    budget: 40
+  tester:
+    tools: [Read, Write]   # 只看 raw log 下判決，不需要搜尋整個 repo
+    write: ["{testlog}"]   # 同資料夾的 {raw} 是客觀驗證紀錄，QA 不可改
+    budget: 15
+  reviewer:
+    tools: [Read, Glob, Grep, Write]   # 沒有 Edit：只能寫自己的審查報告，不能動被審的檔案
+    write: ["{RUN}/reviews/**"]
+    budget: 30
+
+# practice/llm_agent.py 是所有章節共用的模型轉接層（走 claude -p、清掉 API 金鑰），被改壞會影響全書
+forbidden:
+  paths: ["practice/llm_agent.py"]
+  commands: ["rm -rf", "git push", ".claude/", "ANTHROPIC_API_KEY"]
+approval_commands: []
+
+limits:
+  calls_per_unit: 10
+  agent_timeout: 900
+  feedback_max_chars: 6000
+
+# 退回意見：失敗報告＋實跑 raw log＋審查退回時再附最近一次 QA 報告
+feedback_template: "\n\n這是重寫。上一版沒有通過{feedback_label}，原因如下（來自 {feedback_path}）：\n-----\n{feedback_content}\n-----\n實際執行紀錄（{feedback_log}，取檔尾）：\n-----\n{feedback_log_content}\n-----{feedback_qa_section}\n請針對以上問題修正兩個檔案（整檔覆寫），沒問題的步驟保持不變。"
+
+prompts:
+  plan: |-
+    你是 K144《下一個AI戰場，是代理治理》互動演練的規劃者，負責第 {num} 章（{unit}）。
+    請先閱讀：本章提示詞 {prompt_md}（「這章在講什麼／作者做過的實驗／教練解說要點／演練（練習 1、練習 2）」）；格式範本 {INTER}/format-example-k142-ch02.sh、{INTER}/format-example-k142-coach-ch02.txt（這是 K142 的範本，借它的格式，內容換成本書）；若 {INTER}/ch01.sh 已存在，也照它的寫法；模型轉接層 {PRACTICE}/llm_agent.py（只讀，看 ask／ask_json 怎麼用）。
+    本書沒有附程式：每步用內嵌 Python（只用標準庫、random.seed 固定、離線、30 秒內跑完）做小模擬，把提示詞的觀念與練習 1、練習 2 變成看得到數字或表格的實驗。
+    然後把規劃寫成 Markdown 存到 {plan}。
+    規劃剛好 8 步，每步都要有五項：
+    1. 標題（一行）
+    2. 目的：白話說明這一步要讓學習者懂什麼
+    3. 要跑的內嵌 Python（完整可直接執行；cwd 是 practice、PYTHONPATH=.；不可 pip 安裝任何套件）
+    4. 預期看到什麼（具體輸出特徵；因為亂數種子固定，可寫出大致數字範圍，讓測試者能判斷對錯）
+    5. 是否呼叫模型（是／否）
+    限制：最多 2 步呼叫模型，且每步只呼叫 1 次（用 practice/llm_agent.py 的 ask 或 ask_json，走 claude -p，每次呼叫最多 180 秒），其他步一律離線；不需要互動輸入；要產出的檔案寫到 practice/{unit}/interactive/；第 8 步是本章總結。{common_rules}
+  write: |-
+    你是 K144 第 {num} 章互動演練的寫手。依規劃 {plan} 寫兩個檔案：
+    1. {script}：bash 腳本，格式照 {INTER}/format-example-k142-ch02.sh（若 {INTER}/ch01.sh 已存在，也照它的寫法）——開頭註解（章名、用法 bash {unit}.sh <步驟 1-8>、是否呼叫模型）、set -u、STEP／HERE 等變數、相同的 banner／tip／show 函式與「👉 第 N 步完成」提示、case 1)～8) 加 *) 預設分支；banner 寫「K144 第 {num} 章｜<短章名>」。範本的 LAB（HarnessLab）本書沒有，改成 PRACTICE="$HERE/.."，執行內嵌 Python 時 cd 到 $PRACTICE 並設 PYTHONPATH=.；WORK="$PRACTICE/{unit}/interactive" 並 mkdir -p "$WORK"，所有執行期輸出都寫到 $WORK。腳本要在 cwd＝practice/interactive 時能用 bash {unit}.sh N 執行；每步只執行規劃中的程式，不可讀互動輸入。呼叫模型的步驟用 from llm_agent import ask（或 ask_json），並在 tip 寫明「會呼叫模型 1 次」。
+    2. {coach}：教練稿，格式照 {INTER}/format-example-k142-coach-ch02.txt。第一行「K144 第 {num} 章互動演練：<章名>（教練稿）」，空一行後每步一段：「【第 N 步：標題】」換行接 3～5 句白話教練稿（口語、念得出來，說明要做什麼、會看到什麼），每段最後一句以「目的，是…」開頭；段與段之間空一行。{feedback}{common_rules}
+  judge: |-
+    你是 K144 第 {num} 章互動演練的測試判定者。讀規劃 {plan} 與實際執行紀錄 {raw}（含 bash -n 結果、bash {unit}.sh 1..8 每步的 exit code、耗時、輸出）。
+    逐步對照規劃的「預期看到什麼」判斷每步 PASS 或 FAIL，寫到 {testlog}：
+    - 一張表：步驟｜標題｜exit code｜判定｜理由（一句話）
+    - FAIL 的步驟寫具體原因與建議怎麼修（給寫手看）
+    - 判定原則：exit code 非 0、逾時、出現 Traceback／command not found／No such file／ModuleNotFoundError、輸出明顯與預期不符 → FAIL；數字或措辭的小差異、模型回答文字不同不算 FAIL
+    - 檔案最後一行必須單獨是 `VERDICT: PASS`（8 步全過）或 `VERDICT: FAIL`{common_rules}
+  review: |-
+    你是 K144 第 {num} 章互動演練的審查者（做的人不當審的人）。審查成品：腳本 {script}、教練稿 {coach}；參考規劃 {plan}、測試紀錄 {testlog}、本章提示詞 {prompt_md}、範本 {INTER}/format-example-k142-ch02.sh 與 {INTER}/format-example-k142-coach-ch02.txt。
+    審查項目：1. 8 步是否涵蓋本章提示詞「這章在講什麼」與「教練解說要點」的重點、有對應練習 1 與練習 2、順序由淺入深、第 8 步是總結；2. 腳本格式與範本一致、模擬只用標準庫且固定亂數種子、輸出都在 practice/{unit}/interactive/、不修改 llm_agent.py、不需互動輸入；3. 教練稿每步 3～5 句白話、結尾「目的，是…」、與腳本步驟一一對應；4. 呼叫模型的步驟不超過 2 步、每步只呼叫 1 次。
+    寫到 {review}：每項 OK 或問題、必改清單（若有）。最後一行必須單獨是 `VERDICT: PASS` 或 `VERDICT: REJECT`（有任何必改就 REJECT）。{common_rules}
+
+# 假模型模式（LH_FAKE_MODEL=1）各角色要寫的假檔案；判定檔由引擎依站型自動產生
+fake:
+  planner:
+    "{plan}": |
+      # {unit} 假規劃
+
+      ## 第 1 步：假步驟 1
+      - 目的：測試
+      - 指令：echo
+      - 預期：印出一行
+      - 呼叫模型：否
+  writer:
+    "{script}": |
+      #!/bin/bash
+      # {unit} 假腳本
+      set -u
+      STEP="${1:-1}"
+      case "$STEP" in
+      1) echo "{unit} 第 1 步（假）" ;;
+      2) echo "{unit} 第 2 步（假）" ;;
+      3) echo "{unit} 第 3 步（假）" ;;
+      4) echo "{unit} 第 4 步（假）" ;;
+      5) echo "{unit} 第 5 步（假）" ;;
+      6) echo "{unit} 第 6 步（假）" ;;
+      7) echo "{unit} 第 7 步（假）" ;;
+      8) echo "{unit} 第 8 步（假）" ;;
+      *) echo "步驟要 1～8" ;;
+      esac
+    "{coach}": |
+      K144 第 {num} 章互動演練（假教練稿）
+
+      【第 1 步：假步驟 1】
+      這是假教練稿。目的，是測試。
+
+# 長時間無人值守時用 Telegram 通知（金鑰只在環境變數 TELEGRAM_BOT_TOKEN／TELEGRAM_CHAT_ID）
+notify:
+  telegram:
+    on: [alert, finish]
