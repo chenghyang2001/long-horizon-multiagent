@@ -9,6 +9,7 @@
 import fnmatch
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -174,10 +175,19 @@ def upstream_paths(work, notes):
     )
 
 
+SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
+UNTRACKED_READ_LIMIT = 256 * 1024  # 未追蹤的新檔只讀前 256 KB 再解碼（--diff 本來就只顯示 400 行）
+
+
+def valid_shas(rec):
+    """state 的 commits 也可能被竄改：只接受 7～40 位小寫十六進位，避免被當成 git 選項或 revision 運算式。"""
+    return [sha for sha in rec.get("commits") or [] if isinstance(sha, str) and SHA_RE.match(sha)]
+
+
 def unit_commit_paths(work, rec):
     """本單位 commit 站記下的 commit（state 的 commits）改到的檔。"""
     paths = []
-    for sha in rec.get("commits") or []:
+    for sha in valid_shas(rec):
         paths += split_z(git(work, ["show", "--no-ext-diff", "--no-textconv", "--name-only", "--format=", "-z", sha]))
     return sorted(dict.fromkeys(paths))
 
@@ -268,7 +278,20 @@ def cmd_pending_info(cfg, unit, diff_path=None):
 
 DIFF_MAX_LINES = 400
 # 終端機控制字元與雙向文字控制字元：撰寫者可以用它們讓顯示的內容與實際內容不同（例如把指令藏起來）
-BIDI_CHARS = {chr(c) for c in (*range(0x202A, 0x202F), *range(0x2066, 0x206A), 0x200E, 0x200F, 0x061C, *range(0x200B, 0x200E), 0x2028, 0x2029, 0xFEFF)}  # 含零寬與行分隔字元
+BIDI_CHARS = {
+    chr(c)
+    for c in (
+        *range(0x202A, 0x202F),
+        *range(0x2066, 0x206A),
+        0x200E,
+        0x200F,
+        0x061C,
+        *range(0x200B, 0x200E),
+        0x2028,
+        0x2029,
+        0xFEFF,
+    )
+}  # 含零寬與行分隔字元
 
 
 def escape_display(text):
@@ -303,7 +326,9 @@ def safe_rel_path(work, rel):
     if not text or text.startswith("/") or (len(text) > 1 and text[1] == ":") or ".." in text.split("/"):
         raise RoundError(f"--diff 只接受工作目錄底下的相對路徑：{rel!r}")
     target = (Path(work) / text).resolve()
-    if not Path(os.path.normcase(target)).is_relative_to(os.path.normcase(Path(work).resolve())):  # 字串前綴會放行 <work>-evil
+    if not Path(os.path.normcase(target)).is_relative_to(
+        os.path.normcase(Path(work).resolve())
+    ):  # 字串前綴會放行 <work>-evil
         raise RoundError(f"--diff 的路徑跑出工作目錄：{rel!r}")
     return text
 
@@ -319,13 +344,14 @@ def diff_sections(work, rec, rel):
                 git(work, ["diff", *flags, f"{upstream.strip()}...HEAD", "--", rel]) or "",
             )
         )
-    for sha in rec.get("commits") or []:
+    for sha in valid_shas(rec):
         sections.append(
             (f"本單位 commit {sha[:12]}", git(work, ["show", *flags, "--format=%h %s", sha, "--", rel]) or "")
         )
     tracked = git(work, ["ls-files", "--", rel])
     if not tracked and (Path(work) / rel).is_file():
-        content = (Path(work) / rel).read_text(encoding="utf-8", errors="replace")
+        with open(Path(work) / rel, "rb") as handle:
+            content = handle.read(UNTRACKED_READ_LIMIT).decode("utf-8", errors="replace")
         sections.append(("未追蹤的新檔（內容）", content))
     return sections
 
@@ -362,8 +388,12 @@ def cmd_verify_commits(cfg):
         return EXIT_UNIT_FAILED
     missing, checked = [], 0
     for unit in state["queue"]:
-        for sha in state["units"][unit].get("commits") or []:
+        recorded = state["units"][unit].get("commits") or []
+        for sha in recorded:
             checked += 1
+            if not (isinstance(sha, str) and SHA_RE.match(sha)):
+                missing.append((unit, str(sha), "不是合法的 commit id"))
+                continue
             exists = git(work, ["cat-file", "-e", f"{sha}^{{commit}}"]) is not None
             on_branch = exists and git(work, ["merge-base", "--is-ancestor", sha, "HEAD"]) is not None
             if not on_branch:

@@ -14,6 +14,7 @@
   pending-info <id> [--diff 檔]           輸出待核准內容（JSON）；--diff 輸出該檔的安全 diff（不執行 repo 的外部程式）
   ack-control [--yes]                     看工作目錄控制檔的變動；--yes 確認安全後解除鎖存、更新基準
   verify-commits                          換電腦後確認 state 記的 commit 都在工作目錄目前的分支上
+  stop-budget                             印出「一站最長要多久」的秒數（skill 等 stop 的總上限）
 引擎執行中時 approve／reset／reset-calls 會排進 run/commands.jsonl，由引擎下一站開始時套用。
 結束碼見 engine/README.md。執行前記得 PYTHONUTF8=1，並把 engine/ 加進 PYTHONPATH（或在 engine/ 底下執行）。
 """
@@ -65,6 +66,7 @@ def build_parser():
     info.add_argument("--diff", metavar="檔", help="輸出這個檔（工作目錄底下的相對路徑）的安全 diff")
     subs.add_parser("ack-control").add_argument("--yes", action="store_true", help="確認變動安全，解除鎖存並更新基準")
     subs.add_parser("verify-commits")
+    subs.add_parser("stop-budget")
     stop_parser = subs.add_parser("stop")
     stop_parser.add_argument("--now", action="store_true", help="中斷目前這站（下次重做這站），不等它做完")
     stop_parser.add_argument("--wait", type=float, default=300, help="最多等幾秒讓它收尾（預設 300；0＝只送出要求）")
@@ -113,6 +115,7 @@ def dispatch(cfg, args):
         "pending-info": lambda: pending.cmd_pending_info(cfg, args.id, args.diff),
         "ack-control": lambda: round_mod.cmd_ack_control(cfg, args.yes),
         "verify-commits": lambda: pending.cmd_verify_commits(cfg),
+        "stop-budget": lambda: stop.cmd_stop_budget(cfg),
     }
     return commands[args.command]()
 
@@ -169,7 +172,7 @@ def main(argv=None):
         return EXIT_CONFIG
     except ControlLatched as exc:
         print(
-            f"拒絕啟動：工作目錄控制檔被改動（run/CONTROL-CHANGED.json）：{exc}\n"
+            f"拒絕啟動：工作目錄控制檔被改動（run/{integrity.latch_path(cfg).name}）：{exc}\n"
             "查清楚是誰改的、確認安全後執行 ack-control（看差異）再 ack-control --yes",
             file=sys.stderr,
         )

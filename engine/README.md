@@ -71,6 +71,16 @@ skill 會照步驟呼叫這些子指令（核准一定先在前景用選單問�
 - `control-baseline.json` 每台電腦一份（路徑是本機的，`.gitignore`）；第一次在這台跑時自動建立。
   `CONTROL-CHANGED.json` 進版控：換電腦接手也看得到「上次停在控制檔被改」。兩個檔代理都不可寫（gate 保護清單）。
 
+- 假模式（`LH_FAKE_MODEL=1`）與 `LH_WORK_OVERRIDE` 的工作目錄在別處：用自己的基準 `run/.fake-control-baseline.json`
+  與鎖存 `run/.fake-control-changed.json`（不進版控），真跑↔假跑切換不會互相誤鎖存；假模式的工作目錄換了會重建基準。
+  真跑的 `workdir` 被改則照樣鎖存（訊息寫「工作目錄換了」）。
+- 第一次建立基準時會印出 hook 檔與危險 git 設定鍵給人過目；`stop-budget` 印出 stop 最多要等的秒數（skill 用）。
+
+### 已知限制
+
+- 建立基準之前就存在的 `filter.*.clean`（例如 git LFS）在 commit 站 `git add` 時仍會執行：環境已清乾淨（沒有
+  `TELEGRAM_*`、`LH_*`），但不強制關閉 filter，免得破壞 LFS。之後新增或修改 filter 設定屬於危險鍵，會被鎖存。
+
 ## 啟動檢查（B 階段）
 
 `run`／`hours` 開跑前執行一次 `claude --help`，沒有 `--restricted` 就印「請升級 claude」並以結束碼 2 拒絕啟動

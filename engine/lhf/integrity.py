@@ -499,22 +499,31 @@ def describe_control(before, after, changed):
 
 BASELINE_NAME = "control-baseline.json"  # run/ 底下、.gitignore：路徑是本機的，每台電腦各自一份
 LATCH_NAME = "CONTROL-CHANGED.json"  # run/ 底下、進版控：換電腦也看得到「上次停在控制檔被改」
+# 假模式（LH_FAKE_MODEL=1）與 LH_WORK_OVERRIDE 的工作目錄是另一個地方（run/.fake-work 或測試暫存區）：
+# 用自己的基準與鎖存，否則真跑↔假跑每切換一次，基準裡的路徑就全被當成刪除／新增而誤鎖存。
+# 兩個檔名都以 .fake- 開頭，被 .gitignore 的 projects/*/run/.fake-* 排除，不會進版控、不會擋到真跑。
+FAKE_BASELINE_NAME = ".fake-control-baseline.json"
+FAKE_LATCH_NAME = ".fake-control-changed.json"
 
 
 def baseline_path(cfg):
-    return cfg.run_dir / BASELINE_NAME
+    return cfg.run_dir / (FAKE_BASELINE_NAME if cfg.is_override() else BASELINE_NAME)
 
 
 def latch_path(cfg):
-    return cfg.run_dir / LATCH_NAME
+    return cfg.run_dir / (FAKE_LATCH_NAME if cfg.is_override() else LATCH_NAME)
+
+
+def current_work(cfg):
+    return Path(cfg.work_dir()).as_posix().lower()
 
 
 def portable(snap):
     return {path: {"sha": entry["sha"], "kind": entry["kind"]} for path, entry in snap.items()}
 
 
-def load_baseline(cfg):
-    """回傳基準 dict；檔案不存在回 None；讀不懂回 "corrupt"（視同被改動，不默默重建）。"""
+def read_baseline_record(cfg):
+    """回傳基準檔內容 dict；檔案不存在回 None；讀不懂回 "corrupt"（視同被改動，不默默重建）。"""
     try:
         data = json.loads(baseline_path(cfg).read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -524,11 +533,17 @@ def load_baseline(cfg):
     entries = data.get("entries") if isinstance(data, dict) else None
     if not isinstance(entries, dict) or not all(isinstance(e, dict) and "sha" in e for e in entries.values()):
         return "corrupt"
-    return entries
+    return data
+
+
+def load_baseline(cfg):
+    """回傳基準的 entries；不存在回 None；讀不懂回 "corrupt"。"""
+    record = read_baseline_record(cfg)
+    return record["entries"] if isinstance(record, dict) else record
 
 
 def save_baseline(cfg, snap):
-    record = {"saved": now_str(), "entries": portable(snap)}
+    record = {"saved": now_str(), "work": current_work(cfg), "entries": portable(snap)}
     atomic_write_text(baseline_path(cfg), json.dumps(record, ensure_ascii=False, indent=1))
 
 
@@ -538,7 +553,7 @@ def read_latch(cfg):
     except FileNotFoundError:
         return None
     except (OSError, ValueError):
-        return {"events": [{"ts": "?", "source": "?", "text": "CONTROL-CHANGED.json 讀不懂（仍視為鎖存）"}]}
+        return {"events": [{"ts": "?", "source": "?", "text": f"{latch_path(cfg).name} 讀不懂（仍視為鎖存）"}]}
     return data if isinstance(data, dict) else {"events": []}
 
 
@@ -554,22 +569,49 @@ def latch_summary(latch):
     return "；".join(f"{e.get('ts')} {e.get('source')}：{e.get('text')}" for e in events[-3:]) or "（無說明）"
 
 
+def baseline_report(snap):
+    """建立基準時給人過目：hook 檔與危險 git 設定鍵（這些之後就是「已知安全」的起點）。"""
+    hooks = [p for p, e in snap.items() if e["kind"] == "control" and ("hooks" in Path(p).parts or is_hook_file(p))]
+    lines = [f"    （建立工作目錄控制檔基準：{len(snap)} 個檔）"]
+    lines += [f"      hook：{p}" for p in sorted(hooks)[:30]]
+    for path, entry in sorted(snap.items()):
+        if entry["kind"] == "gitconfig":
+            for line in (dangerous_lines(path) or [])[:30]:
+                lines.append(f"      危險 git 設定（{Path(path).name}）：{line}")
+    if len(lines) == 1:
+        lines.append("      沒有 hook 與危險 git 設定鍵")
+    return "\n".join(lines)
+
+
+def is_hook_file(path_text):
+    parts = {part.lower() for part in Path(path_text).parts}
+    name = Path(path_text).name.lower()
+    return bool(parts & {d.lower() for d in HOOK_DIRS}) or name in {f.lower() for f in HOOK_FILES}
+
+
 def check_baseline(cfg, source):
-    """與持久基準比對；沒有基準就建立（第一次在這台電腦跑）。有差異 → 寫鎖存並回傳說明，不更新基準。"""
+    """與持久基準比對；沒有基準就建立（第一次在這台電腦跑，並印出 hook 與危險 git 設定鍵給人過目）。
+    有差異 → 寫鎖存並回傳說明，不更新基準。假模式／override 的工作目錄換了（測試暫存區）就重建，不鎖存；
+    真跑的工作目錄換了（factory.yaml 的 workdir 被改）照樣鎖存，要人 ack-control。"""
     snap = control_snapshot(cfg)
-    base = load_baseline(cfg)
-    if base is None:
+    record = read_baseline_record(cfg)
+    if isinstance(record, dict) and cfg.is_override() and record.get("work") != current_work(cfg):
+        record = None
+    if record is None:
         save_baseline(cfg, snap)
-        print(f"    （建立工作目錄控制檔基準：{len(snap)} 個檔）", flush=True)
+        print(baseline_report(snap), flush=True)
         return ""
-    if base == "corrupt":
-        text = f"控制檔基準 {BASELINE_NAME} 讀不懂（可能被改動）"
+    if record == "corrupt":
+        text = f"控制檔基準 {baseline_path(cfg).name} 讀不懂（可能被改動）"
         write_latch(cfg, source, text, [str(baseline_path(cfg))])
         return text
+    base = record["entries"]
     changed = diff(base, snap)
     if not changed:
         return ""
     text = describe_control(base, snap, changed)
+    if record.get("work") not in (None, current_work(cfg)):
+        text = f"工作目錄換了（基準 {record['work']} → 目前 {current_work(cfg)}）；{text}"
     write_latch(cfg, source, text, changed)
     return text
 

@@ -146,6 +146,23 @@ def force_stop(cfg, owner):
     return EXIT_ENGINE_ERROR
 
 
+def stop_budget(cfg):
+    """一般 stop 最多要等多久：一個 agent 站跑滿（agent_timeout）＋所有指令站的每個指令（steps 展開後）都跑滿。"""
+    limits = cfg.limits
+    command_sec = 0
+    for station in cfg.stations:
+        if station["kind"] != "command":
+            continue
+        count = sum(c["steps"][1] - c["steps"][0] + 1 if c.get("steps") else 1 for c in station["cmds"])
+        command_sec += count * (station.get("timeout") or limits["command_timeout"])
+    return limits["agent_timeout"] + command_sec
+
+
+def cmd_stop_budget(cfg):
+    print(stop_budget(cfg))
+    return EXIT_OK
+
+
 def cmd_stop(cfg, now=False, wait=300.0, force=False):
     """結束碼：0＝已停止（或本來就沒在跑、或 --wait 0 只送出要求）；4＝等完 --wait 還在收尾（沒加 --force，
     不強制；停止要求仍有效，它做完這站就會停）；1＝收尾逾時、已強制結束（--force）；3＝強制結束失敗。

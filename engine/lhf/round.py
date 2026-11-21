@@ -346,7 +346,9 @@ def cmd_run(cfg, unit_arg=None):
 def run_round(cfg, unit_arg):
     changed = integrity.check_baseline(cfg, "run")
     if changed:
-        print(f"!! {changed}；已鎖存（run/CONTROL-CHANGED.json），確認安全後執行 ack-control", file=sys.stderr)
+        print(
+            f"!! {changed}；已鎖存（run/{integrity.latch_path(cfg).name}），確認安全後執行 ack-control", file=sys.stderr
+        )
         return EXIT_CONTROL_CHANGED
     state = load_state(cfg)
     if state is None:
@@ -443,7 +445,9 @@ def print_latch(cfg):
     if latch is None:
         return
     bar = "!" * 60
-    print(f"{bar}\n!! 🔴 工作目錄控制檔被改動（run/CONTROL-CHANGED.json；上次結束碼 6），run／hours 會拒絕啟動")
+    print(
+        f"{bar}\n!! 🔴 工作目錄控制檔被改動（run/{integrity.latch_path(cfg).name}；上次結束碼 6），run／hours 會拒絕啟動"
+    )
     print(f"!! {integrity.latch_summary(latch)}")
     print(f"!! 查清楚是誰改的、確認安全後才執行：ack-control（看差異）→ ack-control --yes\n{bar}")
 

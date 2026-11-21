@@ -171,18 +171,18 @@ def test_latch_blocks_restart_until_ack(tmp_path, monkeypatch):
     run_cli([str(project), "init"], env)
     first = run_cli([str(project), "hours", "--hours", "1", "--gap-seconds", "0"], env)
     assert first.returncode == EXIT_CONTROL_CHANGED, first.stdout[-600:]
-    latch = project / "run" / "CONTROL-CHANGED.json"
+    latch = project / "run" / ".fake-control-changed.json"  # LH_WORK_OVERRIDE＝假模式：用自己的鎖存（不進版控）
     assert latch.exists() and "pre-commit" in latch.read_text(encoding="utf-8")
     for command in (["run"], ["hours", "--hours", "1", "--gap-seconds", "0"]):
         again = run_cli([str(project), *command], env)
         assert again.returncode == EXIT_CONTROL_CHANGED and "ack-control" in again.stderr  # 重開不會把 hook 當新基準
     status = run_cli([str(project), "status"], env)
-    assert "CONTROL-CHANGED" in status.stdout and "結束碼 6" in status.stdout
+    assert ".fake-control-changed.json" in status.stdout and "結束碼 6" in status.stdout
     show = run_cli([str(project), "ack-control"], env)
     assert show.returncode == 0 and "pre-commit" in show.stdout and latch.exists()  # 沒加 --yes 只顯示
     done = run_cli([str(project), "ack-control", "--yes"], env)
     assert done.returncode == 0 and not latch.exists(), done.stdout + done.stderr
-    base = json.loads((project / "run" / "control-baseline.json").read_text(encoding="utf-8"))
+    base = json.loads((project / "run" / ".fake-control-baseline.json").read_text(encoding="utf-8"))
     assert str(work / ".git" / "hooks" / "pre-commit").lower() in base["entries"]
 
 
@@ -447,3 +447,104 @@ def test_launch_hours_is_shell_syntax_valid():
     checked = subprocess.run([bash, "-n", str(LAUNCHER)], stdin=subprocess.DEVNULL, capture_output=True, check=False)
     assert checked.returncode == 0
     assert Path(LAUNCHER).read_text(encoding="utf-8").startswith("#!/bin/bash\nset -euo pipefail\n")
+
+
+# ---------- 複審第二輪：假模式不可誤鎖存真跑 ----------
+
+
+def real_project(tmp_path):
+    work = tmp_path / "realwork"
+    (work / ".git" / "hooks").mkdir(parents=True)
+    (work / ".git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+    (work / ".git" / "hooks" / "pre-commit").write_text("#!/bin/sh\n", encoding="utf-8")
+    return project_at(tmp_path, work), work
+
+
+def test_real_fake_real_does_not_false_latch(tmp_path, monkeypatch, capsys):
+    project, _ = real_project(tmp_path)
+    real = load_config(project)
+    assert integrity.check_baseline(real, "real") == ""  # 真跑建立基準
+    assert "hook：" in capsys.readouterr().out  # 建立時列出 hook 給人過目
+    monkeypatch.setenv("LH_FAKE_MODEL", "1")
+    fake = load_config(project)
+    round_mod.cmd_init(fake, ["a"], False)
+    assert round_mod.cmd_run(fake) == 0  # 假跑：工作目錄是 run/.fake-work
+    assert integrity.latch_path(fake).name == ".fake-control-changed.json" and not integrity.latch_path(fake).exists()
+    monkeypatch.delenv("LH_FAKE_MODEL")
+    real = load_config(project)
+    assert integrity.check_baseline(real, "real") == ""  # 回到真跑：不誤鎖存
+    assert not (project / "run" / "CONTROL-CHANGED.json").exists()
+    monkeypatch.setenv("LH_FAKE_MODEL", "1")
+    assert integrity.check_baseline(load_config(project), "fake") == ""  # 再切回假跑也一樣
+
+
+def test_fake_mode_tamper_latches_only_fake_file(tmp_path, monkeypatch):
+    project, _ = real_project(tmp_path)
+    assert integrity.check_baseline(load_config(project), "real") == ""
+    monkeypatch.setenv("LH_FAKE_MODEL", "1")
+    fake = load_config(project)
+    fake_git = fake.work_dir() / ".git" / "hooks"
+    fake_git.mkdir(parents=True)
+    assert integrity.check_baseline(fake, "fake") == ""
+    (fake_git / "pre-push").write_text("evil", encoding="utf-8")
+    assert integrity.check_baseline(fake, "fake")  # 假模式自己的竄改照樣抓到
+    assert integrity.latch_path(fake).exists() and not (project / "run" / "CONTROL-CHANGED.json").exists()
+    monkeypatch.delenv("LH_FAKE_MODEL")
+    assert integrity.read_latch(load_config(project)) is None  # 真跑不受影響
+    ignored = subprocess.run(
+        ["git", "check-ignore", "-q", "projects/demo/run/.fake-control-changed.json"],
+        cwd=ENGINE_DIR.parent,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        check=False,
+    )
+    assert ignored.returncode == 0  # 假模式鎖存不進版控
+
+
+def test_real_workdir_change_still_latches(tmp_path):
+    project, work = real_project(tmp_path)
+    assert integrity.check_baseline(load_config(project), "real") == ""
+    other = tmp_path / "other"
+    other.mkdir()
+    data = copy.deepcopy(demo_config())
+    data["workdir"] = other.as_posix()
+    write_project(tmp_path, data)
+    text = integrity.check_baseline(load_config(project), "real")
+    assert "工作目錄換了" in text and (project / "run" / "CONTROL-CHANGED.json").exists()
+    del work
+
+
+def test_stop_budget_counts_steps(k143_dir):
+    result = run_cli([str(k143_dir), "stop-budget"])
+    assert result.returncode == 0 and result.stdout.strip() == "2520"  # 900＋9×180
+
+
+def test_invalid_sha_in_state_ignored_and_flagged(tmp_path, fake_mode, monkeypatch, capsys):
+    if not HAS_GIT:
+        pytest.skip("需要 git")
+    work = git_repo(tmp_path / "work")
+    monkeypatch.setenv("LH_WORK_OVERRIDE", str(work))
+    cfg = load_config(write_project(tmp_path, demo_config()))
+    rec = {"commits": ["--output=x", "HEAD~1", git(work, "rev-parse", "HEAD").strip()]}
+    assert pending.valid_shas(rec) == [rec["commits"][2]]
+    assert pending.unit_commit_paths(work, rec) == ["README.md"]
+    round_mod.cmd_init(cfg, ["a"], False)
+    path = cfg.run_dir / "state.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["units"]["a"]["commits"] = ["--output=x"]
+    path.write_text(json.dumps(data), encoding="utf-8")
+    assert pending.cmd_verify_commits(cfg) == 1 and "不是合法的 commit id" in capsys.readouterr().out
+    assert not (work / "x").exists()
+
+
+def test_untracked_diff_reads_limited_bytes(tmp_path, fake_mode, monkeypatch, capsys):
+    if not HAS_GIT:
+        pytest.skip("需要 git")
+    work = git_repo(tmp_path / "work")
+    (work / "big.txt").write_bytes(b"a\n" * (pending.UNTRACKED_READ_LIMIT))
+    monkeypatch.setenv("LH_WORK_OVERRIDE", str(work))
+    cfg = load_config(write_project(tmp_path, demo_config()))
+    round_mod.cmd_init(cfg, ["a"], False)
+    sections = pending.diff_sections(work, {"commits": []}, "big.txt")
+    content = dict(sections)["未追蹤的新檔（內容）"]
+    assert len(content.encode("utf-8")) <= pending.UNTRACKED_READ_LIMIT
