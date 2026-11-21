@@ -848,3 +848,69 @@ def test_pending_info_git_does_not_run_repo_programs(tmp_path, monkeypatch):
     cfg = load_config(approve_project(tmp_path))
     files, _ = pending.changed_files(cfg, {"commits": []})
     assert "a.txt" in files and not probe.exists()
+
+
+# ---------- QA 第一輪觀察（B 階段複驗） ----------
+
+
+def test_queued_approve_applied_when_nothing_runnable(tmp_path, fake_mode, capsys):
+    """hours 結束後人才核准：approve 排進佇列（模擬引擎持鎖中排入），下一次 run 先套用再做該單位。"""
+    cfg = load_config(approve_project(tmp_path))
+    round_mod.cmd_init(cfg, ["a"], False)
+    assert round_mod.cmd_run(cfg) == 0 and load_state(cfg)["units"]["a"]["status"] == "pending_approval"
+    from lhf.state import queue_command
+
+    queue_command(cfg, "approve", "a")
+    round_mod.cmd_status(cfg)
+    assert "佇列有 1 筆未套用指令" in capsys.readouterr().out
+    assert round_mod.cmd_run(cfg) == 0
+    assert load_state(cfg)["units"]["a"]["status"] == "done" and not read_jsonl(commands_path(cfg))
+    round_mod.cmd_status(cfg)
+    assert "未套用指令" not in capsys.readouterr().out
+
+
+def test_hours_applies_queued_approve_before_stopping(tmp_path):
+    project = approve_project(tmp_path)
+    env = {"LH_FAKE_MODEL": "1"}
+    run_cli([str(project), "init", "a"], env)
+    run_cli([str(project), "run"], env)
+    cfg = load_config(project)
+    from lhf.state import queue_command
+
+    queue_command(cfg, "approve", "a")
+    result = run_cli([str(project), "hours", "--hours", "1", "--gap-seconds", "0"], env)
+    assert result.returncode == 0, result.stdout[-800:]
+    assert load_state(cfg)["units"]["a"]["status"] == "done" and not read_jsonl(commands_path(cfg))
+
+
+def test_notify_body_and_alert_files_redact_token(tmp_path, tg_env, monkeypatch):
+    import urllib.parse
+
+    cfg = load_config(notify_project(tmp_path))
+    leaked = f"指令站輸出：token={TOKEN} chat={CHAT} 編碼={urllib.parse.quote(TOKEN, safe='')}"
+    text = notify.build_message(cfg, "ALERT", "a", leaked, leaked)
+    assert TOKEN not in text and CHAT not in text and urllib.parse.quote(TOKEN, safe="") not in text and "***" in text
+    with FakeTelegram() as server:
+        monkeypatch.setenv("LH_TELEGRAM_API_BASE", server.base)
+        add_alert(cfg, "a", "failed", leaked)
+    body = server.requests[0]["body"]["text"]
+    stored = (cfg.run_dir / "alerts.jsonl").read_text(encoding="utf-8")
+    assert TOKEN not in body and CHAT not in body and TOKEN not in stored and CHAT not in stored
+
+
+def test_hours_alert_txt_redacts_token(tmp_path, tg_env, monkeypatch):
+    cfg = load_config(notify_project(tmp_path))
+    monkeypatch.setattr(notify, "send", lambda *a, **k: False)
+    log = tmp_path / "h.log"
+    cfg.run_dir.mkdir(parents=True, exist_ok=True)
+    with log.open("w", encoding="utf-8") as handle:
+        ctx = {"cfg": cfg, "log": handle, "log_path": log, "alert_lines": [f"原因含 {TOKEN} 與 {CHAT}"]}
+        assert hours.finalize_alerts(ctx, 0) == 1
+    text = (cfg.run_dir / "ALERT.txt").read_text(encoding="utf-8")
+    assert TOKEN not in text and CHAT not in text and "***" in text
+
+
+@pytest.mark.skipif(os.name != "nt", reason="taskkill 只在 Windows")
+def test_taskkill_output_decoded_without_mojibake():
+    ok, detail = stop.kill_tree(999999)  # 不存在的 PID：taskkill 以系統代碼頁印錯誤
+    assert not ok and detail and "�" not in detail and "999999" in detail

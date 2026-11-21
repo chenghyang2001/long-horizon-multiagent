@@ -80,7 +80,8 @@ def build_message(cfg, title, unit="-", reason="", summary=""):
         lines.append(f"原因：{shorten(reason, 1500)}")
     if summary:
         lines += ["", str(summary)]
-    return shorten("\n".join(lines), MAX_CHARS)
+    # 正文也遮蔽：原因或摘要可能夾帶指令站輸出，裡面若有 token／chat id 不可原樣送出（先遮蔽再截斷，避免截掉一半漏出）
+    return shorten(redact("\n".join(lines)), MAX_CHARS)
 
 
 def api_base():

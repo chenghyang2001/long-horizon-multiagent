@@ -204,6 +204,25 @@ def apply_queued(rt):
         path.unlink(missing_ok=True)  # 套用結果已存檔，才刪認領檔
 
 
+def apply_pending_commands(cfg, state):
+    """挑單位之前先套用佇列裡的指令（呼叫端必須持有執行鎖）。
+    否則「hours 結束後人才核准」時：approve 排進佇列，但等待核准的單位不算可執行，run／hours 只說
+    「沒有可執行的單位」就結束，指令永遠不會被套用。這時沒有單位在跑，reset 也不必延後。"""
+    if state is None:
+        return state
+    apply_queued({"cfg": cfg, "state": state, "unit": None})
+    return state
+
+
+def unapplied_commands(cfg):
+    """佇列（含認領檔）裡還沒套用的指令筆數；status 顯示用，唯讀。"""
+    state = load_state(cfg) or {}
+    applied = set(state.get("applied_commands") or [])
+    paths = [commands_path(cfg), *sorted(cfg.run_dir.glob("commands.processing-*.jsonl"))]
+    ids = {command_id(r) for path in paths for r in read_jsonl(path)}
+    return len(ids - applied)
+
+
 def apply_one(cfg, state, record):
     command, unit = record.get("command"), record.get("unit")
     if not record.get("ancestry_checked"):
@@ -328,6 +347,7 @@ def run_round(cfg, unit_arg):
     state = load_state(cfg)
     if state is None:
         raise RoundError("沒有 state.json，先執行 init")
+    apply_pending_commands(cfg, state)
     unit = pick_unit(cfg, state, unit_arg)
     if unit is None:
         if not unit_arg:
@@ -437,6 +457,9 @@ def print_status_tail(cfg, state):
     for item in state["history"][-8:]:
         print(f"  {item['ts']} [第 {item['round']} 輪 {item['unit']}] {item['event']}")
     pending, alerts = read_jsonl(pending_approvals_path(cfg)), read_jsonl(alerts_path(cfg))
+    queued = unapplied_commands(cfg)
+    if queued:
+        print(f"佇列有 {queued} 筆未套用指令（run/commands.jsonl；下次 run／hours 開始時套用）")
     if pending:
         print(f"等待核准：{len(pending)} 筆（{', '.join(sorted({p.get('unit', '?') for p in pending}))}）")
     for alert in alerts[-5:]:

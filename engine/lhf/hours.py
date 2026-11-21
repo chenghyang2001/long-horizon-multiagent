@@ -239,6 +239,7 @@ def finalize_alerts(ctx, code):
         return code
     path = run_path(ctx["cfg"], "ALERT.txt")
     lines = [f"時間：{datetime.now():%Y-%m-%d %H:%M:%S}", f"log：{ctx['log_path']}", *ctx["alert_lines"]]
+    lines = [notify.redact(line) for line in lines]  # ALERT.txt 進版控：通知金鑰一律遮蔽
     try:
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     except OSError as exc:
@@ -301,8 +302,19 @@ def control_change(ctx):
     return integrity.describe_control(ctx["control_base"], after, changed) if changed else ""
 
 
+def apply_queue_between_rounds(cfg):
+    """hours 持鎖、這時沒有 run 子程序：先套用佇列（例如人剛核准的單位），再判斷還有沒有可執行的單位。"""
+    from lhf import round as round_mod
+
+    try:
+        round_mod.apply_pending_commands(cfg, load_state(cfg))
+    except RoundError as exc:
+        print(f"（套用佇列指令失敗：{exc}）", file=sys.stderr)
+
+
 def before_round(args, ctx):
     """開新的一輪前的檢查；回傳 (停止原因, 結束碼) 或 None＝可以開跑。"""
+    apply_queue_between_rounds(ctx["cfg"])
     reason = stop_reason(args, ctx)
     if reason == STATE_UNREADABLE:
         ctx["alert_lines"].append(f"{STATE_UNREADABLE}：引擎不會覆寫它，請人工檢查 run/state.json")

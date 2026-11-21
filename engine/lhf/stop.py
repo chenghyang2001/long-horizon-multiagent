@@ -12,6 +12,7 @@ Windows Terminal 另一個視窗（另一個主控台），skill 的 Bash 送不
 """
 
 import json
+import locale
 import os
 import signal
 import subprocess
@@ -93,16 +94,14 @@ def kill_tree(pid):
             result = subprocess.run(
                 ["taskkill", "/T", "/F", "/PID", str(pid)],
                 capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
                 stdin=subprocess.DEVNULL,
                 timeout=60,
                 check=False,
             )
         except (OSError, subprocess.SubprocessError) as exc:
             return False, f"taskkill 無法執行：{exc}"
-        return result.returncode == 0, (result.stdout or result.stderr).strip()[:300]
+        output = decode_console(result.stdout) or decode_console(result.stderr)
+        return result.returncode == 0, output.strip()[:300]
     try:
         os.kill(pid, signal.SIGTERM)
         for _ in range(10):
@@ -114,6 +113,23 @@ def kill_tree(pid):
     except OSError as exc:
         return False, str(exc)
     return True, "已送 SIGKILL"
+
+
+def console_encoding():
+    """taskkill 輸出用系統主控台代碼頁（繁中 Windows＝cp950），用 UTF-8 解會變亂碼。
+    不可用 locale.getpreferredencoding：引擎一律在 PYTHONUTF8=1 下跑，它會回 utf-8。"""
+    if os.name == "nt":
+        return "oem"
+    return locale.getencoding()
+
+
+def decode_console(data):
+    if not data:
+        return ""
+    try:
+        return data.decode(console_encoding(), errors="replace")
+    except LookupError:
+        return data.decode("mbcs" if os.name == "nt" else "utf-8", errors="replace")
 
 
 def force_stop(cfg, owner):

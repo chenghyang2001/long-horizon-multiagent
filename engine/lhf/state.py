@@ -334,7 +334,9 @@ def write_engine_trace(cfg, rt, kind, decision, reason):
 def add_alert(cfg, unit, status, reason):
     """超過退回上限的單位進 ALERT 清單；下一輪不會自動重做，要人看過後 reset。
     factory.yaml 設了 notify.telegram.on 含 alert 時同步發 Telegram（失敗只警告，不影響引擎）。"""
-    append_jsonl(alerts_path(cfg), {"ts": now_str(), "unit": unit, "status": status, "reason": reason})
     from lhf import notify
+
+    reason = notify.redact(reason)  # alerts.jsonl 進版控：通知金鑰一律遮蔽
+    append_jsonl(alerts_path(cfg), {"ts": now_str(), "unit": unit, "status": status, "reason": reason})
 
     notify.send(cfg, "alert", title=f"ALERT（{status}）", unit=unit, reason=reason)
