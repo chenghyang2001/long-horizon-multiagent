@@ -1,5 +1,5 @@
 {
-  "round": 11,
+  "round": 12,
   "queue": [
     "ch04",
     "ch05",
@@ -788,21 +788,70 @@
       "engine_errors": 0
     },
     "ch15": {
-      "status": "pending",
-      "station": "plan",
+      "status": "done",
+      "station": "commit",
       "retries": {},
-      "verdicts": [],
-      "calls": 0,
-      "started": null,
-      "finished": null,
-      "round": null,
-      "once_done": [],
+      "verdicts": [
+        {
+          "ts": "2026-11-21 10:19:57",
+          "station": "judge",
+          "verdict": "PASS",
+          "note": ""
+        },
+        {
+          "ts": "2026-11-21 10:20:53",
+          "station": "review",
+          "verdict": "PASS",
+          "note": ""
+        }
+      ],
+      "calls": 5,
+      "started": "2026-11-21 10:13:24",
+      "finished": "2026-11-21 10:20:53",
+      "round": 12,
+      "once_done": [
+        "now-updater"
+      ],
       "feedback": null,
-      "cost_usd": 0.0,
-      "sessions": [],
+      "cost_usd": 2.701006,
+      "sessions": [
+        {
+          "role": "planner",
+          "session_id": "2b6e21dc-5c8e-4219-8c69-94fa44db5108",
+          "cost_usd": 1.1794918,
+          "turns": 23
+        },
+        {
+          "role": "writer",
+          "session_id": "7edd7324-92e8-4a7a-afbd-5f08b8199e4f",
+          "cost_usd": 0.5933316000000001,
+          "turns": 6
+        },
+        {
+          "role": "now-updater",
+          "session_id": "1931fc2e-2008-4639-be1d-61eaf1d1c177",
+          "cost_usd": 0.08274920000000001,
+          "turns": 5
+        },
+        {
+          "role": "tester",
+          "session_id": "c53ebe23-9a66-4ad7-8397-844d80dc9506",
+          "cost_usd": 0.32928,
+          "turns": 4
+        },
+        {
+          "role": "reviewer",
+          "session_id": "d2713b50-980d-4f1b-a179-fb0b2c267fbd",
+          "cost_usd": 0.516153,
+          "turns": 16
+        }
+      ],
       "approved": [],
       "approval": null,
-      "engine_errors": 0
+      "engine_errors": 0,
+      "commits": [
+        "e1dd8a843aa580cabfb59d2b18bab0e1edba2eee"
+      ]
     },
     "ch16": {
       "status": "pending",
@@ -1462,6 +1511,48 @@
       "round": 11,
       "unit": "ch14",
       "event": "完成並 commit：工廠：新增 K143 ch14 互動演練腳本（第 11 輪）"
+    },
+    {
+      "ts": "2026-11-21 10:13:24",
+      "round": 12,
+      "unit": "ch15",
+      "event": "第 12 輪開始"
+    },
+    {
+      "ts": "2026-11-21 10:17:26",
+      "round": 12,
+      "unit": "ch15",
+      "event": "1 規劃 完成"
+    },
+    {
+      "ts": "2026-11-21 10:19:12",
+      "round": 12,
+      "unit": "ch15",
+      "event": "2 寫腳本＋現況（平行） 完成（writer、now-updater）"
+    },
+    {
+      "ts": "2026-11-21 10:19:34",
+      "round": 12,
+      "unit": "ch15",
+      "event": "3 執行腳本 完成 → ch15-raw.log"
+    },
+    {
+      "ts": "2026-11-21 10:19:57",
+      "round": 12,
+      "unit": "ch15",
+      "event": "4 測試判定 PASS"
+    },
+    {
+      "ts": "2026-11-21 10:20:53",
+      "round": 12,
+      "unit": "ch15",
+      "event": "5 審查 PASS"
+    },
+    {
+      "ts": "2026-11-21 10:20:53",
+      "round": 12,
+      "unit": "ch15",
+      "event": "完成並 commit：工廠：新增 K143 ch15 互動演練腳本（第 12 輪）"
     }
   ],
   "applied_commands": []
