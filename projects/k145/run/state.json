@@ -1,5 +1,5 @@
 {
-  "round": 0,
+  "round": 2,
   "queue": [
     "ch01",
     "ch02",
@@ -14,22 +14,62 @@
   ],
   "units": {
     "ch01": {
-      "status": "pending",
-      "station": "plan",
+      "status": "done",
+      "station": "commit",
       "retries": {},
-      "verdicts": [],
-      "calls": 0,
-      "started": null,
-      "finished": null,
-      "round": null,
+      "verdicts": [
+        {
+          "ts": "2026-11-21 14:12:52",
+          "station": "judge",
+          "verdict": "PASS",
+          "note": ""
+        },
+        {
+          "ts": "2026-11-21 14:14:06",
+          "station": "review",
+          "verdict": "PASS",
+          "note": ""
+        }
+      ],
+      "calls": 4,
+      "started": "2026-11-21 14:09:12",
+      "finished": "2026-11-21 14:14:06",
+      "round": 2,
       "once_done": [],
       "feedback": null,
-      "cost_usd": 0.0,
-      "sessions": [],
+      "cost_usd": 1.818238,
+      "sessions": [
+        {
+          "role": "planner",
+          "session_id": "ead3c1b7-8186-4646-b6c0-bd5493417e6b",
+          "cost_usd": 0.6500016,
+          "turns": 7
+        },
+        {
+          "role": "writer",
+          "session_id": "7cff3086-53a8-475c-9144-1caa9a428c78",
+          "cost_usd": 0.3194398,
+          "turns": 8
+        },
+        {
+          "role": "tester",
+          "session_id": "c5b3d461-03d8-4fc8-934b-e5e32551d603",
+          "cost_usd": 0.33230240000000005,
+          "turns": 4
+        },
+        {
+          "role": "reviewer",
+          "session_id": "ac6682d8-b8ef-41c0-a51d-1298a2b639db",
+          "cost_usd": 0.5164942,
+          "turns": 11
+        }
+      ],
       "approved": [],
       "approval": null,
       "engine_errors": 0,
-      "commits": []
+      "commits": [
+        "ffa1044116f928ed521f048bd6921f6986896baf"
+      ]
     },
     "ch02": {
       "status": "pending",
@@ -200,6 +240,85 @@
       "round": 0,
       "unit": "-",
       "event": "建立 queue：ch01 ch02 ch03 ch04 ch05 ch06 ch07 ch08 ch09 ch10"
+    },
+    {
+      "ts": "2026-11-21 13:59:18",
+      "round": 1,
+      "unit": "ch01",
+      "event": "第 1 輪開始"
+    },
+    {
+      "ts": "2026-11-21 14:04:34",
+      "round": 1,
+      "unit": "ch01",
+      "event": "1 規劃 完成"
+    },
+    {
+      "ts": "2026-11-21 14:06:27",
+      "round": 1,
+      "unit": "ch01",
+      "event": "2 寫腳本＋教練稿 完成"
+    },
+    {
+      "ts": "2026-11-21 14:06:56",
+      "round": 1,
+      "unit": "ch01",
+      "event": "3 執行腳本：指令站執行期間受保護檔被改動（c:\\users\\user\\workspace\\kindle-145-swarm-intelligence-factory\\practice\\.claude\\session-state.md），已還原 0 個引擎檔；本站期間新增的佇列指令與核准不套用；工作目錄控制檔被改動：c:\\users\\user\\workspace\\kindle-145-swarm-intelligence-factory\\practice\\.claude\\session-state.md；引擎停止，不再做下一個單位"
+    },
+    {
+      "ts": "2026-11-21 14:09:03",
+      "round": 1,
+      "unit": "-",
+      "event": "人工確認控制檔變動（0 個檔），更新基準並解除鎖存（ack-control）"
+    },
+    {
+      "ts": "2026-11-21 14:09:03",
+      "round": 1,
+      "unit": "ch01",
+      "event": "手動重設（原狀態 failed → pending，reset）"
+    },
+    {
+      "ts": "2026-11-21 14:09:12",
+      "round": 2,
+      "unit": "ch01",
+      "event": "第 2 輪開始"
+    },
+    {
+      "ts": "2026-11-21 14:11:31",
+      "round": 2,
+      "unit": "ch01",
+      "event": "1 規劃 完成"
+    },
+    {
+      "ts": "2026-11-21 14:11:55",
+      "round": 2,
+      "unit": "ch01",
+      "event": "2 寫腳本＋教練稿 完成"
+    },
+    {
+      "ts": "2026-11-21 14:12:23",
+      "round": 2,
+      "unit": "ch01",
+      "event": "3 執行腳本 完成 → ch01-raw.log"
+    },
+    {
+      "ts": "2026-11-21 14:12:52",
+      "round": 2,
+      "unit": "ch01",
+      "event": "4 測試判定 PASS"
+    },
+    {
+      "ts": "2026-11-21 14:14:06",
+      "round": 2,
+      "unit": "ch01",
+      "event": "5 審查 PASS"
+    },
+    {
+      "ts": "2026-11-21 14:14:06",
+      "round": 2,
+      "unit": "ch01",
+      "event": "完成並 commit：工廠：新增 K145 ch01 互動演練腳本（第 2 輪）"
     }
-  ]
+  ],
+  "applied_commands": []
 }

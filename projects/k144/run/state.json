@@ -1,5 +1,5 @@
 {
-  "round": 0,
+  "round": 1,
   "queue": [
     "ch01",
     "ch02",
@@ -12,22 +12,62 @@
   ],
   "units": {
     "ch01": {
-      "status": "pending",
-      "station": "plan",
+      "status": "done",
+      "station": "commit",
       "retries": {},
-      "verdicts": [],
-      "calls": 0,
-      "started": null,
-      "finished": null,
-      "round": null,
+      "verdicts": [
+        {
+          "ts": "2026-11-21 14:10:18",
+          "station": "judge",
+          "verdict": "PASS",
+          "note": ""
+        },
+        {
+          "ts": "2026-11-21 14:11:10",
+          "station": "review",
+          "verdict": "PASS",
+          "note": ""
+        }
+      ],
+      "calls": 4,
+      "started": "2026-11-21 13:59:15",
+      "finished": "2026-11-21 14:11:10",
+      "round": 1,
       "once_done": [],
       "feedback": null,
-      "cost_usd": 0.0,
-      "sessions": [],
+      "cost_usd": 3.287385,
+      "sessions": [
+        {
+          "role": "planner",
+          "session_id": "cd93f12b-8e3e-4e0e-9aa6-0412b7bebf4d",
+          "cost_usd": 1.7081064,
+          "turns": 10
+        },
+        {
+          "role": "writer",
+          "session_id": "cffd0b76-069f-45bc-89c0-a577879ec228",
+          "cost_usd": 0.5919332,
+          "turns": 8
+        },
+        {
+          "role": "tester",
+          "session_id": "844d297b-7353-43c8-a280-a95448a41339",
+          "cost_usd": 0.49455119999999997,
+          "turns": 5
+        },
+        {
+          "role": "reviewer",
+          "session_id": "8161e4b4-e9fc-40a8-9c9b-5adbc2972b05",
+          "cost_usd": 0.4927952,
+          "turns": 9
+        }
+      ],
       "approved": [],
       "approval": null,
       "engine_errors": 0,
-      "commits": []
+      "commits": [
+        "8c918004f2189baa2cfd6e6ae68f5fd7f43d26c4"
+      ]
     },
     "ch02": {
       "status": "pending",
@@ -162,6 +202,49 @@
       "round": 0,
       "unit": "-",
       "event": "建立 queue：ch01 ch02 ch03 ch04 ch05 ch06 ch07 ch08"
+    },
+    {
+      "ts": "2026-11-21 13:59:15",
+      "round": 1,
+      "unit": "ch01",
+      "event": "第 1 輪開始"
+    },
+    {
+      "ts": "2026-11-21 14:07:21",
+      "round": 1,
+      "unit": "ch01",
+      "event": "1 規劃 完成"
+    },
+    {
+      "ts": "2026-11-21 14:09:01",
+      "round": 1,
+      "unit": "ch01",
+      "event": "2 寫腳本＋教練稿 完成"
+    },
+    {
+      "ts": "2026-11-21 14:09:17",
+      "round": 1,
+      "unit": "ch01",
+      "event": "3 執行腳本 完成 → ch01-raw.log"
+    },
+    {
+      "ts": "2026-11-21 14:10:18",
+      "round": 1,
+      "unit": "ch01",
+      "event": "4 測試判定 PASS"
+    },
+    {
+      "ts": "2026-11-21 14:11:10",
+      "round": 1,
+      "unit": "ch01",
+      "event": "5 審查 PASS"
+    },
+    {
+      "ts": "2026-11-21 14:11:10",
+      "round": 1,
+      "unit": "ch01",
+      "event": "完成並 commit：工廠：新增 K144 ch01 互動演練腳本（第 1 輪）"
     }
-  ]
+  ],
+  "applied_commands": []
 }
