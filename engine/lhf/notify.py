@@ -77,7 +77,7 @@ def build_message(cfg, title, unit="-", reason="", summary=""):
     if unit and unit != "-":
         lines.append(f"單位：{unit}")
     if reason:
-        lines.append(f"原因：{shorten(reason, 1500)}")
+        lines.append(f"原因：{shorten(redact(reason), 1500)}")  # 先遮蔽再截斷，避免切在 token 中間漏出前綴
     if summary:
         lines += ["", str(summary)]
     # 正文也遮蔽：原因或摘要可能夾帶指令站輸出，裡面若有 token／chat id 不可原樣送出（先遮蔽再截斷，避免截掉一半漏出）
@@ -122,7 +122,7 @@ def post_message(text):
         return redact(describe_error(exc))
     if not isinstance(payload, dict) or payload.get("ok") is not True:
         description = payload.get("description") if isinstance(payload, dict) else payload
-        return redact(f"Telegram 回應 ok 不是 true：{shorten(description, 200)}")
+        return redact(f"Telegram 回應 ok 不是 true：{shorten(redact(description), 200)}")
     return None
 
 
