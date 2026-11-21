@@ -30,3 +30,4 @@ projects/*/run/trace-*.jsonl
 projects/*/run/heartbeat.txt
 projects/*/run/commands*.jsonl
 projects/*/run/logs/agent-fail-*
+projects/*/run/control-baseline.json

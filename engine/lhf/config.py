@@ -69,6 +69,8 @@ PROTECTED_PATHS = (
     "{RUN}/commands*.jsonl",
     "{RUN}/.runtime/**",
     "{RUN}/ALERT.txt",
+    "{RUN}/CONTROL-CHANGED.json",
+    "{RUN}/control-baseline.json",
     "{RUN}/heartbeat.txt",
     "{RUN}/logs/**",
     "{ENGINE}/**",
@@ -155,7 +157,7 @@ STATION_KEYS = {
     "agent": {"role", "prompt", "requires", "outputs", "clear", "verdict", "mkdirs", "on_fail"},
     "parallel": {"jobs", "requires", "mkdirs"},
     "command": {"cmds", "cwd", "timeout", "require", "log", "fail_report", "on_fail", "unattended"},
-    "commit": {"paths", "message"},
+    "commit": {"paths", "message", "hooks"},
     "approve": {"message"},
 }
 JOB_KEYS = {"role", "prompt", "outputs", "once"}
@@ -809,6 +811,11 @@ def validate_commit(station, field, roles, prompts):
         bad = text.startswith("/") or re.match(r"^[A-Za-z]:", text) or ".." in text.split("/")
         need(not bad, f"{field}.paths[{index}]", "必須是 workdir 底下的相對路徑，不可含 ..")
     need_str(station, "message", field, required=False)
+    need(
+        isinstance(station.get("hooks", False), bool),
+        f"{field}.hooks",
+        "必須是 true／false（預設 false＝不跑 git hook）",
+    )
 
 
 def validate_approve(station, field, roles, prompts):

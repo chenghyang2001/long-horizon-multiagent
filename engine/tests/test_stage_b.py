@@ -656,7 +656,7 @@ def test_stop_request_stops_standalone_run_between_stations(demo_dir, fake_mode,
 def test_stop_force_kills_after_wait(holder):
     cfg, child = holder
     start = time.monotonic()
-    code = stop.cmd_stop(cfg, wait=1)
+    code = stop.cmd_stop(cfg, wait=1, force=True)
     assert code == 1 and child.wait(timeout=30) is not None
     assert time.monotonic() - start < 40 and not stop.request_path(cfg).exists()
 

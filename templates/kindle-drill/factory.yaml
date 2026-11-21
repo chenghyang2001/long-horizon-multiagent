@@ -115,6 +115,8 @@ stations:
     kind: commit
     chain: finish
     label: 6 commit
+    # hooks: true              # 預設 false：commit 時不跑 git hook（hook 是工作目錄裡誰都能放的程式）；
+    #                          #   設 true 時 .husky／.githooks／.pre-commit-config.yaml／lefthook.yml 等列入控制檔比對
     paths:                     # workdir 底下的相對路徑
       - "practice/interactive/{unit}.sh"
       - "practice/interactive/coach-{unit}.txt"

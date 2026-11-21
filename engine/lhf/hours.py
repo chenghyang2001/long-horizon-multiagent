@@ -227,11 +227,13 @@ def failed_units(state):
 
 
 def finalize_alerts(ctx, code):
-    """結束時：有任何 ALERT 原因或 failed／rejected 單位 → 寫 ALERT.txt 並回傳非 0 結束碼。"""
+    """結束時：只有「本次」新增的 ALERT 原因或新變成 failed／rejected 的單位才寫 ALERT.txt、發 alert，
+    並回傳非 0 結束碼（有新失敗單位＝1；其他原因沿用呼叫端給的碼）。開跑前就已經失敗、還沒人 reset 的單位
+    只列在摘要，不會每次重開都再發一次 ALERT。"""
     state = safe_state(ctx["cfg"])
-    units = failed_units(state)
+    units = [(u, s) for u, s in failed_units(state) if u not in ctx.get("failed_at_start", set())]
     if units:
-        ctx["alert_lines"].append("需要人看過的單位（看完後 reset <id> 才會重做）：")
+        ctx["alert_lines"].append("本次新增、需要人看過的單位（看完後 reset <id> 才會重做）：")
         ctx["alert_lines"] += [f"  {unit}：{status}" for unit, status in units]
     if units and code == EXIT_OK:
         code = EXIT_UNIT_FAILED
@@ -296,10 +298,9 @@ def wait_gap(args, ctx):
 
 
 def control_change(ctx):
-    """與開跑時的基準比對工作目錄控制檔；有變動回傳說明。"""
-    after = integrity.control_snapshot(ctx["cfg"])
-    changed = integrity.diff(ctx["control_base"], after)
-    return integrity.describe_control(ctx["control_base"], after, changed) if changed else ""
+    """與持久基準（run/control-baseline.json）比對工作目錄控制檔；有變動就寫鎖存並回傳說明。
+    基準跨重開保留、只有 ack-control 會更新：被植入的 hook 不會因為重開 hours 就變成新基準。"""
+    return integrity.check_baseline(ctx["cfg"], "hours")
 
 
 def apply_queue_between_rounds(cfg):
@@ -504,7 +505,7 @@ def run_hours(cfg, args, token):
             "log_path": log_path,
             "alert_lines": [],
             "token": token,
-            "control_base": integrity.control_snapshot(cfg),  # 工作目錄控制檔基準：之後每輪開始前比對
+            "failed_at_start": {unit for unit, _ in failed_units(safe_state(cfg))},  # 只對本次新增的失敗發 ALERT
         }
         say(
             ctx, f"連續執行開始：{cfg.name}｜{args.hours} 小時、max-rounds={args.max_rounds}、gap={args.gap_seconds} 秒"

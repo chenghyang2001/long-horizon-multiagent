@@ -15,7 +15,10 @@ python -m lhf ../projects/k143 hours --hours 5 --gap-seconds 30
 python -m lhf ../projects/k143 pending-info ch14       # 核准前看待核准內容（JSON）
 python -m lhf ../projects/k143 approve ch14            # 核准等待中的單位
 python -m lhf ../projects/k143 reset ch14              # 看過 ALERT 後重來
-python -m lhf ../projects/k143 stop                    # 請執行中的 run／hours 做完這站後停下
+python -m lhf ../projects/k143 stop --wait 0           # 請執行中的 run／hours 做完這站後停下（只送要求）
+python -m lhf ../projects/k143 ack-control             # 結束碼 6 之後：看控制檔的變動（加 --yes 才解除）
+python -m lhf ../projects/k143 verify-commits          # 換電腦後確認 state 記的 commit 都在工作目錄
+bash launch-hours.sh ../projects/k143 5                # 跑 hours 並在結束後保留視窗（skill 用 wt 開它）
 python -m pytest tests -q                              # 假模型模式回歸測試
 ```
 
@@ -30,8 +33,10 @@ skill 會照步驟呼叫這些子指令（核准一定先在前景用選單問�
 | `status`／`dry-run [--unit X]` | 唯讀 |
 | `init [ids...] [--force]` | 建立 queue（沒給 id＝全部單位） |
 | `approve <id>`／`reset <id>`／`reset-calls <id>` | 引擎執行中會排進 `run/commands.jsonl`，下一站開始時套用 |
-| `pending-info <id>` | 唯讀，輸出 JSON：單位狀態、停在哪站、站型或指令核准、待核准紀錄、本單位改到的檔裡「推上去會被執行」的檔 |
-| `stop [--now] [--wait 秒]` | 請執行中的 run／hours 收尾停下（見下方「停止」）；預設等 300 秒，逾時才強制結束 |
+| `pending-info <id> [--diff 檔]` | 唯讀，輸出 JSON：單位狀態、停在哪站、站型或指令核准、待核准紀錄、`workdir_changes`（工作目錄目前的改動＋上游之後的 commit，不一定都是本單位改的）、`unit_commits`／`unit_commit_files`（本單位 commit 站記下的 commit 與其中的檔）、`executable_files`（其中推上去會被執行的檔，含來源）。所有字串的控制字元與雙向控制字元都跳脫。`--diff 檔` 輸出該檔的安全 diff（不執行 repo 設定的 fsmonitor／hook／外部 diff／textconv／filter，控制字元跳脫，最多 400 行） |
+| `stop [--now] [--wait 秒] [--force／--no-force]` | 請執行中的 run／hours 收尾停下（見下方「停止」）；預設等 300 秒、**不強制** |
+| `ack-control [--yes]` | 結束碼 6 之後：印出鎖存紀錄與控制檔相對於基準的變動；加 `--yes` 才更新基準、解除鎖存。人工指令（三層檢查），引擎在跑時拒絕（4） |
+| `verify-commits` | 每個單位 state 記的 commit 都必須存在且在工作目錄 HEAD 的祖先上；缺任何一個結束碼 1 |
 | `migrate --from <舊 state.json> [--force]` | 第一代 capstone 進度轉移 |
 
 `--allow-project-permissions`：工作目錄的 `.claude/settings*.json` 有 `permissions.allow`、
@@ -42,16 +47,29 @@ skill 會照步驟呼叫這些子指令（核准一定先在前景用選單問�
 | 碼 | run | hours |
 | --- | --- | --- |
 | 0 | 單位完成，或停在等待核准 | 正常停止，且沒有 failed／rejected 單位 |
-| 1 | 單位被判 failed／rejected | 有單位被判 failed／rejected（照樣做完其他單位），寫 ALERT.txt |
+| 1 | 單位被判 failed／rejected | 本次有單位新變成 failed／rejected（照樣做完其他單位），寫 ALERT.txt；開跑前就失敗、還沒 reset 的單位只列在摘要，不重發 ALERT |
 | 2 | 設定錯誤，拒絕啟動（含 claude 不支援 `--restricted`） | 同左；或引擎錯誤連發（連續 `max_engine_errors`＋1 輪）、state.json 損毀；寫 ALERT.txt |
 | 3 | 引擎錯誤（模型呼叫失敗、gate 沒生效…），停在原站下次重試 | — |
 | 4 | 已有另一個 run／hours 在跑 | 同左 |
 | 5 | approve／reset／reset-calls／init／migrate／stop 從引擎底下的程序發出，拒絕 | — |
-| 6 | 指令站期間工作目錄控制檔被改動（單位標 failed） | 工作目錄控制檔被改動（指令站期間，或輪與輪之間與開跑基準不同）：停止、寫 ALERT.txt，不做下一個單位 |
+| 6 | 工作目錄控制檔被改動（指令站期間，或與持久基準不同），或 `run/CONTROL-CHANGED.json` 鎖存還在：拒絕／停止 | 同左：停止、寫 ALERT.txt，不做下一個單位；之後重開一律拒絕，直到 `ack-control --yes` |
 | 130 | Ctrl+C 或 stop（進度已存） | Ctrl+C 或 stop |
 
 其他子指令：`pending-info` 0＝正在等核准、1＝沒有在等核准（照樣輸出 JSON）；
-`stop` 0＝已停止（或本來就沒在跑、或 `--wait 0` 只送出要求）、1＝收尾逾時已強制結束、3＝強制結束失敗、5＝從引擎底下發出被拒。
+`stop` 0＝已停止（或本來就沒在跑、或 `--wait 0` 只送出要求）、4＝等完 `--wait` 還在收尾（沒加 `--force`，停止要求仍有效）、
+1＝`--force` 逾時後已強制結束、3＝強制結束失敗、5＝從引擎底下發出被拒；`ack-control` 0＝完成或只顯示、4＝引擎在跑、5＝被拒；
+`verify-commits` 0＝全部在、1＝有缺。
+
+## 結束碼 6 之後怎麼恢復
+
+1. `status` 最上面會有 🔴「工作目錄控制檔被改動（CONTROL-CHANGED.json）」；`cat run/ALERT.txt` 看是哪一輪、哪些檔。
+2. `ack-control`（不加 `--yes`）：列出每個變動的檔（新增／刪除／修改、危險 git 設定鍵）。
+3. **查清楚是誰改的**：worktree 的共用 config 與 hooks 跟主 repo 共用，可能是人在主 repo 操作（例如裝了 husky）；
+   不是人做的就當成被植入，先刪掉／還原那些檔，不要 ack。
+4. 確認安全後 `ack-control --yes`：把目前的控制檔存成新基準（`run/control-baseline.json`）、刪除鎖存，才能重開 run／hours。
+- 基準跨重開保留，只有 `ack-control --yes` 會更新：直接刪 `CONTROL-CHANGED.json` 沒有用，下一次 run 會比對出同樣的差異再鎖存。
+- `control-baseline.json` 每台電腦一份（路徑是本機的，`.gitignore`）；第一次在這台跑時自動建立。
+  `CONTROL-CHANGED.json` 進版控：換電腦接手也看得到「上次停在控制檔被改」。兩個檔代理都不可寫（gate 保護清單）。
 
 ## 啟動檢查（B 階段）
 
@@ -70,8 +88,11 @@ hours 跑在另一個 Windows Terminal 視窗（另一個主控台），從別�
 | --- | --- |
 | `stop` | run 每站開始前看到就停；hours 本輪結束或輪間等待時看到就停。目前這站一定做完、存檔 |
 | `stop --now` | hours 對**自己的**子程序送 CTRL_BREAK（同一個主控台，送得到）：目前這站中斷、下次重做這站 |
-| `--wait 秒`（預設 300） | 等持鎖程序結束；逾時才 `taskkill /T /F` 整棵樹（Job Object 帶走所有子孫），殘留的鎖與標記下次啟動自動清除 |
-| `--wait 0` | 只送出要求就回來（之後用 `status` 看） |
+| `--wait 秒`（預設 300） | 等持鎖程序結束；等不到就回結束碼 4（**預設不強制**：agent 站一站可能十幾分鐘，強制會丟掉整站進度與額度） |
+| `--force` | 等完 `--wait` 還沒停才 `taskkill /T /F` 持鎖程序整棵樹（Job Object 帶走所有子孫；不用 `/IM`，不會殺到別的程序），殘留的鎖與標記下次啟動自動清除 |
+| `--wait 0` | 只送出要求就回來（之後用 `status` 輪詢；skill 用這個） |
+
+單獨執行的 `run`（不是 hours 底下）沒有人替它送 CTRL_BREAK：`--now` 與一般 `stop` 一樣，都是做完目前這站才停。
 
 hours 以 130 結束、摘要的停止原因是「收到停止要求（stop）」。停止要求檔不列入指令站前後比對（人可能在指令站執行中下 stop）。
 
@@ -107,8 +128,14 @@ notify:
   commit／push、破壞 §9 角色分離）；`--restricted` 下全域與專案 CLAUDE.md 都不載入，`--settings` 的 gate hook
   照樣觸發、deny 生效，`--tools` 指名的 Bash／WebFetch 仍可用，Max 訂閱登入正常。不可改用 `--bare`
   （只吃 API key）或 `--safe-mode`（停用 hook）。
+- **commit 站預設不跑 git hook（B 階段）**：commit 站的 git 一律帶 `-c core.hooksPath=<空裝置> -c core.fsmonitor=false`；
+  factory.yaml 的 commit 站設 `hooks: true` 才放行，此時 `.husky/`、`.githooks/`、`.lefthook/`、`.pre-commit-config.yaml`、
+  `lefthook.yml` 與 `core.hooksPath` 指的資料夾都列入控制檔比對（被改就停）。引擎跑的所有 git（commit 站、控制檔比對、
+  pending-info）都用清過的環境：沒有 `TELEGRAM_*`、`LH_*`（含 `LH_LOCK_TOKEN`）、`LHF_*`、API key，只保留
+  `LHF_IN_ENGINE=1`——hook 若想執行 `lhf approve` 會被第一層擋下，這個旗標本身不給任何權限。
 - **控制檔被改就停（B 階段）**：指令站前後比對到工作目錄控制檔變動 → run 結束碼 6；hours 開跑時拍一份控制檔基準、
   每輪開始前比對，有變動或 run 回 6 都停止並寫 ALERT.txt，不再做下一個單位（下一個 commit 站會執行被植入的 hook）。
+  基準是持久的 `run/control-baseline.json`（不是每次開跑重拍），變動會寫鎖存 `run/CONTROL-CHANGED.json`，見「結束碼 6 之後怎麼恢復」。
   git 設定（`.git/config`、worktree 的共用 config、`config.worktree`，含 include 的檔）**只比對危險鍵**：`core.hooksPath`、
   `core.fsmonitor`、`core.sshCommand`、`core.editor`／`pager`、`*.helper`、`include*`／`includeIf*`、`filter.*`、`alias.*`、
   `credential.*`、`http.*`、`url.*`、`remote.*.url`、`diff.*.textconv`、`merge.*.driver` 等（清單見 `integrity.DANGEROUS_KEY_RES`），
@@ -168,7 +195,9 @@ notify:
 
 | 項目 | A 階段 | B 階段 |
 | --- | --- | --- |
-| 指令站期間工作目錄控制檔被改 | 單位 failed，run 結束碼 1，hours 繼續下一個單位 | run 結束碼 6，hours 停止＋ALERT |
+| 指令站期間工作目錄控制檔被改 | 單位 failed，run 結束碼 1，hours 繼續下一個單位 | run 結束碼 6，hours 停止＋ALERT＋鎖存；重開拒絕直到 ack-control |
+| commit 站的 git hook | 會跑，git 繼承完整環境 | 預設不跑（`hooks: true` 才跑）；git 用清過的環境 |
+| `stop` | — | 預設不強制，`--force` 才強制 |
 | git config 比對 | 整檔雜湊 | 只比對危險鍵（含 include 的檔）；解析失敗才整檔 |
 | `notify` 欄位 | 只檢查是物件，啟動時警告「尚未實作」 | 驗證 `{telegram: {on: [...]}}`，舊的 `{on_alert: ...}` 會被拒絕（結束碼 2） |
 | run／hours 啟動 | 不檢查 claude 版本 | `claude --help` 沒有 `--restricted` 就拒絕（結束碼 2） |

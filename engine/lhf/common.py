@@ -21,8 +21,43 @@ EXIT_INTERRUPTED = 130
 # 只為了讓摘要好讀的概略匯率；走 Max 訂閱不實扣，這是「等值成本」
 USD_TO_TWD = 32.0
 
+# 巢狀 session 變數會讓子 claude 以為自己在別的 session 裡；以下幾個是正常設定要保留
+KEEP_CLAUDE_ENV = {"CLAUDE_CODE_GIT_BASH_PATH", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR"}
+# 通知金鑰只給引擎自己（notify.py）用；代理、指令站、git hook 拿到就能把 bot 拿去亂發或外流。
+# 整個 TELEGRAM_ 開頭都拿掉（使用者電腦上還有 TELEGRAM_CHAT_ID_<名字> 之類的變數）
+NOTIFY_SECRET_PREFIX = "TELEGRAM_"
+# 引擎內部變數（LH_LOCK_TOKEN 拿到就能沿用 hours 的鎖改 state.json；LH_* 讓 gate 判斷角色）一律不外流
+ENGINE_ENV_PREFIXES = ("LH_", "LHF_")
+
 REPLACE_RETRIES = 5
 REPLACE_BASE_WAIT = 0.05
+
+
+def strip_nested_env(env):
+    """就地移除：API key（成本鐵律一律走 Max 訂閱）、TELEGRAM_*、巢狀 Claude session 變數。"""
+    env.pop("ANTHROPIC_API_KEY", None)
+    for key in [k for k in env if k.upper().startswith(NOTIFY_SECRET_PREFIX)]:
+        env.pop(key)
+    for key in list(env):
+        if key in KEEP_CLAUDE_ENV:
+            continue
+        if key in ("CLAUDECODE", "CLAUDE_PID") or key.startswith("CLAUDE_CODE_"):
+            env.pop(key)
+
+
+def scrubbed_env(in_engine=True):
+    """引擎啟動「不需要任何引擎資訊」的子程序（git、claude --help）用的環境：
+    strip_nested_env＋移除全部 LH_*／LHF_*。in_engine=True 時再設回 LHF_IN_ENGINE=1：
+    git hook（或 hook 叫起來的程式）若想執行 lhf approve／reset，CLI 第一層檢查就會擋下；
+    這個旗標本身不給任何權限，只會讓人工指令被拒，所以保留比拿掉安全。"""
+    env = os.environ.copy()
+    strip_nested_env(env)
+    for key in [k for k in env if k.upper().startswith(ENGINE_ENV_PREFIXES)]:
+        env.pop(key)
+    env["GIT_TERMINAL_PROMPT"] = "0"  # 無人值守：git 要帳密就直接失敗，不要卡住等輸入
+    if in_engine:
+        env[IN_ENGINE_ENV] = "1"
+    return env
 
 
 def now_str():

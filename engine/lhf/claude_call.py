@@ -19,15 +19,22 @@ import time
 from pathlib import Path
 
 from lhf import fake, integrity, proc
-from lhf.common import IN_ENGINE_ENV, atomic_write_text, now_str, stamp
+from lhf.common import (  # noqa: F401 — KEEP_CLAUDE_ENV／NOTIFY_SECRET_PREFIX 保留給既有呼叫端
+    IN_ENGINE_ENV,
+    KEEP_CLAUDE_ENV,
+    NOTIFY_SECRET_PREFIX,
+    atomic_write_text,
+    now_str,
+    scrubbed_env,
+    stamp,
+    strip_nested_env,
+)
 from lhf.config import ENGINE_DIR, is_fake, posix, render, render_path
 from lhf.errors import ConfigError, RoundError
 from lhf.state import file_offset, read_jsonl_since, run_path, trace_path
 
 # 只有「找不到指令」才重試：9009＝cmd.exe 找不到、127＝sh 找不到；其他失敗重試只會白燒額度
 LAUNCH_FAIL_CODES = {9009, 127}
-# 巢狀 session 變數會讓子 claude 以為自己在別的 session 裡；以下幾個是正常設定要保留
-KEEP_CLAUDE_ENV = {"CLAUDE_CODE_GIT_BASH_PATH", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR"}
 SHIM_TARGET_RE = re.compile(r'"%~?dp0%?\\?([^"%]+?\.(?:js|exe|cjs|mjs))"', re.IGNORECASE)
 HOOK_TIMEOUT_SEC = 30
 ALLOW_PROJECT_PERMISSIONS_ENV = "LH_ALLOW_PROJECT_PERMISSIONS"
@@ -89,22 +96,6 @@ def to_msys(path):
     text = posix(path)
     match = re.match(r"^([A-Za-z]):/(.*)$", text)
     return f"/{match.group(1).lower()}/{match.group(2)}" if match else text
-
-
-# 通知金鑰只給引擎自己（notify.py）用；代理與指令站（撰寫者的腳本）拿到就能把 bot 拿去亂發或外流。
-# 整個 TELEGRAM_ 開頭都拿掉（使用者電腦上還有 TELEGRAM_CHAT_ID_<名字> 之類的變數）
-NOTIFY_SECRET_PREFIX = "TELEGRAM_"
-
-
-def strip_nested_env(env):
-    env.pop("ANTHROPIC_API_KEY", None)  # 成本鐵律：一律走 Max 訂閱
-    for key in [k for k in env if k.upper().startswith(NOTIFY_SECRET_PREFIX)]:
-        env.pop(key)
-    for key in list(env):
-        if key in KEEP_CLAUDE_ENV:
-            continue
-        if key in ("CLAUDECODE", "CLAUDE_PID") or key.startswith("CLAUDE_CODE_"):
-            env.pop(key)
 
 
 def base_env(cfg, rt):
@@ -427,12 +418,7 @@ def cached_ok(cfg, identity):
 
 
 def help_env():
-    env = os.environ.copy()
-    strip_nested_env(env)
-    for key in [k for k in env if k.startswith("LH_")]:
-        env.pop(key)
-    env[IN_ENGINE_ENV] = "1"
-    return env
+    return scrubbed_env()
 
 
 def read_help(prefix):

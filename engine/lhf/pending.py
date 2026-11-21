@@ -12,7 +12,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from lhf.common import EXIT_OK, EXIT_UNIT_FAILED
+from lhf.common import EXIT_OK, EXIT_UNIT_FAILED, scrubbed_env
 from lhf.config import is_fake, posix
 from lhf.errors import RoundError
 from lhf.state import PENDING_APPROVAL, load_state, pending_approvals_path, read_jsonl
@@ -105,6 +105,8 @@ SAFE_GIT_ARGS = (
     "core.pager=cat",
     "-c",
     "core.untrackedCache=false",
+    "-c",
+    "submodule.recurse=false",
 )
 
 
@@ -113,6 +115,7 @@ def raw_git(work, args, prefix=SAFE_GIT_ARGS):
         result = subprocess.run(
             ["git", *prefix, "-C", str(work), *args],
             capture_output=True,
+            env=scrubbed_env(),
             stdin=subprocess.DEVNULL,
             timeout=GIT_TIMEOUT_SEC,
             check=False,
@@ -144,7 +147,10 @@ def split_z(text):
 
 def status_paths(work):
     """git status --porcelain -z：一般是「XY 路徑」；改名／複製是「XY 新路徑」接著一筆「舊路徑」。"""
-    items, paths = split_z(git(work, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])), []
+    items, paths = (
+        split_z(git(work, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=all"])),
+        [],
+    )
     index = 0
     while index < len(items):
         entry = items[index]
@@ -155,41 +161,79 @@ def status_paths(work):
     return paths
 
 
-def committed_paths(work, rec, notes):
+def upstream_paths(work, notes):
+    """有上游分支：上游之後的 commit 改到的檔（推上去時會一起上去的全部）。"""
     upstream = git(work, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
-    if upstream:
-        return split_z(
-            git(work, ["diff", "--no-ext-diff", "--no-textconv", "--name-only", "-z", f"{upstream.strip()}...HEAD"])
+    if not upstream:
+        notes.append(
+            "沒有上游分支：只能列出工作目錄目前的改動與本單位 commit 站記下的 commit（推上去時整個分支都會上去）"
         )
-    notes.append("沒有上游分支：改列本單位 commit 站記下的 commit（推上去時整個分支的其他 commit 也會一起上去）")
+        return []
+    return split_z(
+        git(work, ["diff", "--no-ext-diff", "--no-textconv", "--name-only", "-z", f"{upstream.strip()}...HEAD"])
+    )
+
+
+def unit_commit_paths(work, rec):
+    """本單位 commit 站記下的 commit（state 的 commits）改到的檔。"""
     paths = []
     for sha in rec.get("commits") or []:
         paths += split_z(git(work, ["show", "--no-ext-diff", "--no-textconv", "--name-only", "--format=", "-z", sha]))
-    return paths
+    return sorted(dict.fromkeys(paths))
+
+
+def repo_ready(cfg):
+    """回傳 (工作目錄, 說明)；說明非空＝不能列改動（假模式或不是 git repo）。"""
+    work = cfg.work_dir()
+    if is_fake() and not os.environ.get("LH_WORK_OVERRIDE"):
+        return work, "假模型模式：工作目錄是暫存區，不列出改動"
+    if git(work, ["rev-parse", "--git-dir"]) is None:
+        return work, f"{posix(work)} 不是 git repo（或假模型模式），無法列出改動"
+    return work, ""
+
+
+def collect_changes(cfg, rec):
+    """回傳 (工作目錄目前的改動＋上游之後的 commit, 本單位 commit 的檔, 說明)。"""
+    work, problem = repo_ready(cfg)
+    if problem:
+        return [], [], [problem]
+    notes = []
+    workdir = sorted(dict.fromkeys(status_paths(work) + upstream_paths(work, notes)))
+    return workdir, unit_commit_paths(work, rec), notes
 
 
 def changed_files(cfg, rec):
-    """回傳 (改到的檔, 說明)；工作目錄不是 git repo（或假模式）時回空清單並說明。"""
-    work = cfg.work_dir()
-    notes = []
-    if is_fake() and not os.environ.get("LH_WORK_OVERRIDE"):
-        return [], ["假模型模式：工作目錄是暫存區，不列出改動"]
-    if git(work, ["rev-parse", "--git-dir"]) is None:
-        return [], [f"{posix(work)} 不是 git repo（或假模型模式），無法列出改動"]
-    paths = status_paths(work) + committed_paths(work, rec, notes)
-    return sorted(dict.fromkeys(paths)), notes
+    """兩類改動的聯集（舊介面，測試與診斷用）。"""
+    workdir, unit_files, notes = collect_changes(cfg, rec)
+    return sorted(set(workdir) | set(unit_files)), notes
 
 
-def pending_info(cfg, unit):
+def executable_entries(workdir, unit_files):
+    sources = {}
+    for path in workdir:
+        sources.setdefault(path, []).append("workdir")
+    for path in unit_files:
+        sources.setdefault(path, []).append("unit_commit")
+    return [
+        {"path": path, "reason": executable_reason(path), "source": "＋".join(where)}
+        for path, where in sorted(sources.items())
+        if executable_reason(path)
+    ]
+
+
+def load_rec(cfg, unit):
     state = load_state(cfg)
     if state is None or unit not in state["units"]:
         raise RoundError(f"{unit} 不在 state.json")
-    rec = state["units"][unit]
+    return state["units"][unit]
+
+
+def pending_info(cfg, unit):
+    rec = load_rec(cfg, unit)
     station_id = (rec.get("approval") or {}).get("station") or rec["station"]
     station = cfg.station(station_id)
     requests = [r for r in read_jsonl(pending_approvals_path(cfg)) if r.get("unit") == unit]
-    files, notes = changed_files(cfg, rec)
-    executable = [{"path": p, "reason": executable_reason(p)} for p in files if executable_reason(p)]
+    workdir, unit_files, notes = collect_changes(cfg, rec)
     kinds = sorted({r.get("kind") or "command" for r in requests})
     return {
         "project": cfg.name,
@@ -202,14 +246,129 @@ def pending_info(cfg, unit):
         "requests": [{k: r.get(k) for k in ("ts", "kind", "role", "station", "round", "command")} for r in requests],
         "workdir": posix(cfg.work_dir()),
         "branch": cfg.data.get("branch"),
-        "changed_files": files,
-        "executable_files": executable,
+        "workdir_changes": workdir,
+        "workdir_changes_note": "工作目錄目前的改動（未 commit、未追蹤）＋上游分支之後的 commit；不一定都是本單位改的",
+        "unit_commits": rec.get("commits") or [],
+        "unit_commit_files": unit_files,
+        "executable_files": executable_entries(workdir, unit_files),
         "notes": notes,
         "approve_command": f"python -m lhf {posix(Path(cfg.project_dir))} approve {unit}",
     }
 
 
-def cmd_pending_info(cfg, unit):
-    info = pending_info(cfg, unit)
+def cmd_pending_info(cfg, unit, diff_path=None):
+    if diff_path is not None:
+        return cmd_safe_diff(cfg, unit, diff_path)
+    info = sanitize(pending_info(cfg, unit))
     print(json.dumps(info, ensure_ascii=False, indent=2))
     return EXIT_OK if info["pending"] else EXIT_UNIT_FAILED
+
+
+# ---------- pending-info --diff：引擎輸出安全的 diff ----------
+
+DIFF_MAX_LINES = 400
+# 終端機控制字元與雙向文字控制字元：撰寫者可以用它們讓顯示的內容與實際內容不同（例如把指令藏起來）
+BIDI_CHARS = {chr(c) for c in (*range(0x202A, 0x202F), *range(0x2066, 0x206A), 0x200E, 0x200F, 0x061C)}
+
+
+def escape_display(text):
+    """控制字元（換行、tab 除外）與雙向控制字元一律轉成可見的 \\xNN／\\uNNNN。"""
+    out = []
+    for ch in text:
+        if ch in "\n\t":
+            out.append(ch)
+        elif ord(ch) < 0x20 or ord(ch) == 0x7F or 0x80 <= ord(ch) < 0xA0:
+            out.append(f"\\x{ord(ch):02x}")
+        elif ch in BIDI_CHARS:
+            out.append(f"\\u{ord(ch):04x}")
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def sanitize(value):
+    """JSON 本身會跳脫 < 0x20 的控制字元，但不會跳脫雙向控制字元與 C1 控制字元：字串一律過 escape_display。"""
+    if isinstance(value, str):
+        return escape_display(value)
+    if isinstance(value, list):
+        return [sanitize(item) for item in value]
+    if isinstance(value, dict):
+        return {key: sanitize(item) for key, item in value.items()}
+    return value
+
+
+def safe_rel_path(work, rel):
+    """只接受工作目錄底下的相對路徑（不可絕對路徑、不可含 ..）。"""
+    text = str(rel).replace("\\", "/")
+    if not text or text.startswith("/") or (len(text) > 1 and text[1] == ":") or ".." in text.split("/"):
+        raise RoundError(f"--diff 只接受工作目錄底下的相對路徑：{rel!r}")
+    target = (Path(work) / text).resolve()
+    if not str(target).lower().startswith(str(Path(work).resolve()).lower()):
+        raise RoundError(f"--diff 的路徑跑出工作目錄：{rel!r}")
+    return text
+
+
+def diff_sections(work, rec, rel):
+    flags = ["--no-ext-diff", "--no-textconv", "--no-color"]
+    sections = [("未 commit 的改動（相對於 HEAD）", git(work, ["diff", *flags, "HEAD", "--", rel]) or "")]
+    upstream = git(work, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
+    if upstream:
+        sections.append(
+            (
+                f"上游 {upstream.strip()} 之後的 commit",
+                git(work, ["diff", *flags, f"{upstream.strip()}...HEAD", "--", rel]) or "",
+            )
+        )
+    for sha in rec.get("commits") or []:
+        sections.append(
+            (f"本單位 commit {sha[:12]}", git(work, ["show", *flags, "--format=%h %s", sha, "--", rel]) or "")
+        )
+    tracked = git(work, ["ls-files", "--", rel])
+    if not tracked and (Path(work) / rel).is_file():
+        content = (Path(work) / rel).read_text(encoding="utf-8", errors="replace")
+        sections.append(("未追蹤的新檔（內容）", content))
+    return sections
+
+
+def cmd_safe_diff(cfg, unit, rel):
+    """不執行 repo 設定裡任何程式的 diff，輸出前跳脫控制字元，最多 DIFF_MAX_LINES 行。"""
+    rec = load_rec(cfg, unit)
+    work, problem = repo_ready(cfg)
+    if problem:
+        print(problem)
+        return EXIT_UNIT_FAILED
+    rel = safe_rel_path(work, rel)
+    lines = []
+    for title, body in diff_sections(work, rec, rel):
+        lines += [f"===== {title}：{rel} =====", *(body.splitlines() or ["（無）"])]
+    shown = lines[:DIFF_MAX_LINES]
+    print(escape_display("\n".join(shown)))
+    if len(lines) > DIFF_MAX_LINES:
+        print(f"…（共 {len(lines)} 行，只顯示前 {DIFF_MAX_LINES} 行）")
+    return EXIT_OK
+
+
+# ---------- verify-commits：換電腦後確認 state 記的 commit 都在工作目錄 ----------
+
+
+def cmd_verify_commits(cfg):
+    """每個單位 state 裡記的 commit 都必須存在、且是工作目錄 HEAD 的祖先；少任何一個就結束碼 1。"""
+    state = load_state(cfg)
+    if state is None:
+        raise RoundError("沒有 state.json，先執行 init")
+    work, problem = repo_ready(cfg)
+    if problem:
+        print(problem)
+        return EXIT_UNIT_FAILED
+    missing, checked = [], 0
+    for unit in state["queue"]:
+        for sha in state["units"][unit].get("commits") or []:
+            checked += 1
+            exists = git(work, ["cat-file", "-e", f"{sha}^{{commit}}"]) is not None
+            on_branch = exists and git(work, ["merge-base", "--is-ancestor", sha, "HEAD"]) is not None
+            if not on_branch:
+                missing.append((unit, sha, "不存在" if not exists else "不在目前分支上"))
+    for unit, sha, why in missing:
+        print(f"  ✗ {unit} {sha[:12]}：{why}")
+    print(f"檢查 {checked} 個 commit，缺 {len(missing)} 個（工作目錄 {posix(work)}）")
+    return EXIT_UNIT_FAILED if missing else EXIT_OK

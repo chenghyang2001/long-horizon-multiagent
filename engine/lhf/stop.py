@@ -19,7 +19,7 @@ import subprocess
 import time
 
 from lhf import integrity, lock
-from lhf.common import EXIT_ENGINE_ERROR, EXIT_OK, EXIT_UNIT_FAILED, atomic_write_text, now_str
+from lhf.common import EXIT_ENGINE_ERROR, EXIT_LOCKED, EXIT_OK, EXIT_UNIT_FAILED, atomic_write_text, now_str
 
 MODES = ("station", "now")
 POLL_SEC = 1.0
@@ -146,8 +146,10 @@ def force_stop(cfg, owner):
     return EXIT_ENGINE_ERROR
 
 
-def cmd_stop(cfg, now=False, wait=300.0):
-    """結束碼：0＝已停止（或本來就沒在跑、或 --wait 0 只送出要求）；1＝收尾逾時、已強制結束；3＝強制結束失敗。"""
+def cmd_stop(cfg, now=False, wait=300.0, force=False):
+    """結束碼：0＝已停止（或本來就沒在跑、或 --wait 0 只送出要求）；4＝等完 --wait 還在收尾（沒加 --force，
+    不強制；停止要求仍有效，它做完這站就會停）；1＝收尾逾時、已強制結束（--force）；3＝強制結束失敗。
+    預設不強制：agent 站一站可能十幾分鐘，強制結束會丟掉整站的進度與已花的額度。"""
     owner = lock.read_lock(cfg)
     if not lock.lock_alive(owner):
         clear_request(cfg, "清除殘留的停止要求")
@@ -162,4 +164,7 @@ def cmd_stop(cfg, now=False, wait=300.0):
     if wait_released(cfg, owner, wait):
         print("已停止（進度已存，下次執行會從停下的那一站接著做）", flush=True)
         return EXIT_OK
+    if not force:
+        print(f"等了 {wait:.0f} 秒還在收尾（停止要求仍有效）；要強制結束請加 --force", flush=True)
+        return EXIT_LOCKED
     return force_stop(cfg, owner)

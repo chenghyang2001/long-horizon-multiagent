@@ -27,7 +27,7 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-from lhf.common import atomic_write_text, now_str
+from lhf.common import atomic_write_text, now_str, scrubbed_env
 from lhf.config import CONTROL_FILENAMES, CONTROL_SEGMENTS
 from lhf.errors import RoundError
 
@@ -238,7 +238,7 @@ def files_under(root):
 def engine_files(cfg):
     run = cfg.run_dir
     paths = list(run.glob("commands*.jsonl")) + files_under(run / "approvals") + files_under(cfg.agents_dir)
-    paths += [run / "state.json", cfg.project_dir / "factory.yaml"]
+    paths += [run / "state.json", cfg.project_dir / "factory.yaml", latch_path(cfg), baseline_path(cfg)]
     paths += [
         p for p in files_under(run / ".runtime") if p.name not in RUNTIME_VOLATILE and not p.name.endswith(".tmp")
     ]
@@ -290,13 +290,58 @@ def claude_md_files(base):
     return found
 
 
+# commit 站設 hooks: true 時，這些檔就是 commit 時會被執行的程式（或它的設定），一律列入控制檔比對
+HOOK_FILES = (".pre-commit-config.yaml", "lefthook.yml", "lefthook.yaml", ".lefthook.yml", ".lefthook.yaml")
+HOOK_DIRS = (".husky", ".githooks", ".lefthook")
+
+
+def hooks_enabled(cfg):
+    return any(s["kind"] == "commit" and s.get("hooks") is True for s in cfg.stations)
+
+
+def configured_hooks_dir(root):
+    """repo 設定的 core.hooksPath（相對路徑以工作目錄為準）；只讀設定、不執行任何東西。"""
+    git = find_git()
+    if git is None:
+        return None
+    try:
+        result = subprocess.run(
+            [git, "-C", str(root), "config", "--get", "core.hooksPath"],
+            capture_output=True,
+            env=scrubbed_env(),
+            stdin=subprocess.DEVNULL,
+            timeout=GIT_TIMEOUT_SEC,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    value = result.stdout.decode("utf-8", "replace").strip() if result.returncode == 0 else ""
+    if not value:
+        return None
+    target = Path(os.path.expanduser(value))
+    return target if target.is_absolute() else Path(root) / target
+
+
+def hook_targets(root):
+    targets = [(Path(root) / name, "control") for name in HOOK_FILES]
+    for name in HOOK_DIRS:
+        targets += [(p, "control") for p in files_under(Path(root) / name)]
+    hooks_dir = configured_hooks_dir(root)
+    if hooks_dir is not None:
+        targets += [(p, "control") for p in files_under(hooks_dir)]
+    return targets
+
+
 def work_targets(cfg):
     targets = []
+    with_hooks = hooks_enabled(cfg)
     for base in dict.fromkeys(cfg.control_bases()):
         root = Path(base)
         targets += git_targets(root)
         targets += [(root / name, "control") for name in sorted(CONTROL_SEGMENTS - {".git", ".claude"})]
         targets += [(p, "control") for p in files_under(root / ".claude") + claude_md_files(root)]
+        if with_hooks:
+            targets += hook_targets(root)
     return targets
 
 
@@ -317,6 +362,7 @@ def git_config_entries(path):
         result = subprocess.run(
             [git, "config", "--file", str(path), "--no-includes", "--list", "-z"],
             capture_output=True,
+            env=scrubbed_env(),
             stdin=subprocess.DEVNULL,
             timeout=GIT_TIMEOUT_SEC,
             check=False,
@@ -446,6 +492,85 @@ def describe_control(before, after, changed):
     text = f"工作目錄控制檔被改動：{'、'.join(labels)}{more}"
     if any(kind_of(p, before, after) == "gitconfig" or "hooks" in Path(p).parts for p in items):
         text += "（worktree 的 git 設定與 hooks 跟主 repo 共用，可能是人在主 repo 操作；確認安全後才重新啟動）"
+    return text
+
+
+# ---------- 控制檔基準（跨重開）與「控制檔被改動」鎖存 ----------
+
+BASELINE_NAME = "control-baseline.json"  # run/ 底下、.gitignore：路徑是本機的，每台電腦各自一份
+LATCH_NAME = "CONTROL-CHANGED.json"  # run/ 底下、進版控：換電腦也看得到「上次停在控制檔被改」
+
+
+def baseline_path(cfg):
+    return cfg.run_dir / BASELINE_NAME
+
+
+def latch_path(cfg):
+    return cfg.run_dir / LATCH_NAME
+
+
+def portable(snap):
+    return {path: {"sha": entry["sha"], "kind": entry["kind"]} for path, entry in snap.items()}
+
+
+def load_baseline(cfg):
+    """回傳基準 dict；檔案不存在回 None；讀不懂回 "corrupt"（視同被改動，不默默重建）。"""
+    try:
+        data = json.loads(baseline_path(cfg).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError):
+        return "corrupt"
+    entries = data.get("entries") if isinstance(data, dict) else None
+    if not isinstance(entries, dict) or not all(isinstance(e, dict) and "sha" in e for e in entries.values()):
+        return "corrupt"
+    return entries
+
+
+def save_baseline(cfg, snap):
+    record = {"saved": now_str(), "entries": portable(snap)}
+    atomic_write_text(baseline_path(cfg), json.dumps(record, ensure_ascii=False, indent=1))
+
+
+def read_latch(cfg):
+    try:
+        data = json.loads(latch_path(cfg).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError):
+        return {"events": [{"ts": "?", "source": "?", "text": "CONTROL-CHANGED.json 讀不懂（仍視為鎖存）"}]}
+    return data if isinstance(data, dict) else {"events": []}
+
+
+def write_latch(cfg, source, text, paths):
+    """鎖存「控制檔被改動」：之後 run／hours 一律以結束碼 6 拒絕啟動，直到人執行 ack-control --yes。"""
+    latch = read_latch(cfg) or {"events": []}
+    latch.setdefault("events", []).append({"ts": now_str(), "source": source, "text": text, "paths": list(paths)[:50]})
+    atomic_write_text(latch_path(cfg), json.dumps(latch, ensure_ascii=False, indent=1))
+
+
+def latch_summary(latch):
+    events = (latch or {}).get("events") or []
+    return "；".join(f"{e.get('ts')} {e.get('source')}：{e.get('text')}" for e in events[-3:]) or "（無說明）"
+
+
+def check_baseline(cfg, source):
+    """與持久基準比對；沒有基準就建立（第一次在這台電腦跑）。有差異 → 寫鎖存並回傳說明，不更新基準。"""
+    snap = control_snapshot(cfg)
+    base = load_baseline(cfg)
+    if base is None:
+        save_baseline(cfg, snap)
+        print(f"    （建立工作目錄控制檔基準：{len(snap)} 個檔）", flush=True)
+        return ""
+    if base == "corrupt":
+        text = f"控制檔基準 {BASELINE_NAME} 讀不懂（可能被改動）"
+        write_latch(cfg, source, text, [str(baseline_path(cfg))])
+        return text
+    changed = diff(base, snap)
+    if not changed:
+        return ""
+    text = describe_control(base, snap, changed)
+    write_latch(cfg, source, text, changed)
     return text
 
 

@@ -344,6 +344,10 @@ def cmd_run(cfg, unit_arg=None):
 
 
 def run_round(cfg, unit_arg):
+    changed = integrity.check_baseline(cfg, "run")
+    if changed:
+        print(f"!! {changed}；已鎖存（run/CONTROL-CHANGED.json），確認安全後執行 ack-control", file=sys.stderr)
+        return EXIT_CONTROL_CHANGED
     state = load_state(cfg)
     if state is None:
         raise RoundError("沒有 state.json，先執行 init")
@@ -434,7 +438,18 @@ def cmd_init(cfg, unit_ids, force):
     return EXIT_OK
 
 
+def print_latch(cfg):
+    latch = integrity.read_latch(cfg)
+    if latch is None:
+        return
+    bar = "!" * 60
+    print(f"{bar}\n!! 🔴 工作目錄控制檔被改動（run/CONTROL-CHANGED.json；上次結束碼 6），run／hours 會拒絕啟動")
+    print(f"!! {integrity.latch_summary(latch)}")
+    print(f"!! 查清楚是誰改的、確認安全後才執行：ack-control（看差異）→ ack-control --yes\n{bar}")
+
+
 def cmd_status(cfg):
+    print_latch(cfg)
     state = load_state(cfg)
     if state is None:
         print("沒有 state.json（尚未 init）")
@@ -470,6 +485,45 @@ def print_status_tail(cfg, state):
     heartbeat_path = run_path(cfg, "heartbeat.txt")
     if heartbeat_path.exists():
         print("heartbeat：" + heartbeat_path.read_text(encoding="utf-8").strip())
+
+
+def describe_entry(path_text, base, snap):
+    if path_text not in (base or {}):
+        return "新增"
+    if path_text not in snap:
+        return "刪除"
+    return "修改（危險 git 設定鍵）" if snap[path_text]["kind"] == "gitconfig" else "修改"
+
+
+def cmd_ack_control(cfg, yes):
+    """人看過控制檔的變動後解除鎖存：不加 --yes 只印差異；加 --yes 才把目前的控制檔存成新基準、刪除鎖存。
+    這是人工指令（三層檢查），而且要拿執行鎖：引擎在跑時不可改基準。"""
+    guard_human(cfg, "ack-control")
+    with lock.holding(cfg, "ack-control"):
+        latch, base = integrity.read_latch(cfg), integrity.load_baseline(cfg)
+        snap = integrity.control_snapshot(cfg)
+        base_entries = base if isinstance(base, dict) else {}
+        changed = integrity.diff(base_entries, snap)
+        if latch:
+            print(f"鎖存紀錄：{integrity.latch_summary(latch)}")
+        if base == "corrupt":
+            print("控制檔基準讀不懂（可能被改動），以下每個檔都會列為新增")
+        print(f"與基準相比變動 {len(changed)} 個檔：")
+        for path_text in changed[:200]:
+            print(f"  {describe_entry(path_text, base_entries, snap)}：{path_text}")
+        if latch is None and not changed and base is not None:
+            print("沒有需要確認的變動")
+            return EXIT_OK
+        if not yes:
+            print("確認這些變動都是安全的（例如是你自己裝的 hook）之後，再執行 ack-control --yes")
+            return EXIT_OK
+        integrity.save_baseline(cfg, snap)
+        integrity.latch_path(cfg).unlink(missing_ok=True)
+        state = load_state(cfg)
+        if state is not None:
+            log_event(cfg, state, "-", f"人工確認控制檔變動（{len(changed)} 個檔），更新基準並解除鎖存（ack-control）")
+        print("已更新控制檔基準並解除鎖存；可以重新啟動 run／hours")
+    return EXIT_OK
 
 
 def cmd_reset_calls(cfg, unit):

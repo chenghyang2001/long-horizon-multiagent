@@ -6,6 +6,7 @@ rt（runtime）＝{"cfg", "state", "unit", "round"}。每站做完都經 advance
 退回時帶給撰寫者的意見＝失敗報告＋客觀驗證的 raw log（＋審查退回時再附最近一次 QA 報告）。
 """
 
+import os
 import re
 import shlex
 import shutil
@@ -15,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from lhf import claude_call, integrity, proc
-from lhf.common import now_str
+from lhf.common import now_str, scrubbed_env
 from lhf.config import DEFAULT_FEEDBACK, is_fake, is_wsl_bash, posix, render, render_path
 from lhf.errors import CallBudgetExceeded, RoundError
 from lhf.state import (
@@ -469,6 +470,7 @@ def tampered(rt, station, changed, before, after):
     control = integrity.describe_control(before, after, changed)
     if control:
         rt["control_changed"] = control
+        integrity.write_latch(rt["cfg"], f"指令站 {station['id']}（{rt['unit']}）", control, changed)
         text += f"；{control}；引擎停止，不再做下一個單位"
     finish(rt, "failed", text, alert=True)
     return "FAIL（受保護檔被改動）"
@@ -515,14 +517,28 @@ def auto_fail_station(rt, station, mapping, auto_fail, log_path):
 # ---------- commit／approve ----------
 
 
-def git(work, args):
+def git_prefix(station=None):
+    """commit 站的 git 預設停用 hook（core.hooksPath 指向空裝置）與 fsmonitor：hook 是工作目錄裡任何人都能
+    放的程式，跑在引擎底下等於讓撰寫者繞過 gate。factory.yaml 的 commit 站設 hooks: true 才放行，
+    此時 hook 相關檔（.husky／.githooks／.pre-commit-config.yaml／lefthook.yml、core.hooksPath 指的資料夾）
+    會列入控制檔比對，被改動就停止（見 integrity.hook_targets）。"""
+    prefix = ["-c", "core.fsmonitor=false"]
+    if not (station and station.get("hooks") is True):
+        prefix += ["-c", f"core.hooksPath={os.devnull}"]
+    return prefix
+
+
+def git(work, args, prefix=()):
+    """環境用 scrubbed_env：git 與它叫起來的 hook 拿不到 TELEGRAM_*、LH_LOCK_TOKEN 等任何引擎資訊。"""
     try:
         return subprocess.run(
-            ["git", "-C", str(work), *args],
+            ["git", *prefix, "-C", str(work), *args],
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
+            env=scrubbed_env(),
+            stdin=subprocess.DEVNULL,
             check=False,
         )
     except OSError as exc:
@@ -547,15 +563,15 @@ def station_commit(rt, station):
         return "略過"
     work, mapping = cfg.work_dir(), mapping_of(rt)
     check_branch(cfg, work)
-    files = render_list(station["paths"], mapping)
-    added = git(work, ["add", "--", *files])
+    files, prefix = render_list(station["paths"], mapping), git_prefix(station)
+    added = git(work, ["add", "--", *files], prefix)
     if added.returncode != 0:
         raise RoundError(f"git add 失敗：{added.stderr.strip()[:300]}")
-    if git(work, ["diff", "--cached", "--quiet", "--", *files]).returncode == 0:
+    if git(work, ["diff", "--cached", "--quiet", "--", *files], prefix).returncode == 0:
         advance(rt, station, "完成（檔案沒有變更，略過 commit）")
         return "無變更"
     message = render(station.get("message") or "工廠：{unit}（第 {round} 輪）", mapping)
-    committed = git(work, ["commit", "-m", message, "--", *files])
+    committed = git(work, ["commit", "-m", message, "--", *files], prefix)
     if committed.returncode != 0:
         raise RoundError(f"git commit 失敗：{(committed.stderr or committed.stdout).strip()[:300]}")
     head = git(work, ["rev-parse", "HEAD"])

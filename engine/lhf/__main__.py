@@ -10,8 +10,10 @@
   approve <id>                            核准等待中的單位，下次 run 重跑該站
   migrate --from <舊 state.json> [--force]  把第一代主控程式的進度轉成本引擎格式
   hours --hours N [--max-rounds M] [--gap-seconds S] [--allow-project-permissions]   連續跑多輪
-  stop [--now] [--wait 秒]                 請執行中的 run／hours 收尾停止（--now：中斷目前這站）；逾時才強制結束
-  pending-info <id>                       輸出待核准內容（JSON）：站、指令、本單位改到「推上去會被執行」的檔
+  stop [--now] [--wait 秒] [--force]       請執行中的 run／hours 收尾停止（--now：中斷目前這站）；加 --force 逾時才強制結束
+  pending-info <id> [--diff 檔]           輸出待核准內容（JSON）；--diff 輸出該檔的安全 diff（不執行 repo 的外部程式）
+  ack-control [--yes]                     看工作目錄控制檔的變動；--yes 確認安全後解除鎖存、更新基準
+  verify-commits                          換電腦後確認 state 記的 commit 都在工作目錄目前的分支上
 引擎執行中時 approve／reset／reset-calls 會排進 run/commands.jsonl，由引擎下一站開始時套用。
 結束碼見 engine/README.md。執行前記得 PYTHONUTF8=1，並把 engine/ 加進 PYTHONPATH（或在 engine/ 底下執行）。
 """
@@ -21,10 +23,10 @@ import os
 import signal
 import sys
 
-from lhf import claude_call, hours, legacy, pending, stop
+from lhf import claude_call, hours, integrity, legacy, pending, stop
 from lhf import round as round_mod
 from lhf.claude_call import ALLOW_PROJECT_PERMISSIONS_ENV
-from lhf.common import EXIT_CONFIG, EXIT_LOCKED, EXIT_REFUSED
+from lhf.common import EXIT_CONFIG, EXIT_CONTROL_CHANGED, EXIT_LOCKED, EXIT_REFUSED
 from lhf.config import ID_RE, load_config
 from lhf.errors import ConfigError, EngineDescendant, RoundError
 from lhf.lock import LockBusy
@@ -56,11 +58,19 @@ def build_parser():
     init = subs.add_parser("init")
     init.add_argument("ids", nargs="*", type=unit_id)
     init.add_argument("--force", action="store_true", help="重設已有單位的狀態")
-    for name in ("reset-calls", "reset", "approve", "pending-info"):
+    for name in ("reset-calls", "reset", "approve"):
         subs.add_parser(name).add_argument("id", type=unit_id)
+    info = subs.add_parser("pending-info")
+    info.add_argument("id", type=unit_id)
+    info.add_argument("--diff", metavar="檔", help="輸出這個檔（工作目錄底下的相對路徑）的安全 diff")
+    subs.add_parser("ack-control").add_argument("--yes", action="store_true", help="確認變動安全，解除鎖存並更新基準")
+    subs.add_parser("verify-commits")
     stop_parser = subs.add_parser("stop")
     stop_parser.add_argument("--now", action="store_true", help="中斷目前這站（下次重做這站），不等它做完")
     stop_parser.add_argument("--wait", type=float, default=300, help="最多等幾秒讓它收尾（預設 300；0＝只送出要求）")
+    force = stop_parser.add_mutually_exclusive_group()
+    force.add_argument("--force", dest="force", action="store_true", help="等完 --wait 還沒停就強制結束整棵程序樹")
+    force.add_argument("--no-force", dest="force", action="store_false", help="不強制（預設）")
     migrate = subs.add_parser("migrate")
     migrate.add_argument("--from", dest="source", required=True, help="舊版 state.json 路徑")
     migrate.add_argument("--force", action="store_true", help="覆蓋已存在的 run/state.json")
@@ -100,7 +110,9 @@ def dispatch(cfg, args):
         "migrate": lambda: legacy.cmd_migrate(cfg, args.source, args.force),
         "hours": lambda: hours.cmd_hours(cfg, args),
         "stop": lambda: guarded_stop(cfg, args),
-        "pending-info": lambda: pending.cmd_pending_info(cfg, args.id),
+        "pending-info": lambda: pending.cmd_pending_info(cfg, args.id, args.diff),
+        "ack-control": lambda: round_mod.cmd_ack_control(cfg, args.yes),
+        "verify-commits": lambda: pending.cmd_verify_commits(cfg),
     }
     return commands[args.command]()
 
@@ -108,13 +120,21 @@ def dispatch(cfg, args):
 def guarded_stop(cfg, args):
     """stop 也是人工指令：引擎底下的程序（撰寫者腳本、代理）不可叫停工廠。"""
     round_mod.guard_human(cfg, "stop")
-    return stop.cmd_stop(cfg, now=args.now, wait=args.wait)
+    return stop.cmd_stop(cfg, now=args.now, wait=args.wait, force=args.force)
+
+
+class ControlLatched(Exception):
+    """run/CONTROL-CHANGED.json 存在：上次停在「工作目錄控制檔被改動」，要人 ack-control 後才能再跑。"""
 
 
 def preflight(cfg, args):
-    """run／hours 開跑前：claude 必須支援 --restricted（假模型模式略過；結果有快取）。"""
-    if args.command in ("run", "hours"):
-        claude_call.ensure_restricted_support(cfg)
+    """run／hours 開跑前：控制檔鎖存（結束碼 6）→ claude 必須支援 --restricted（假模型模式略過；有快取）。"""
+    if args.command not in ("run", "hours"):
+        return
+    latch = integrity.read_latch(cfg)
+    if latch is not None:
+        raise ControlLatched(integrity.latch_summary(latch))
+    claude_call.ensure_restricted_support(cfg)
 
 
 def install_break_handler():
@@ -147,6 +167,13 @@ def main(argv=None):
     except ConfigError as exc:
         print(f"設定錯誤（拒絕啟動）：{exc}", file=sys.stderr)
         return EXIT_CONFIG
+    except ControlLatched as exc:
+        print(
+            f"拒絕啟動：工作目錄控制檔被改動（run/CONTROL-CHANGED.json）：{exc}\n"
+            "查清楚是誰改的、確認安全後執行 ack-control（看差異）再 ack-control --yes",
+            file=sys.stderr,
+        )
+        return EXIT_CONTROL_CHANGED
     for warning in cfg.startup_warnings():
         print(f"⚠ 警告：{warning}", file=sys.stderr)
     return run_dispatch(cfg, args)
