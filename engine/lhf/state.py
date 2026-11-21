@@ -195,7 +195,7 @@ def read_jsonl(path):
 
 def parse_jsonl(text):
     records = []
-    for line in text.splitlines():
+    for line in text.split("\n"):  # 不用 splitlines：它會在 U+2028 等字元斷行，讓含這些字元的紀錄整筆消失
         try:
             record = json.loads(line)
         except json.JSONDecodeError:
