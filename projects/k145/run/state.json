@@ -1,5 +1,5 @@
 {
-  "round": 11,
+  "round": 12,
   "queue": [
     "ch01",
     "ch02",
@@ -530,92 +530,62 @@
       ]
     },
     "ch09": {
-      "status": "rejected",
-      "station": "review",
-      "retries": {
-        "review_retries": 1
-      },
+      "status": "done",
+      "station": "commit",
+      "retries": {},
       "verdicts": [
         {
-          "ts": "2026-11-21 16:37:37",
+          "ts": "2026-11-22 08:02:27",
           "station": "judge",
           "verdict": "PASS",
           "note": ""
         },
         {
-          "ts": "2026-11-21 16:38:48",
+          "ts": "2026-11-22 08:03:10",
           "station": "review",
-          "verdict": "REJECT",
-          "note": ""
-        },
-        {
-          "ts": "2026-11-21 16:40:17",
-          "station": "judge",
           "verdict": "PASS",
-          "note": ""
-        },
-        {
-          "ts": "2026-11-21 16:41:22",
-          "station": "review",
-          "verdict": "REJECT",
           "note": ""
         }
       ],
-      "calls": 7,
-      "started": "2026-11-21 16:23:39",
-      "finished": "2026-11-21 16:41:22",
-      "round": 10,
+      "calls": 4,
+      "started": "2026-11-22 07:47:15",
+      "finished": "2026-11-22 08:03:10",
+      "round": 12,
       "once_done": [],
       "feedback": null,
-      "cost_usd": 5.327001,
+      "cost_usd": 4.353614,
       "sessions": [
         {
           "role": "planner",
-          "session_id": "6f1fc4f0-2792-47cc-9803-97685dec824d",
-          "cost_usd": 2.0876256,
-          "turns": 7
+          "session_id": "f644a056-6a0b-4297-a832-9d09c4c45195",
+          "cost_usd": 2.3979148,
+          "turns": 9
         },
         {
           "role": "writer",
-          "session_id": "c9149446-e21e-4cfa-bdcc-96f36855aebc",
-          "cost_usd": 0.84035,
-          "turns": 6
+          "session_id": "1118beba-27f7-4c08-803e-3d1888f4059c",
+          "cost_usd": 0.9913254000000001,
+          "turns": 12
         },
         {
           "role": "tester",
-          "session_id": "ede03b1b-da04-40cc-8d9b-8326f430449b",
-          "cost_usd": 0.5287378,
-          "turns": 4
+          "session_id": "6ce6cb0a-6332-4d29-8efb-e48088c8d357",
+          "cost_usd": 0.5879212,
+          "turns": 5
         },
         {
           "role": "reviewer",
-          "session_id": "daa94eb3-e5f6-4eca-953c-38426f8e1d46",
-          "cost_usd": 0.6008126,
+          "session_id": "5986d3b1-9551-43f8-99ff-9f2a5c3f641f",
+          "cost_usd": 0.37645320000000004,
           "turns": 8
-        },
-        {
-          "role": "writer",
-          "session_id": "2ed5d4bb-9806-46a7-b02a-80e354bb80d0",
-          "cost_usd": 0.17650580000000002,
-          "turns": 9
-        },
-        {
-          "role": "tester",
-          "session_id": "b03b4f6f-37e8-4f12-9652-40c4e3733ae4",
-          "cost_usd": 0.5054114,
-          "turns": 4
-        },
-        {
-          "role": "reviewer",
-          "session_id": "51436238-32ac-4526-a55a-dbea60c5d208",
-          "cost_usd": 0.5875568,
-          "turns": 9
         }
       ],
       "approved": [],
       "approval": null,
       "engine_errors": 0,
-      "commits": []
+      "commits": [
+        "2a38df52f9ba7102fb34854bf9a71fec7c460666"
+      ]
     },
     "ch10": {
       "status": "done",
@@ -1198,6 +1168,54 @@
       "round": 11,
       "unit": "ch10",
       "event": "完成並 commit：工廠：新增 K145 ch10 互動演練腳本（第 11 輪）"
+    },
+    {
+      "ts": "2026-11-22 07:47:12",
+      "round": 11,
+      "unit": "ch09",
+      "event": "手動重設（原狀態 rejected → pending，reset）"
+    },
+    {
+      "ts": "2026-11-22 07:47:15",
+      "round": 12,
+      "unit": "ch09",
+      "event": "第 12 輪開始"
+    },
+    {
+      "ts": "2026-11-22 07:58:33",
+      "round": 12,
+      "unit": "ch09",
+      "event": "1 規劃 完成"
+    },
+    {
+      "ts": "2026-11-22 08:01:18",
+      "round": 12,
+      "unit": "ch09",
+      "event": "2 寫腳本＋教練稿 完成"
+    },
+    {
+      "ts": "2026-11-22 08:01:44",
+      "round": 12,
+      "unit": "ch09",
+      "event": "3 執行腳本 完成 → ch09-raw.log"
+    },
+    {
+      "ts": "2026-11-22 08:02:27",
+      "round": 12,
+      "unit": "ch09",
+      "event": "4 測試判定 PASS"
+    },
+    {
+      "ts": "2026-11-22 08:03:10",
+      "round": 12,
+      "unit": "ch09",
+      "event": "5 審查 PASS"
+    },
+    {
+      "ts": "2026-11-22 08:03:10",
+      "round": 12,
+      "unit": "ch09",
+      "event": "完成並 commit：工廠：新增 K145 ch09 互動演練腳本（第 12 輪）"
     }
   ],
   "applied_commands": []
