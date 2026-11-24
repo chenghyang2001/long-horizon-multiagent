@@ -31,3 +31,11 @@
 
 ## 規則
 - 繁體中文。不要執行任何指令、不要執行 git、不要修改三支共用工具與官方原始碼。
+
+## 已知勘誤（prompts/ 沒有做過事實查核，一律以官方原始碼為準）
+講義 `lessons/` 已對照原始碼修正過；`prompts/<chapter>.md` 可能還帶著舊的錯。兩者或與原始碼不一致時，以官方原始碼為準，並在內容裡照原始碼寫。已知的幾點：
+- 第 3 章（agents）：伺服器端工具其實在 `tool_dict` 裡，被呼叫時會丟例外並轉成 `is_error` 結果；不是「不能放進 tool_dict」。
+- 第 5 章（browser-use-demo）：ref 失效時，系統提示要求退回「截圖加座標」，不是由模型重新 read_page。
+- 第 9 章（managed-agents）：關掉網路工具的代理是三個（daily-brief、sentry-autofix、sentry），不是兩個；啟動步驟含 npm install、pip install、編輯 .env；「5% 的行互相覆蓋」應為「寫到最忙實體頁的行約 5% 遺失內容」。
+- 第 10 章（autonomous-coding）：「腳本只能是 ./init.sh」與「passes 只能由 false 改 true」都有例外，要對照 `security.py` 與提示詞原文照實寫。
+其他章節也可能有類似的錯：講到檔名、函式、常數、數字、行為時，先用 Read 對照原始碼。
