@@ -1,0 +1,907 @@
+# ch01 執行紀錄　2026-11-25 03:11:52
+
+===== bash -n 語法檢查 =====
+指令：bash -n ch01.sh
+exit code：0　耗時：0.2 秒
+----- 輸出 -----
+
+
+===== 第 1 步 =====
+指令：bash ch01.sh 1
+exit code：0　耗時：0.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K902 第 1 章｜客服代理：檢索＋結構化 JSON　第 1 / 8 步
+  主角登場：關鍵檔案表＋一次請求的流程表
+╚══════════════════════════════════════════════════════╝
+
+💡 這個專案要 Next.js、Amazon Bedrock 與 AWS 憑證，不能實跑；我們只讀原始碼。一次請求只有一次檢索、一次模型呼叫，沒有工具迴圈、也沒有串流。
+
+▶ 要執行的程式：
+  │ import os, sys
+  │ sys.path.insert(0, os.getcwd())
+  │ from qs_source import root, read_text, grep
+  │ 
+  │ P = "customer-support-agent/"
+  │ Q = chr(34)
+  │ print("官方 repo 資料夾：", root().name, "（只讀；不安裝依賴、不執行啟動指令）")
+  │ print()
+  │ files = [
+  │     ("app/api/chat/route.ts", "後端主流程：檢索、組系統提示、呼叫 Claude、解析與驗證 JSON"),
+  │     ("app/lib/utils.ts", "retrieveContext()：呼叫 Bedrock 知識庫，整理 context 與 ragSources"),
+  │     ("app/lib/customer_support_categories.json", "8 個客服分類（id、name、keywords）"),
+  │     ("components/ChatArea.tsx", "聊天畫面、模型與知識庫選單、送請求、發事件給側欄"),
+  │     ("config.ts", "讀兩個 NEXT_PUBLIC_ 環境變數，決定左右側欄要不要顯示"),
+  │     ("package.json", "dev、dev:left、dev:right、dev:chat 等啟動指令"),
+  │ ]
+  │ print("【表 1】關鍵檔案")
+  │ print("{:<42} | {:>4} | {}".format("檔案", "行數", "負責什麼"))
+  │ print("-" * 100)
+  │ for rel, desc in files:
+  │     n = len(read_text(P + rel).splitlines())
+  │     print("{:<42} | {:>4} | {}".format(rel, n, desc))
+  │ print()
+  │ 
+  │ flow = [
+  │     ("取最後一則訊息當查詢", "app/api/chat/route.ts", "latestMessage = messages"),
+  │     ("拿查詢去知識庫檢索", "app/api/chat/route.ts", "await retrieveContext"),
+  │     ("Bedrock 檢索，預設取 n 段", "app/lib/utils.ts", "numberOfResults"),
+  │     ("組系統提示（片段＋分類＋JSON 格式）", "app/api/chat/route.ts", "const systemPrompt ="),
+  │     ("訊息最後預填 assistant 的 {", "app/api/chat/route.ts", "content: " + Q + "[{]" + Q),
+  │     ("呼叫 Claude 一次（非串流）", "app/api/chat/route.ts", "client[.]messages[.]create"),
+  │     ("補回 { 再解析 JSON", "app/api/chat/route.ts", "sanitizeAndParseJSON[(]textContent"),
+  │     ("zod 驗證回覆契約", "app/api/chat/route.ts", "responseSchema[.]parse"),
+  │     ("來源放進回應標頭", "app/api/chat/route.ts", "x-rag-sources"),
+  │     ("前端發出轉真人事件", "components/ChatArea.tsx", "agentRedirectRequested"),
+  │ ]
+  │ print("【表 2】一次請求的流程（行號是從原始碼 grep 出來的）")
+  │ print("{:>2} | {:<24} | {:<22} | {}".format("#", "做什麼", "檔案:行號", "原文（前 60 字）"))
+  │ print("-" * 110)
+  │ for k, (what, rel, pat) in enumerate(flow, 1):
+  │     hits = grep(P + rel, pat)
+  │     if hits:
+  │         no, line = hits[0]
+  │         loc = rel.split("/")[-1] + ":" + str(no)
+  │         print("{:>2} | {:<24} | {:<22} | {}".format(k, what, loc, line.strip()[:60]))
+  │     else:
+  │         print("{:>2} | {:<24} | {:<22} | {}".format(k, what, rel, "找不到"))
+  │ print()
+  │ n_stream = len(grep(P + "app/api/chat/route.ts", "stream|tools|tool_use"))
+  │ print("route.ts 裡 stream／tools／tool_use 出現", n_stream, "次 → 沒有串流、沒有工具迴圈")
+  │ print()
+  │ print("模型選單（components/ChatArea.tsx）：")
+  │ for no, line in grep(P + "components/ChatArea.tsx", "useState[(]" + Q + "claude-"):
+  │     print("  第 {} 行（預設）：{}".format(no, line.strip()))
+  │ for no, line in grep(P + "components/ChatArea.tsx", "id: " + Q + "claude-"):
+  │     print("  第 {} 行：{}".format(no, line.strip()))
+▶ 執行結果：
+官方 repo 資料夾： claude-quickstarts （只讀；不安裝依賴、不執行啟動指令）
+
+【表 1】關鍵檔案
+檔案                                         |   行數 | 負責什麼
+----------------------------------------------------------------------------------------------------
+app/api/chat/route.ts                      |  303 | 後端主流程：檢索、組系統提示、呼叫 Claude、解析與驗證 JSON
+app/lib/utils.ts                           |   95 | retrieveContext()：呼叫 Bedrock 知識庫，整理 context 與 ragSources
+app/lib/customer_support_categories.json   |   91 | 8 個客服分類（id、name、keywords）
+components/ChatArea.tsx                    |  724 | 聊天畫面、模型與知識庫選單、送請求、發事件給側欄
+config.ts                                  |   11 | 讀兩個 NEXT_PUBLIC_ 環境變數，決定左右側欄要不要顯示
+package.json                               |   53 | dev、dev:left、dev:right、dev:chat 等啟動指令
+
+【表 2】一次請求的流程（行號是從原始碼 grep 出來的）
+ # | 做什麼                      | 檔案:行號                  | 原文（前 60 字）
+--------------------------------------------------------------------------------------------------------------
+ 1 | 取最後一則訊息當查詢               | route.ts:70            | const latestMessage = messages[messages.length - 1].content;
+ 2 | 拿查詢去知識庫檢索                | route.ts:94            | const result = await retrieveContext(latestMessage, knowledg
+ 3 | Bedrock 檢索，預設取 n 段       | utils.ts:54            | vectorSearchConfiguration: { numberOfResults: n },
+ 4 | 組系統提示（片段＋分類＋JSON 格式）     | route.ts:135           | const systemPrompt = `You are acting as an Anthropic custome
+ 5 | 訊息最後預填 assistant 的 {     | route.ts:225           | content: "{",
+ 6 | 呼叫 Claude 一次（非串流）        | route.ts:228           | const response = await client.messages.create({
+ 7 | 補回 { 再解析 JSON            | route.ts:247           | parsedResponse = sanitizeAndParseJSON(textContent);
+ 8 | zod 驗證回覆契約               | route.ts:253           | const validatedResponse = responseSchema.parse(parsedRespons
+ 9 | 來源放進回應標頭                 | route.ts:277           | "x-rag-sources",
+10 | 前端發出轉真人事件                | ChatArea.tsx:525       | new CustomEvent("agentRedirectRequested", {
+
+route.ts 裡 stream／tools／tool_use 出現 0 次 → 沒有串流、沒有工具迴圈
+
+模型選單（components/ChatArea.tsx）：
+  第 305 行（預設）：const [selectedModel, setSelectedModel] = useState("claude-haiku-4-5-20251001");
+  第 319 行：{ id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5" },
+  第 320 行：{ id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
+
+👉 第 1 步完成
+
+===== 第 2 步 =====
+指令：bash ch01.sh 2
+exit code：0　耗時：0.2 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K902 第 1 章｜客服代理：檢索＋結構化 JSON　第 2 / 8 步
+  練習 1 之一：從 responseSchema 抽出回覆契約
+╚══════════════════════════════════════════════════════╝
+
+💡 一個 JSON 同時帶回答、思考、情緒、追問、分類與轉真人。注意 matched_categories 只驗「字串陣列」，不驗代號內容。
+
+▶ 要執行的程式：
+  │ import os, re, sys
+  │ sys.path.insert(0, os.getcwd())
+  │ from qs_source import read_text
+  │ 
+  │ REL = "customer-support-agent/app/api/chat/route.ts"
+  │ Q = chr(34)
+  │ lines = read_text(REL).splitlines()
+  │ start = next(i for i, s in enumerate(lines) if "const responseSchema = z.object" in s)
+  │ end = next(i for i in range(start, len(lines)) if lines[i].startswith("});"))
+  │ print("responseSchema 區塊：第 {} ～ {} 行".format(start + 1, end + 1))
+  │ print()
+  │ 
+  │ heads = []
+  │ for i in range(start + 1, end):
+  │     m = re.match(r"  (\w+): z", lines[i])
+  │     if m:
+  │         heads.append((i, m.group(1)))
+  │ 
+  │ fields, nested, moods = [], [], []
+  │ for k, (i, name) in enumerate(heads):
+  │     j = heads[k + 1][0] if k + 1 < len(heads) else end
+  │     chunk = "\n".join(lines[i:j])
+  │     t = re.search(r"[.](string|enum|array|object|boolean)[(]", chunk).group(1)
+  │     if t == "array":
+  │         t = "array(" + re.search(r"z[.]array[(]z[.](\w+)[(]", chunk).group(1) + ")"
+  │     opt = chunk.strip().rstrip(",").endswith(".optional()")
+  │     fields.append((name, t, "選填" if opt else "必填", i + 1))
+  │     if t == "object":
+  │         for m in re.finditer(r"(\w+): z[.](\w+)[(][)]([.]optional[(][)])?", chunk):
+  │             if m.group(1) != name:
+  │                 nested.append((name + "." + m.group(1), m.group(2), "選填" if m.group(3) else "必填"))
+  │     if t == "enum":
+  │         moods = re.findall(Q + r"(\w+)" + Q, chunk)
+  │ 
+  │ print("{:<20} | {:<14} | {:<6} | {}".format("欄位", "型別", "必填/選填", "行號"))
+  │ print("-" * 56)
+  │ for name, t, req, no in fields:
+  │     print("{:<20} | {:<14} | {:<6} | {}".format(name, t, req, no))
+  │ print()
+  │ print("巢狀欄位：")
+  │ for name, t, req in nested:
+  │     print("  {:<34} | {:<8} | {}".format(name, t, req))
+  │ print()
+  │ n_req = sum(1 for f in fields if f[2] == "必填")
+  │ print("頂層欄位 {} 個：必填 {}、選填 {}".format(len(fields), n_req, len(fields) - n_req))
+  │ print("user_mood 允許值（{} 個）：{}".format(len(moods), ", ".join(moods)))
+  │ print()
+  │ print("注意：matched_categories 只驗 array(string)，沒有檢查代號在不在分類表；thinking 只是一般字串欄位，不是延伸思考。")
+▶ 執行結果：
+responseSchema 區塊：第 23 ～ 45 行
+
+欄位                   | 型別             | 必填/選填  | 行號
+--------------------------------------------------------
+response             | string         | 必填     | 24
+thinking             | string         | 必填     | 25
+user_mood            | enum           | 必填     | 26
+suggested_questions  | array(string)  | 必填     | 34
+debug                | object         | 必填     | 35
+matched_categories   | array(string)  | 選填     | 38
+redirect_to_agent    | object         | 選填     | 39
+
+巢狀欄位：
+  debug.context_used                 | boolean  | 必填
+  redirect_to_agent.should_redirect  | boolean  | 必填
+  redirect_to_agent.reason           | string   | 選填
+
+頂層欄位 7 個：必填 5、選填 2
+user_mood 允許值（6 個）：positive, neutral, negative, curious, frustrated, confused
+
+注意：matched_categories 只驗 array(string)，沒有檢查代號在不在分類表；thinking 只是一般字串欄位，不是延伸思考。
+
+👉 第 2 步完成
+
+===== 第 3 步 =====
+指令：bash ch01.sh 3
+exit code：0　耗時：0.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K902 第 1 章｜客服代理：檢索＋結構化 JSON　第 3 / 8 步
+  練習 1 之二：分類表與提示範例的代號落差
+╚══════════════════════════════════════════════════════╝
+
+💡 系統提示的回覆範例用了分類表裡沒有的代號（account_management、technical_support），zod 不會擋；送給模型的也只有 id，keywords 沒送。
+
+▶ 要執行的程式：
+  │ import json, os, sys
+  │ sys.path.insert(0, os.getcwd())
+  │ from qs_source import read_text, grep
+  │ 
+  │ CAT = "customer-support-agent/app/lib/customer_support_categories.json"
+  │ ROUTE = "customer-support-agent/app/api/chat/route.ts"
+  │ Q = chr(34)
+  │ cats = json.loads(read_text(CAT))["categories"]
+  │ ids = [c["id"] for c in cats]
+  │ print("【分類表】" + CAT.split("/")[-1])
+  │ print("{:<10} | {:<10} | {}".format("id", "name", "關鍵字數"))
+  │ print("-" * 34)
+  │ for c in cats:
+  │     print("{:<10} | {:<10} | {}".format(c["id"], c["name"], len(c["keywords"])))
+  │ print("共 {} 個分類，關鍵字合計 {} 個".format(len(ids), sum(len(c["keywords"]) for c in cats)))
+  │ print()
+  │ 
+  │ print("【route.ts 裡的 matched_categories 範例】")
+  │ print("{:>4} | {:<16} | {:<20} | {}".format("行號", "類型", "代號", "在分類表內？"))
+  │ print("-" * 62)
+  │ in_examples = []
+  │ for no, line in grep(ROUTE, Q + "matched_categories" + Q + ": [[]"):
+  │     seg = line[line.index("[", line.index("matched_categories")):]
+  │     seg = seg[:seg.index("]") + 1]
+  │     codes = json.loads(seg)
+  │     kind = "格式樣板（佔位字）" if "USE_CATEGORIES" in line else "回覆範例"
+  │     for code in codes:
+  │         ok = code in ids
+  │         if kind == "回覆範例":
+  │             in_examples.append((code, ok))
+  │         print("{:>4} | {:<16} | {:<20} | {}".format(no, kind, code, "是" if ok else "否"))
+  │ print()
+  │ good = [c for c, ok in in_examples if ok]
+  │ bad = [c for c, ok in in_examples if not ok]
+  │ print("回覆範例的代號共 {} 個，在表內 {} 個（{}），不在表內：{}".format(len(in_examples), len(good), "、".join(good), "、".join(bad)))
+  │ print()
+  │ for no, line in grep(ROUTE, "=> c[.]id"):
+  │     print("送給模型的只有 id：route.ts 第 {} 行 {}".format(no, line.strip()))
+  │ print("route.ts 裡出現 keywords 的次數：", len(grep(ROUTE, "keywords")), "→ name 與 keywords 沒有送給模型")
+▶ 執行結果：
+【分類表】customer_support_categories.json
+id         | name       | 關鍵字數
+----------------------------------
+account    | Account    | 7
+billing    | Billing    | 9
+feature    | Feature    | 6
+internal   | Internal   | 6
+legal      | Legal      | 4
+other      | Other      | 2
+technical  | Technical  | 7
+usage      | Usage      | 6
+共 8 個分類，關鍵字合計 47 個
+
+【route.ts 裡的 matched_categories 範例】
+  行號 | 類型               | 代號                   | 在分類表內？
+--------------------------------------------------------------
+ 157 | 格式樣板（佔位字）        | category_id1         | 否
+ 157 | 格式樣板（佔位字）        | category_id2         | 否
+ 175 | 回覆範例             | account_management   | 否
+ 175 | 回覆範例             | billing              | 是
+ 190 | 回覆範例             | technical_support    | 否
+
+回覆範例的代號共 3 個，在表內 1 個（billing），不在表內：account_management、technical_support
+
+送給模型的只有 id：route.ts 第 122 行 .map((c) => c.id)
+route.ts 裡出現 keywords 的次數： 0 → name 與 keywords 沒有送給模型
+
+👉 第 3 步完成
+C:\Users\USER\workspace\kindle-902-claude-quickstarts-factory\practice\qs_source.py:51: FutureWarning: Possible nested set at position 23
+  regex = re.compile(pattern)
+
+===== 第 4 步 =====
+指令：bash ch01.sh 4
+exit code：0　耗時：0.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K902 第 1 章｜客服代理：檢索＋結構化 JSON　第 4 / 8 步
+  練習 1 之三：檢索參數與強制 JSON，存成 contract.json
+╚══════════════════════════════════════════════════════╝
+
+💡 模型最多看到 3 段 context，畫面卻只顯示 1 個來源。這一步自己重新抽一次契約，存成 contract.json 給練習 2 用。
+
+▶ 要執行的程式：
+  │ import json, os, re, sys
+  │ from pathlib import Path
+  │ sys.path.insert(0, os.getcwd())
+  │ from qs_source import read_text, grep
+  │ 
+  │ ROUTE = "customer-support-agent/app/api/chat/route.ts"
+  │ UT = "customer-support-agent/app/lib/utils.ts"
+  │ CAT = "customer-support-agent/app/lib/customer_support_categories.json"
+  │ Q = chr(34)
+  │ out = Path("ch01/interactive")
+  │ out.mkdir(parents=True, exist_ok=True)
+  │ (out / "contract.json").unlink(missing_ok=True)
+  │ 
+  │ checks = [
+  │     ("預設取幾段 n", UT, "n: number = "),
+  │     ("送給 Bedrock 的段數", UT, "numberOfResults"),
+  │     ("畫面來源只留幾筆", UT, "slice[(]0, 1[)]"),
+  │     ("context 怎麼接", UT, "[.]join[(]"),
+  │     ("Bedrock 區域（寫死）", UT, "region:"),
+  │     ("回覆長度上限", ROUTE, "max_tokens"),
+  │     ("預填 assistant 的 {", ROUTE, "content: " + Q + "[{]" + Q),
+  │     ("檢索失敗時的替代字串", ROUTE, "No information found"),
+  │ ]
+  │ print("{:<22} | {:<18} | {}".format("看什麼", "檔案:行號", "原文"))
+  │ print("-" * 100)
+  │ found = {}
+  │ for what, rel, pat in checks:
+  │     hits = grep(rel, pat)
+  │     if not hits:
+  │         print("{:<22} | {:<18} | {}".format(what, rel.split("/")[-1], "找不到"))
+  │         continue
+  │     no, line = hits[0]
+  │     found[what] = line
+  │     print("{:<22} | {:<18} | {}".format(what, rel.split("/")[-1] + ":" + str(no), line.strip()[:70]))
+  │ print()
+  │ 
+  │ n = int(re.search(r"n: number = (\d+)", found["預設取幾段 n"]).group(1))
+  │ kept = int(re.search(r"slice[(]0, (\d+)[)]", found["畫面來源只留幾筆"]).group(1))
+  │ max_tokens = int(re.search(r"max_tokens: (\d+)", found["回覆長度上限"]).group(1))
+  │ region = re.search(Q + "([a-z0-9-]+)" + Q, found["Bedrock 區域（寫死）"]).group(1)
+  │ print("模型最多看到 {} 段 context，畫面右側欄只顯示 {} 個來源；max_tokens = {}；region = {}".format(n, kept, max_tokens, region))
+  │ print()
+  │ 
+  │ lines = read_text(ROUTE).splitlines()
+  │ start = next(i for i, s in enumerate(lines) if "const responseSchema = z.object" in s)
+  │ end = next(i for i in range(start, len(lines)) if lines[i].startswith("});"))
+  │ heads = [(i, re.match(r"  (\w+): z", lines[i]).group(1)) for i in range(start + 1, end) if re.match(r"  (\w+): z", lines[i])]
+  │ fields, moods = [], []
+  │ for k, (i, name) in enumerate(heads):
+  │     j = heads[k + 1][0] if k + 1 < len(heads) else end
+  │     chunk = "\n".join(lines[i:j])
+  │     t = re.search(r"[.](string|enum|array|object|boolean)[(]", chunk).group(1)
+  │     if t == "array":
+  │         t = "array(" + re.search(r"z[.]array[(]z[.](\w+)[(]", chunk).group(1) + ")"
+  │     if t == "enum":
+  │         moods = re.findall(Q + r"(\w+)" + Q, chunk)
+  │     fields.append({"name": name, "type": t, "required": not chunk.strip().rstrip(",").endswith(".optional()"), "line": i + 1})
+  │ ids = [c["id"] for c in json.loads(read_text(CAT))["categories"]]
+  │ 
+  │ contract = {
+  │     "source": ROUTE,
+  │     "fields": fields,
+  │     "user_mood": moods,
+  │     "category_ids": ids,
+  │     "retrieval": {"n": n, "sources_kept": kept, "max_tokens": max_tokens, "region": region},
+  │ }
+  │ (out / "contract.json").write_text(json.dumps(contract, ensure_ascii=False, indent=2), encoding="utf-8")
+  │ print("contract.json 摘要：欄位 {} 個（必填 {}）、user_mood {} 個、分類 id {} 個".format(
+  │     len(fields), sum(1 for f in fields if f["required"]), len(moods), len(ids)))
+  │ print("已寫入", out / "contract.json")
+▶ 執行結果：
+看什麼                    | 檔案:行號              | 原文
+----------------------------------------------------------------------------------------------------
+預設取幾段 n                | utils.ts:34        | n: number = 3,
+送給 Bedrock 的段數         | utils.ts:54        | vectorSearchConfiguration: { numberOfResults: n },
+畫面來源只留幾筆               | utils.ts:77        | .slice(0, 1);
+context 怎麼接            | utils.ts:84        | .join("\n\n");
+Bedrock 區域（寫死）         | utils.ts:13        | region: "us-east-1", // Make sure this matches your Bedrock region
+回覆長度上限                 | route.ts:230       | max_tokens: 1000,
+預填 assistant 的 {       | route.ts:225       | content: "{",
+檢索失敗時的替代字串             | route.ts:138       | ${isRagWorking ? `${retrievedContext}` : "No information found for thi
+
+模型最多看到 3 段 context，畫面右側欄只顯示 1 個來源；max_tokens = 1000；region = us-east-1
+
+contract.json 摘要：欄位 7 個（必填 5）、user_mood 6 個、分類 id 8 個
+已寫入 ch01\interactive\contract.json
+
+👉 第 4 步完成
+
+===== 第 5 步 =====
+指令：bash ch01.sh 5
+exit code：0　耗時：0.2 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K902 第 1 章｜客服代理：檢索＋結構化 JSON　第 5 / 8 步
+  練習 2 之一：假知識庫與 bigram 檢索（離線）
+╚══════════════════════════════════════════════════════╝
+
+💡 這是假的環境：6 筆自編的虛構客服文件代替 Bedrock，用字元 bigram 重疊打分，不是向量檢索。先看清楚兩個問題各會檢索到什麼。
+
+▶ 要執行的程式：
+  │ import json, os, sys
+  │ from pathlib import Path
+  │ sys.path.insert(0, os.getcwd())
+  │ 
+  │ out = Path("ch01/interactive")
+  │ out.mkdir(parents=True, exist_ok=True)
+  │ (out / "retrieval.json").unlink(missing_ok=True)
+  │ 
+  │ # 假環境：FAKE_KB 是自編的虛構公司「雲帆軟體」客服文件，用來代替 Amazon Bedrock 知識庫
+  │ FAKE_KB = [
+  │     {"fileName": "refund_policy.txt", "text": "同一筆訂單若被重複扣款，請在 30 天內來信，我們會全額退款。一般訂閱在購買後 7 天內可以申請退款，超過 7 天不予退款。"},
+  │     {"fileName": "payment_method.txt", "text": "登入後到帳戶設定的付款方式頁面，就能新增或更換信用卡。更換後，下一期帳單起改由新卡片扣款。"},
+  │     {"fileName": "delete_account.txt", "text": "刪除帳號前請先取消所有訂閱。帳號刪除後 30 天內可以復原，30 天後資料會永久清除。"},
+  │     {"fileName": "api_limits.txt", "text": "免費方案每分鐘最多 60 次 API 呼叫，付費方案提高到每分鐘 600 次。超過上限會回傳 429 錯誤，請稍後再試。"},
+  │     {"fileName": "login_verify.txt", "text": "登入時若開啟兩步驟驗證，系統會傳送 6 位數驗證碼到你的手機。收不到驗證碼時，可以改用備用碼登入。"},
+  │     {"fileName": "data_privacy.txt", "text": "我們只會把你的資料用於提供服務，不會出售給第三方。你可以隨時下載或要求刪除個人資料。"},
+  │ ]
+  │ 
+  │ def bigrams(s):
+  │     segs, cur = [], ""
+  │     for ch in s:
+  │         if ch.isalnum():
+  │             cur += ch
+  │         else:
+  │             if cur:
+  │                 segs.append(cur)
+  │             cur = ""
+  │     if cur:
+  │         segs.append(cur)
+  │     seen = []
+  │     for seg in segs:
+  │         for i in range(len(seg) - 1):
+  │             if seg[i:i + 2] not in seen:
+  │                 seen.append(seg[i:i + 2])
+  │     return seen
+  │ 
+  │ def retrieve(query, n=3):
+  │     qb = bigrams(query)
+  │     scored = []
+  │     for idx, doc in enumerate(FAKE_KB):
+  │         hit = [b for b in qb if b in doc["text"]]
+  │         scored.append((len(hit), idx, hit))
+  │     top = sorted([s for s in scored if s[0] > 0], key=lambda s: (-s[0], s[1]))[:n]
+  │     docs = [FAKE_KB[i] for _, i, _ in top]
+  │     return {
+  │         "query_bigrams": qb,
+  │         "scores": [(FAKE_KB[i]["fileName"], sc, hit) for sc, i, hit in scored],
+  │         "retrieved": [d["fileName"] for d in docs],
+  │         "context": "\n\n".join(d["text"] for d in docs),
+  │         "is_rag_working": len(docs) > 0,
+  │         "rag_sources": [{"fileName": FAKE_KB[i]["fileName"], "score": sc} for sc, i, _ in top][:1],
+  │     }
+  │ 
+  │ print("假環境說明：知識庫是 6 筆自編的虛構文件（雲帆軟體），檢索是字元 bigram 重疊計分，不是 Bedrock 向量檢索。")
+  │ print()
+  │ QUESTIONS = [("A", "我上個月被重複扣款，可以退款嗎？"), ("B", "明天台北會下雨嗎？")]
+  │ saved = {}
+  │ for key, q in QUESTIONS:
+  │     r = retrieve(q)
+  │     print("問題 {}：{}".format(key, q))
+  │     print("  查詢的 bigram（{} 個）：{}".format(len(r["query_bigrams"]), " ".join(r["query_bigrams"])))
+  │     print("  {:<20} | {:>4} | {}".format("fileName", "分數", "命中的 bigram"))
+  │     for name, sc, hit in r["scores"]:
+  │         print("  {:<20} | {:>4} | {}".format(name, sc, " ".join(hit) if hit else "-"))
+  │     print("  取前 3 筆（分數 > 0）：", r["retrieved"] if r["retrieved"] else "（0 筆）")
+  │     print("  is_rag_working：", r["is_rag_working"])
+  │     print("  rag_sources（仿 slice(0, 1)，只留 1 筆）：", r["rag_sources"])
+  │     slot = r["context"] if r["is_rag_working"] else "No information found for this query."
+  │     print("  系統提示裡「檢索內容」這一格會放：")
+  │     for line in slot.split("\n"):
+  │         print("    | " + line)
+  │     print()
+  │     saved[key] = {"question": q, "retrieved": r["retrieved"], "is_rag_working": r["is_rag_working"],
+  │                   "rag_sources": r["rag_sources"], "context": r["context"]}
+  │ 
+  │ print("和官方的差異：官方只要 Bedrock 呼叫成功，isRagWorking 就是 true（就算 0 筆）；這裡照練習規格改成有結果才 True。")
+  │ (out / "retrieval.json").write_text(json.dumps(saved, ensure_ascii=False, indent=2), encoding="utf-8")
+  │ print("已寫入", out / "retrieval.json")
+▶ 執行結果：
+假環境說明：知識庫是 6 筆自編的虛構文件（雲帆軟體），檢索是字元 bigram 重疊計分，不是 Bedrock 向量檢索。
+
+問題 A：我上個月被重複扣款，可以退款嗎？
+  查詢的 bigram（12 個）：我上 上個 個月 月被 被重 重複 複扣 扣款 可以 以退 退款 款嗎
+  fileName             |   分數 | 命中的 bigram
+  refund_policy.txt    |    6 | 被重 重複 複扣 扣款 可以 退款
+  payment_method.txt   |    1 | 扣款
+  delete_account.txt   |    1 | 可以
+  api_limits.txt       |    0 | -
+  login_verify.txt     |    1 | 可以
+  data_privacy.txt     |    1 | 可以
+  取前 3 筆（分數 > 0）： ['refund_policy.txt', 'payment_method.txt', 'delete_account.txt']
+  is_rag_working： True
+  rag_sources（仿 slice(0, 1)，只留 1 筆）： [{'fileName': 'refund_policy.txt', 'score': 6}]
+  系統提示裡「檢索內容」這一格會放：
+    | 同一筆訂單若被重複扣款，請在 30 天內來信，我們會全額退款。一般訂閱在購買後 7 天內可以申請退款，超過 7 天不予退款。
+    | 
+    | 登入後到帳戶設定的付款方式頁面，就能新增或更換信用卡。更換後，下一期帳單起改由新卡片扣款。
+    | 
+    | 刪除帳號前請先取消所有訂閱。帳號刪除後 30 天內可以復原，30 天後資料會永久清除。
+
+問題 B：明天台北會下雨嗎？
+  查詢的 bigram（7 個）：明天 天台 台北 北會 會下 下雨 雨嗎
+  fileName             |   分數 | 命中的 bigram
+  refund_policy.txt    |    0 | -
+  payment_method.txt   |    0 | -
+  delete_account.txt   |    0 | -
+  api_limits.txt       |    0 | -
+  login_verify.txt     |    0 | -
+  data_privacy.txt     |    0 | -
+  取前 3 筆（分數 > 0）： （0 筆）
+  is_rag_working： False
+  rag_sources（仿 slice(0, 1)，只留 1 筆）： []
+  系統提示裡「檢索內容」這一格會放：
+    | No information found for this query.
+
+和官方的差異：官方只要 Bedrock 呼叫成功，isRagWorking 就是 true（就算 0 筆）；這裡照練習規格改成有結果才 True。
+已寫入 ch01\interactive\retrieval.json
+
+👉 第 5 步完成
+
+===== 第 6 步 =====
+指令：bash ch01.sh 6
+exit code：0　耗時：18.7 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K902 第 1 章｜客服代理：檢索＋結構化 JSON　第 6 / 8 步
+  練習 2 之二：真模型照官方格式回 JSON（問題 A、B）
+╚══════════════════════════════════════════════════════╝
+
+💡 這一步會呼叫模型最多 3 次（claude -p；A、B 各 1 次，失敗時整步可重試 1 次），每次最多等 180 秒。知識庫是假的、模型是真的；claude -p 不能預填 {，改成在訊息最後要求只回 JSON。
+
+▶ 要執行的程式：
+  │ import json, os, sys
+  │ from pathlib import Path
+  │ sys.path.insert(0, os.getcwd())
+  │ os.environ["K902_CLI_MAX_CALLS"] = "3"  # 保險；此變數只對 claude_cli_client 有效，本步驟另用計數器限制最多 3 次
+  │ from llm_agent import ask, extract_json
+  │ 
+  │ out = Path("ch01/interactive")
+  │ out.mkdir(parents=True, exist_ok=True)
+  │ raw_path = out / "fake_kb_raw.json"
+  │ raw_path.unlink(missing_ok=True)
+  │ 
+  │ ids = ["account", "billing", "feature", "internal", "legal", "other", "technical", "usage"]
+  │ moods = ["positive", "neutral", "negative", "curious", "frustrated", "confused"]
+  │ contract_src = "內建（找不到 contract.json）"
+  │ cp = out / "contract.json"
+  │ if cp.exists():
+  │     try:
+  │         c = json.loads(cp.read_text(encoding="utf-8"))
+  │         if c.get("category_ids") and c.get("user_mood"):
+  │             ids, moods = list(c["category_ids"]), list(c["user_mood"])
+  │             contract_src = "ch01/interactive/contract.json"
+  │     except ValueError:
+  │         pass
+  │ 
+  │ # 假環境：FAKE_KB 是自編的虛構公司「雲帆軟體」客服文件，用來代替 Amazon Bedrock 知識庫
+  │ FAKE_KB = [
+  │     {"fileName": "refund_policy.txt", "text": "同一筆訂單若被重複扣款，請在 30 天內來信，我們會全額退款。一般訂閱在購買後 7 天內可以申請退款，超過 7 天不予退款。"},
+  │     {"fileName": "payment_method.txt", "text": "登入後到帳戶設定的付款方式頁面，就能新增或更換信用卡。更換後，下一期帳單起改由新卡片扣款。"},
+  │     {"fileName": "delete_account.txt", "text": "刪除帳號前請先取消所有訂閱。帳號刪除後 30 天內可以復原，30 天後資料會永久清除。"},
+  │     {"fileName": "api_limits.txt", "text": "免費方案每分鐘最多 60 次 API 呼叫，付費方案提高到每分鐘 600 次。超過上限會回傳 429 錯誤，請稍後再試。"},
+  │     {"fileName": "login_verify.txt", "text": "登入時若開啟兩步驟驗證，系統會傳送 6 位數驗證碼到你的手機。收不到驗證碼時，可以改用備用碼登入。"},
+  │     {"fileName": "data_privacy.txt", "text": "我們只會把你的資料用於提供服務，不會出售給第三方。你可以隨時下載或要求刪除個人資料。"},
+  │ ]
+  │ 
+  │ def bigrams(s):
+  │     segs, cur = [], ""
+  │     for ch in s:
+  │         if ch.isalnum():
+  │             cur += ch
+  │         else:
+  │             if cur:
+  │                 segs.append(cur)
+  │             cur = ""
+  │     if cur:
+  │         segs.append(cur)
+  │     seen = []
+  │     for seg in segs:
+  │         for i in range(len(seg) - 1):
+  │             if seg[i:i + 2] not in seen:
+  │                 seen.append(seg[i:i + 2])
+  │     return seen
+  │ 
+  │ def retrieve(query, n=3):
+  │     qb = bigrams(query)
+  │     scored = [(sum(1 for b in qb if b in d["text"]), i) for i, d in enumerate(FAKE_KB)]
+  │     top = sorted([s for s in scored if s[0] > 0], key=lambda s: (-s[0], s[1]))[:n]
+  │     docs = [FAKE_KB[i] for _, i in top]
+  │     return {"docs": docs, "context": "\n\n".join(d["text"] for d in docs), "is_rag_working": len(docs) > 0,
+  │             "rag_sources": [{"fileName": FAKE_KB[i]["fileName"], "score": sc} for sc, i in top][:1]}
+  │ 
+  │ FORMAT = """{
+  │   "thinking": "簡短說明你打算怎麼處理這個問題",
+  │   "response": "給使用者的簡潔回覆",
+  │   "user_mood": "MOODS",
+  │   "suggested_questions": ["追問 1？", "追問 2？"],
+  │   "debug": {"context_used": true 或 false},
+  │   "matched_categories": ["分類 id"],
+  │   "redirect_to_agent": {"should_redirect": true 或 false, "reason": "只有 should_redirect 為 true 時才寫轉接原因"}
+  │ }""".replace("MOODS", "|".join(moods))
+  │ 
+  │ def build_system(r):
+  │     return "\n".join([
+  │         "你是虛構軟體公司「雲帆軟體」網站聊天視窗裡的客服助理，回答要簡潔、有禮貌、專業。",
+  │         "",
+  │         "為了幫你回答，我們從知識庫檢索到以下資料（可能相關，也可能不相關）：",
+  │         r["context"] if r["is_rag_working"] else "No information found for this query.",
+  │         "",
+  │         "只能使用上面提供的資訊回答。如果沒有資訊或資訊與問題無關，請把使用者轉給真人客服。",
+  │         "如果問題與雲帆軟體的產品和服務無關，也要轉給真人客服。",
+  │         "",
+  │         "請替這次詢問分類，把符合的分類 id 放進 matched_categories 陣列。可用的分類 id 只有：" + ", ".join(ids) + "。都不符合就給空陣列。",
+  │         "",
+  │         "你的整個回覆必須是一個合法的 JSON 物件，結構如下：",
+  │         FORMAT,
+  │     ])
+  │ 
+  │ SUFFIX = "\n\n只輸出一個 JSON 物件，不要任何其他文字。"
+  │ MAX_CALLS = 3
+  │ calls, retry_left = 0, 1
+  │ print("假環境：知識庫是 6 筆自編文件；模型是真的（claude -p）。分類與允許值來源：" + contract_src)
+  │ print("與官方差異：claude -p 無法預填 {，改在訊息最後要求只回 JSON。")
+  │ print()
+  │ results = {}
+  │ for key, q in (("A", "我上個月被重複扣款，可以退款嗎？"), ("B", "明天台北會下雨嗎？")):
+  │     r = retrieve(q)
+  │     system = build_system(r)
+  │     rec = {"question": q, "retrieved": len(r["docs"]), "rag_sources": r["rag_sources"], "system": system,
+  │            "raw_text": None, "parsed": None, "error": None, "calls": 0}
+  │     print("問題 {}：{}（檢索到 {} 段）".format(key, q, rec["retrieved"]))
+  │     while calls < MAX_CALLS:
+  │         calls += 1
+  │         rec["calls"] += 1
+  │         print("  第 {} 次呼叫 claude -p（本步驟累計 {} 次），請稍候 5～15 秒…".format(rec["calls"], calls))
+  │         text = None
+  │         try:
+  │             text = ask(q + SUFFIX, system=system)
+  │         except (RuntimeError, ValueError) as exc:
+  │             rec["error"] = "呼叫失敗：" + str(exc)
+  │             print("  " + rec["error"])
+  │         if text is not None:
+  │             rec["raw_text"] = text
+  │             try:
+  │                 rec["parsed"] = extract_json(text)
+  │                 rec["error"] = None
+  │             except ValueError as exc:
+  │                 rec["error"] = "這次模型沒有照格式只回 JSON（claude -p 不能預填 {，只能靠提示詞要求，這是模擬的限制）：" + str(exc)
+  │                 print("  " + rec["error"])
+  │                 print("  模型原始回覆（前 300 字）：", text[:300])
+  │         if rec["parsed"] is not None:
+  │             break
+  │         if retry_left > 0 and calls < MAX_CALLS:
+  │             retry_left -= 1
+  │             print("  重試 1 次（整步只能重試 1 次）")
+  │             continue
+  │         break
+  │     p = rec["parsed"]
+  │     if isinstance(p, dict):
+  │         dbg = p.get("debug") if isinstance(p.get("debug"), dict) else {}
+  │         ra = p.get("redirect_to_agent") if isinstance(p.get("redirect_to_agent"), dict) else {}
+  │         print("  user_mood：", p.get("user_mood"))
+  │         print("  debug.context_used：", dbg.get("context_used"))
+  │         print("  matched_categories：", p.get("matched_categories"))
+  │         print("  should_redirect：", ra.get("should_redirect"), "；reason：", ra.get("reason", "-"))
+  │         print("  response：", str(p.get("response", ""))[:80])
+  │     else:
+  │         print("  這一題沒有拿到可解析的 JSON，第 7 步會改用內建範例代替這一題。")
+  │     print()
+  │     results[key] = rec
+  │ 
+  │ raw_path.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
+  │ print("本步驟共呼叫模型 {} 次（上限 {}）".format(calls, MAX_CALLS))
+  │ print("已寫入", raw_path)
+▶ 執行結果：
+假環境：知識庫是 6 筆自編文件；模型是真的（claude -p）。分類與允許值來源：ch01/interactive/contract.json
+與官方差異：claude -p 無法預填 {，改在訊息最後要求只回 JSON。
+
+問題 A：我上個月被重複扣款，可以退款嗎？（檢索到 3 段）
+  第 1 次呼叫 claude -p（本步驟累計 1 次），請稍候 5～15 秒…
+  user_mood： negative
+  debug.context_used： True
+  matched_categories： ['billing']
+  should_redirect： False ；reason： -
+  response： 您好，很抱歉造成您的困擾！若同一筆訂單被重複扣款，只要在扣款後 30 天內來信告知，我們就會為您全額退款。由於您提到是上個月的扣款，建議您盡快來信，以免超過 3
+
+問題 B：明天台北會下雨嗎？（檢索到 0 段）
+  第 1 次呼叫 claude -p（本步驟累計 2 次），請稍候 5～15 秒…
+  user_mood： curious
+  debug.context_used： False
+  matched_categories： ['other']
+  should_redirect： True ；reason： 問題與雲帆軟體的產品和服務無關（詢問天氣），且知識庫無相關資訊。
+  response： 很抱歉，我是雲帆軟體的客服助理，只能協助與雲帆軟體產品和服務相關的問題，無法提供天氣預報。建議您查詢中央氣象署網站或天氣 App 取得台北明天的天氣資訊。如有其
+
+本步驟共呼叫模型 2 次（上限 3）
+已寫入 ch01\interactive\fake_kb_raw.json
+
+👉 第 6 步完成
+
+===== 第 7 步 =====
+指令：bash ch01.sh 7
+exit code：0　耗時：0.2 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K902 第 1 章｜客服代理：檢索＋結構化 JSON　第 7 / 8 步
+  練習 2 之三：程式驗證回覆，順便驗官方的兩個範例
+╚══════════════════════════════════════════════════════╝
+
+💡 不再呼叫模型。驗證器照 responseSchema，再加一條官方沒做的「分類代號要在 8 個 id 內」；官方兩個範例都會因表外代號不通過。
+
+▶ 要執行的程式：
+  │ import json, os, sys
+  │ from pathlib import Path
+  │ sys.path.insert(0, os.getcwd())
+  │ from qs_source import read_text
+  │ 
+  │ ROUTE = "customer-support-agent/app/api/chat/route.ts"
+  │ out = Path("ch01/interactive")
+  │ out.mkdir(parents=True, exist_ok=True)
+  │ report_path = out / "fake_kb_report.md"
+  │ report_path.unlink(missing_ok=True)
+  │ 
+  │ ids = ["account", "billing", "feature", "internal", "legal", "other", "technical", "usage"]
+  │ moods = ["positive", "neutral", "negative", "curious", "frustrated", "confused"]
+  │ contract_src = "內建（找不到 contract.json）"
+  │ cp = out / "contract.json"
+  │ if cp.exists():
+  │     try:
+  │         c = json.loads(cp.read_text(encoding="utf-8"))
+  │         if c.get("category_ids") and c.get("user_mood"):
+  │             ids, moods = list(c["category_ids"]), list(c["user_mood"])
+  │             contract_src = "ch01/interactive/contract.json"
+  │     except ValueError:
+  │         pass
+  │ 
+  │ FALLBACK = {
+  │     "A": {"question": "我上個月被重複扣款，可以退款嗎？", "retrieved": 3, "system": "（第 6 步沒有成功，沒有系統提示可記錄）",
+  │           "parsed": {"thinking": "知識庫的退款規則提到重複扣款可全額退款", "response": "很抱歉造成困擾。若同一筆訂單被重複扣款，請在 30 天內來信，我們會全額退款。",
+  │                      "user_mood": "frustrated", "suggested_questions": ["退款多久會退回？", "要附上哪些資料？"],
+  │                      "debug": {"context_used": True}, "matched_categories": ["billing"], "redirect_to_agent": {"should_redirect": False}}},
+  │     "B": {"question": "明天台北會下雨嗎？", "retrieved": 0, "system": "（第 6 步沒有成功，沒有系統提示可記錄）",
+  │           "parsed": {"thinking": "檢索沒有資料，而且問題與本公司產品無關", "response": "這個問題超出我能協助的範圍，我幫您轉接真人客服。",
+  │                      "user_mood": "curious", "suggested_questions": [], "debug": {"context_used": False}, "matched_categories": [],
+  │                      "redirect_to_agent": {"should_redirect": True, "reason": "問題與本公司產品無關，知識庫查無資料"}}},
+  │ }
+  │ 
+  │ loaded = {}
+  │ rawp = out / "fake_kb_raw.json"
+  │ if rawp.exists():
+  │     try:
+  │         loaded = json.loads(rawp.read_text(encoding="utf-8"))
+  │     except ValueError:
+  │         loaded = {}
+  │ if not isinstance(loaded, dict):
+  │     loaded = {}
+  │ 
+  │ def validate(obj):
+  │     errs = []
+  │     for name, typ in (("response", str), ("thinking", str), ("user_mood", str), ("suggested_questions", list), ("debug", dict)):
+  │         if name not in obj:
+  │             errs.append("缺 " + name)
+  │         elif not isinstance(obj[name], typ):
+  │             errs.append(name + " 型別不對")
+  │     if isinstance(obj.get("debug"), dict) and not isinstance(obj["debug"].get("context_used"), bool):
+  │         errs.append("debug.context_used 不是布林")
+  │     if isinstance(obj.get("user_mood"), str) and obj["user_mood"] not in moods:
+  │         errs.append("user_mood 不在允許值：" + obj["user_mood"])
+  │     sq = obj.get("suggested_questions")
+  │     if isinstance(sq, list) and not all(isinstance(s, str) for s in sq):
+  │         errs.append("suggested_questions 不是字串清單")
+  │     if "matched_categories" in obj:
+  │         mc = obj["matched_categories"]
+  │         if not isinstance(mc, list):
+  │             errs.append("matched_categories 不是清單")
+  │         else:
+  │             bad = [str(x) for x in mc if x not in ids]
+  │             if bad:
+  │                 errs.append("分類不在表內：" + "、".join(bad))
+  │     if "redirect_to_agent" in obj:
+  │         ra = obj["redirect_to_agent"]
+  │         if not isinstance(ra, dict) or not isinstance(ra.get("should_redirect"), bool):
+  │             errs.append("should_redirect 不是布林")
+  │     return errs
+  │ 
+  │ def cells(obj):
+  │     dbg = obj.get("debug") if isinstance(obj.get("debug"), dict) else {}
+  │     ra = obj.get("redirect_to_agent") if isinstance(obj.get("redirect_to_agent"), dict) else {}
+  │     mc = obj.get("matched_categories")
+  │     mc_s = ",".join(str(x) for x in mc) if isinstance(mc, list) and mc else "-"
+  │     return str(dbg.get("context_used", "-")), str(obj.get("user_mood", "-")), mc_s, str(ra.get("should_redirect", "-"))
+  │ 
+  │ text = read_text(ROUTE)
+  │ def example_after(marker):
+  │     i = text.index(marker)
+  │     s = text.index("{", i)
+  │     depth = 0
+  │     for j in range(s, len(text)):
+  │         if text[j] == "{":
+  │             depth += 1
+  │         elif text[j] == "}":
+  │             depth -= 1
+  │             if depth == 0:
+  │                 return text[:i].count("\n") + 1, json.loads(text[s:j + 1])
+  │     raise ValueError("找不到範例結尾")
+  │ 
+  │ rows, details = [], []
+  │ for key in ("A", "B"):
+  │     rec = loaded.get(key)
+  │     if isinstance(rec, dict) and isinstance(rec.get("parsed"), dict):
+  │         src = "模型（第 6 步）"
+  │     else:
+  │         rec, src = FALLBACK[key], "內建範例"
+  │     errs = validate(rec["parsed"])
+  │     rows.append((src, key + " " + rec["question"], str(rec.get("retrieved", "-"))) + cells(rec["parsed"]) + ("通過" if not errs else "不通過：" + "；".join(errs),))
+  │     details.append((key, src, rec, errs))
+  │ for label, marker in (("官方範例 1", "Example of a response without redirection"), ("官方範例 2", "Example of a response with redirection")):
+  │     no, ex = example_after(marker)
+  │     errs = validate(ex)
+  │     rows.append(("route.ts:" + str(no), label, "-") + cells(ex) + ("通過" if not errs else "不通過：" + "；".join(errs),))
+  │     details.append((label, "route.ts 第 " + str(no) + " 行起", {"question": label, "system": "（官方系統提示裡的範例，不是模型輸出）", "parsed": ex}, errs))
+  │ 
+  │ print("分類與允許值來源：", contract_src)
+  │ head = ("來源", "問題", "檢索段數", "context_used", "user_mood", "matched_categories", "should_redirect", "驗證結果")
+  │ print(" | ".join(head))
+  │ print("-" * 110)
+  │ for r in rows:
+  │     print(" | ".join(r))
+  │ print()
+  │ 
+  │ a = details[0][2]["parsed"]
+  │ b = details[1][2]["parsed"]
+  │ a_ok = cells(a)[0] == "True" and "billing" in cells(a)[2] and cells(a)[3] == "False"
+  │ b_ra = b.get("redirect_to_agent") if isinstance(b.get("redirect_to_agent"), dict) else {}
+  │ b_ok = b_ra.get("should_redirect") is True and bool(b_ra.get("reason"))
+  │ print("觀察 A（用到退款那段、含 billing、不轉真人）：", "符合預期" if a_ok else "與預期不同（照實記錄）")
+  │ print("觀察 B（查不到 → 轉真人並寫 reason）：", "符合預期" if b_ok else "與預期不同（照實記錄）")
+  │ print("官方兩個範例都用了表外代號；zod 的 z.array(z.string()) 不會擋，只有程式端驗證抓得到。")
+  │ 
+  │ fence = chr(96) * 3
+  │ md = ["# 第 1 章練習 2：假知識庫＋真模型的結構化回覆驗證報告", "",
+  │       "- 假環境：知識庫是 6 筆自編的虛構文件，檢索是字元 bigram 比對；模型是真的（claude -p）。",
+  │       "- 分類與允許值來源：" + contract_src, "",
+  │       "| " + " | ".join(head) + " |", "|" + " --- |" * len(head)]
+  │ md += ["| " + " | ".join(r) + " |" for r in rows]
+  │ for key, src, rec, errs in details:
+  │     md += ["", "## " + key + "（" + src + "）", "", "問題：" + rec["question"], "", "### 系統提示", "", fence + "text", str(rec.get("system", "")), fence,
+  │            "", "### JSON", "", fence + "json", json.dumps(rec["parsed"], ensure_ascii=False, indent=2), fence,
+  │            "", "### 驗證結果", "", "通過" if not errs else "不通過：" + "；".join(errs)]
+  │ report_path.write_text("\n".join(md) + "\n", encoding="utf-8")
+  │ print()
+  │ print("已寫入", report_path)
+▶ 執行結果：
+分類與允許值來源： ch01/interactive/contract.json
+來源 | 問題 | 檢索段數 | context_used | user_mood | matched_categories | should_redirect | 驗證結果
+--------------------------------------------------------------------------------------------------------------
+模型（第 6 步） | A 我上個月被重複扣款，可以退款嗎？ | 3 | True | negative | billing | False | 通過
+模型（第 6 步） | B 明天台北會下雨嗎？ | 0 | False | curious | other | True | 通過
+route.ts:166 | 官方範例 1 | - | True | curious | account_management,billing | False | 不通過：分類不在表內：account_management
+route.ts:181 | 官方範例 2 | - | False | frustrated | technical_support | True | 不通過：分類不在表內：technical_support
+
+觀察 A（用到退款那段、含 billing、不轉真人）： 符合預期
+觀察 B（查不到 → 轉真人並寫 reason）： 符合預期
+官方兩個範例都用了表外代號；zod 的 z.array(z.string()) 不會擋，只有程式端驗證抓得到。
+
+已寫入 ch01\interactive\fake_kb_report.md
+
+👉 第 7 步完成
+
+===== 第 8 步 =====
+指令：bash ch01.sh 8
+exit code：0　耗時：0.2 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K902 第 1 章｜客服代理：檢索＋結構化 JSON　第 8 / 8 步
+  總結：本章 6 個重點與產出檔案
+╚══════════════════════════════════════════════════════╝
+
+💡 這個專案的價值在「回覆契約」與「先檢索、再生成」；演練裡哪些是假的、和官方差在哪裡，都要照實說。
+
+▶ 要執行的程式：
+  │ from pathlib import Path
+  │ 
+  │ points = [
+  │     "先檢索、再生成：一次 retrieveContext（utils.ts，預設 n = 3）加一次 client.messages.create（route.ts 第 228 行）；route.ts 沒有 stream、tools，也沒有工具迴圈。",
+  │     "回覆契約：responseSchema 有 7 個頂層欄位（5 必填、2 選填），user_mood 只能是 6 個值之一；一次呼叫同時做完回答、情緒、分類、追問、轉真人。",
+  │     "強制 JSON 有三層：系統提示寫格式與兩個範例、第 225 行預填 assistant 的 {、第 253 行 zod 驗證。claude -p 不能預填，所以演練改成要求只回 JSON，再由程式驗證。",
+  │     "模型看到最多 3 段，畫面只顯示 1 個來源（utils.ts 第 77 行 slice(0, 1)）；檢索失敗時提示換成 No information found for this query.，靠提示詞讓模型轉真人。",
+  │     "提示範例的 account_management、technical_support 不在 8 個分類 id 內，keywords 也沒送給模型；zod 不檢查代號內容，只有程式端驗證抓得到（第 7 步兩個官方範例都不通過）。",
+  │     "演練的假知識庫是字元 bigram 比對，不是向量檢索；官方只要檢索呼叫成功 isRagWorking 就是 true（就算 0 筆），演練版改成有結果才 True。哪些是假的要照實說。",
+  │ ]
+  │ print("第 1 章重點：")
+  │ for i, p in enumerate(points, 1):
+  │     print("  {}. {}".format(i, p))
+  │ print()
+  │ print("本章產出檔案：")
+  │ for name in ("contract.json", "retrieval.json", "fake_kb_raw.json", "fake_kb_report.md"):
+  │     p = Path("ch01/interactive") / name
+  │     print("  {} {}".format("OK" if p.exists() else "缺", p))
+▶ 執行結果：
+第 1 章重點：
+  1. 先檢索、再生成：一次 retrieveContext（utils.ts，預設 n = 3）加一次 client.messages.create（route.ts 第 228 行）；route.ts 沒有 stream、tools，也沒有工具迴圈。
+  2. 回覆契約：responseSchema 有 7 個頂層欄位（5 必填、2 選填），user_mood 只能是 6 個值之一；一次呼叫同時做完回答、情緒、分類、追問、轉真人。
+  3. 強制 JSON 有三層：系統提示寫格式與兩個範例、第 225 行預填 assistant 的 {、第 253 行 zod 驗證。claude -p 不能預填，所以演練改成要求只回 JSON，再由程式驗證。
+  4. 模型看到最多 3 段，畫面只顯示 1 個來源（utils.ts 第 77 行 slice(0, 1)）；檢索失敗時提示換成 No information found for this query.，靠提示詞讓模型轉真人。
+  5. 提示範例的 account_management、technical_support 不在 8 個分類 id 內，keywords 也沒送給模型；zod 不檢查代號內容，只有程式端驗證抓得到（第 7 步兩個官方範例都不通過）。
+  6. 演練的假知識庫是字元 bigram 比對，不是向量檢索；官方只要檢索呼叫成功 isRagWorking 就是 true（就算 0 筆），演練版改成有結果才 True。哪些是假的要照實說。
+
+本章產出檔案：
+  OK ch01\interactive\contract.json
+  OK ch01\interactive\retrieval.json
+  OK ch01\interactive\fake_kb_raw.json
+  OK ch01\interactive\fake_kb_report.md
+
+👉 第 8 步完成

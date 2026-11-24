@@ -1,0 +1,117 @@
+{
+  "round": 1,
+  "queue": [
+    "ch06"
+  ],
+  "units": {
+    "ch06": {
+      "status": "done",
+      "station": "commit",
+      "retries": {},
+      "verdicts": [
+        {
+          "ts": "2026-11-25 04:23:38",
+          "station": "judge",
+          "verdict": "PASS",
+          "note": ""
+        },
+        {
+          "ts": "2026-11-25 04:24:59",
+          "station": "review",
+          "verdict": "PASS",
+          "note": ""
+        }
+      ],
+      "calls": 4,
+      "started": "2026-11-25 04:10:59",
+      "finished": "2026-11-25 04:24:59",
+      "round": 1,
+      "once_done": [],
+      "feedback": null,
+      "cost_usd": 4.593244,
+      "sessions": [
+        {
+          "role": "planner",
+          "session_id": "d3089157-52b4-4982-b596-4b943bbee493",
+          "cost_usd": 2.1354037999999997,
+          "turns": 17
+        },
+        {
+          "role": "writer",
+          "session_id": "48ecd69f-b04c-48df-bd08-98e816c979e6",
+          "cost_usd": 1.1987526000000002,
+          "turns": 12
+        },
+        {
+          "role": "tester",
+          "session_id": "ff5e90bb-4d88-4540-a814-fe6cceed7da7",
+          "cost_usd": 0.6723013999999999,
+          "turns": 6
+        },
+        {
+          "role": "reviewer",
+          "session_id": "7816187b-1af0-47d3-a91e-9db635232494",
+          "cost_usd": 0.5867858,
+          "turns": 12
+        }
+      ],
+      "approved": [],
+      "approval": null,
+      "engine_errors": 0,
+      "commits": [
+        "87c48fdfd8debfdb34cfe30b8242dc87e66f260b"
+      ]
+    }
+  },
+  "history": [
+    {
+      "ts": "2026-11-25 04:10:50",
+      "round": 0,
+      "unit": "-",
+      "event": "建立 queue：ch06"
+    },
+    {
+      "ts": "2026-11-25 04:10:59",
+      "round": 1,
+      "unit": "ch06",
+      "event": "第 1 輪開始"
+    },
+    {
+      "ts": "2026-11-25 04:18:58",
+      "round": 1,
+      "unit": "ch06",
+      "event": "1 規劃 完成"
+    },
+    {
+      "ts": "2026-11-25 04:22:34",
+      "round": 1,
+      "unit": "ch06",
+      "event": "2 寫腳本＋教練稿 完成"
+    },
+    {
+      "ts": "2026-11-25 04:22:51",
+      "round": 1,
+      "unit": "ch06",
+      "event": "3 執行腳本 完成 → ch06-raw.log"
+    },
+    {
+      "ts": "2026-11-25 04:23:38",
+      "round": 1,
+      "unit": "ch06",
+      "event": "4 測試判定 PASS"
+    },
+    {
+      "ts": "2026-11-25 04:24:59",
+      "round": 1,
+      "unit": "ch06",
+      "event": "5 審查 PASS"
+    },
+    {
+      "ts": "2026-11-25 04:24:59",
+      "round": 1,
+      "unit": "ch06",
+      "event": "完成並 commit：工廠：新增 K902 ch06 互動演練腳本（第 1 輪）"
+    }
+  ],
+  "applied_commands": []
+}

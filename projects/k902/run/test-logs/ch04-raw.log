@@ -1,0 +1,1120 @@
+# ch04 執行紀錄　2026-11-25 03:57:34
+
+===== bash -n 語法檢查 =====
+指令：bash -n ch04.sh
+exit code：0　耗時：0.2 秒
+----- 輸出 -----
+
+
+===== 第 1 步 =====
+指令：bash ch04.sh 1
+exit code：0　耗時：0.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K902 第 4 章｜瀏覽器工具組 browser-toolset　第 1 / 8 步
+  主角登場：browser-toolset 檔案表＋「誰負責什麼」分工表
+╚══════════════════════════════════════════════════════╝
+
+💡 這章是導讀＋小模擬：原始做法要 Chromium、新版 SDK 的 tool runner 和伺服器端工具組型別，這裡不能實跑，也不 import 官方模組。先用 qs_source 把原始碼當文字讀，看清楚 run.py、SDK、CdpBrowser 驅動程式三層各管什麼。
+
+▶ 要執行的程式：
+  │ import os, sys
+  │ sys.path.insert(0, os.getcwd())
+  │ from qs_source import root, read_text, grep
+  │ 
+  │ Q = chr(34)
+  │ B = "browser-toolset/"
+  │ print("官方 repo 資料夾：", root().name, "（只讀；不安裝依賴、不執行啟動指令、不需要 Chromium 與金鑰）")
+  │ print()
+  │ files = [
+  │     ("python/cdp_browser.py", "範例驅動程式 CdpBrowser：啟動 Chromium、連 CDP、實作五個工具"),
+  │     ("python/run.py", "入口：範例 URL 政策＋SDK 的 tool runner，逐則印出模型訊息"),
+  │     ("python/exercise.py", "不用模型的冒煙檢查：手寫 tool_use 直接送進 tool_result()"),
+  │     ("python/requirements.txt", "Python 依賴（本教材不安裝）"),
+  │     ("typescript/cdp-browser.ts", "同一套做法的 TypeScript 版驅動程式"),
+  │     ("README.md", "安裝、執行、實作了什麼與沒做什麼"),
+  │ ]
+  │ print("【表 1】關鍵檔案")
+  │ print("{:<26} | {:>4} | {}".format("檔案", "行數", "負責什麼"))
+  │ print("-" * 100)
+  │ for rel, desc in files:
+  │     print("{:<26} | {:>4} | {}".format(rel, len(read_text(B + rel).splitlines()), desc))
+  │ print()
+  │ 
+  │ flow = [
+  │     ("run.py", "預設任務（整個命令列就是任務）", "python/run.py", "Open example[.]com and tell me the page heading"),
+  │     ("run.py", "範例 URL 政策與預設放行的主機", "python/run.py", "url_policy=example_policy"),
+  │     ("SDK", "tool runner 自動跑工具迴圈", "python/run.py", "tool_runner[(]"),
+  │     ("run.py", "預設模型", "python/run.py", "MODEL" + Q + ", " + Q + "claude-sonnet-5-5"),
+  │     ("run.py", "max_tokens", "python/run.py", "max_tokens=1024"),
+  │     ("SDK", "tools 裡只放一個工具組物件", "python/run.py", "tools=[[]browser[]]"),
+  │     ("SDK 抽象類別", "驅動程式繼承它", "python/cdp_browser.py", "^class CdpBrowser"),
+  │     ("SDK 抽象類別", "驅動程式沒實作的工具由 SDK 關掉", "python/cdp_browser.py", "turns off every other tool"),
+  │     ("驅動程式", "自己啟動 Chromium，讓它自己挑埠", "python/cdp_browser.py", "--remote-debugging-port=0"),
+  │     ("驅動程式", "讀 DevToolsActivePort 取得端點", "python/cdp_browser.py", "port_file = "),
+  │     ("驅動程式", "一個 CDP 指令＝一則 WebSocket JSON", "python/cdp_browser.py", "def _send[(]"),
+  │     ("exercise.py", "不經模型，直接呼叫 tool_result", "python/exercise.py", "browser[.]tool_result[(]tool_use[)]"),
+  │ ]
+  │ print("【表 2】誰負責什麼（行號從原始碼 grep 出來）")
+  │ print("{:<12} | {:<34} | {:<20} | {}".format("誰", "做什麼", "檔案:行號", "原文"))
+  │ print("-" * 140)
+  │ for who, what, rel, pat in flow:
+  │     hits = grep(B + rel, pat)
+  │     name = rel.split("/")[-1]
+  │     where = name + ":" + (str(hits[0][0]) if hits else "-")
+  │     text = hits[0][1].strip()[:90] if hits else "找不到"
+  │     print("{:<12} | {:<34} | {:<20} | {}".format(who, what, where, text))
+  │ print()
+  │ print("→ 工具 schema、URL 檢查、拒絕沒實作的工具、工具迴圈都在 SDK；這個資料夾只看得到驅動程式那一半。")
+  │ print("→ 這個範例沒有截圖：模型看頁面靠 read_page 回傳的文字清單。")
+▶ 執行結果：
+官方 repo 資料夾： claude-quickstarts （只讀；不安裝依賴、不執行啟動指令、不需要 Chromium 與金鑰）
+
+【表 1】關鍵檔案
+檔案                         |   行數 | 負責什麼
+----------------------------------------------------------------------------------------------------
+python/cdp_browser.py      |  295 | 範例驅動程式 CdpBrowser：啟動 Chromium、連 CDP、實作五個工具
+python/run.py              |   93 | 入口：範例 URL 政策＋SDK 的 tool runner，逐則印出模型訊息
+python/exercise.py         |  143 | 不用模型的冒煙檢查：手寫 tool_use 直接送進 tool_result()
+python/requirements.txt    |    4 | Python 依賴（本教材不安裝）
+typescript/cdp-browser.ts  |  395 | 同一套做法的 TypeScript 版驅動程式
+README.md                  |   85 | 安裝、執行、實作了什麼與沒做什麼
+
+【表 2】誰負責什麼（行號從原始碼 grep 出來）
+誰            | 做什麼                                | 檔案:行號                | 原文
+--------------------------------------------------------------------------------------------------------------------------------------------
+run.py       | 預設任務（整個命令列就是任務）                    | run.py:69            | task = " ".join(args.task) or "Open example.com and tell me the page heading."
+run.py       | 範例 URL 政策與預設放行的主機                  | run.py:74            | url_policy=example_policy(env_list("ALLOWED_DOMAINS", "example.com,iana.org")),
+SDK          | tool runner 自動跑工具迴圈                | run.py:82            | runner = client.beta.messages.tool_runner(
+run.py       | 預設模型                               | run.py:83            | model=os.environ.get("MODEL", "claude-sonnet-5-5"),
+run.py       | max_tokens                         | run.py:84            | max_tokens=1024,
+SDK          | tools 裡只放一個工具組物件                   | run.py:85            | tools=[browser],
+SDK 抽象類別     | 驅動程式繼承它                            | cdp_browser.py:63    | class CdpBrowser(BetaAbstractBrowserToolset20260801):
+SDK 抽象類別     | 驅動程式沒實作的工具由 SDK 關掉                 | cdp_browser.py:6     | launches. The SDK turns off every other tool in the toolset's `configs` and offers the mod
+驅動程式         | 自己啟動 Chromium，讓它自己挑埠               | cdp_browser.py:91    | "--remote-debugging-port=0",
+驅動程式         | 讀 DevToolsActivePort 取得端點          | cdp_browser.py:107   | port_file = Path(self._profile_dir) / "DevToolsActivePort"
+驅動程式         | 一個 CDP 指令＝一則 WebSocket JSON        | cdp_browser.py:156   | def _send(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+exercise.py  | 不經模型，直接呼叫 tool_result              | exercise.py:80       | result = browser.tool_result(tool_use)
+
+→ 工具 schema、URL 檢查、拒絕沒實作的工具、工具迴圈都在 SDK；這個資料夾只看得到驅動程式那一半。
+→ 這個範例沒有截圖：模型看頁面靠 read_page 回傳的文字清單。
+
+👉 第 1 步完成
+C:\Users\USER\workspace\kindle-902-claude-quickstarts-factory\practice\qs_source.py:51: FutureWarning: Possible nested set at position 7
+  regex = re.compile(pattern)
+
+===== 第 2 步 =====
+指令：bash ch04.sh 2
+exit code：0　耗時：0.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K902 第 4 章｜瀏覽器工具組 browser-toolset　第 2 / 8 步
+  練習 1 之一：7 個 @override 方法各直接送了哪些 CDP 指令
+╚══════════════════════════════════════════════════════╝
+
+💡 不執行官方程式，只把 cdp_browser.py 當純文字分析。看五個工具加上 close 與 _browser_state 各自直接送了哪個 CDP 指令、用了哪段 JS 常數；你會發現 read_page 和 get_page_text 根本沒直接呼叫 _send，而是經 _evaluate 用 Runtime.evaluate 在頁面裡跑 JS。
+
+▶ 要執行的程式：
+  │ import os, re, sys
+  │ sys.path.insert(0, os.getcwd())
+  │ from qs_source import read_text, grep
+  │ 
+  │ Q = chr(34)
+  │ CDP = "browser-toolset/python/cdp_browser.py"
+  │ lines = read_text(CDP).splitlines()
+  │ JS = ["READ_PAGE", "RESOLVE_REF", "PAGE_INFO", "PAGE_TEXT"]
+  │ SEND = re.compile("self[.]_send[(]" + Q + "([A-Za-z]+[.][A-Za-z]+)" + Q)
+  │ DEF = re.compile("    def ([A-Za-z_]+)[(]")
+  │ 
+  │ def methods():
+  │     out = []
+  │     for j, line in enumerate(lines):
+  │         m = DEF.match(line)
+  │         if not m:
+  │             continue
+  │         k = j + 1
+  │         while k < len(lines):
+  │             nxt = lines[k]
+  │             if nxt.startswith("    @") or nxt.startswith("    def ") or (nxt and not nxt.startswith(" ")):
+  │                 break
+  │             k += 1
+  │         deco = j if j > 0 and lines[j - 1].strip() == "@override" else None
+  │         out.append({"name": m.group(1), "def": j + 1, "end": k, "override": deco, "body": "\n".join(lines[j + 1:k])})
+  │     return out
+  │ 
+  │ def direct(body):
+  │     found = SEND.findall(body)
+  │     seen = []
+  │     for f in found:
+  │         if f not in seen:
+  │             seen.append(f)
+  │     return ", ".join(s + ("×" + str(found.count(s)) if found.count(s) > 1 else "") for s in seen) or "-"
+  │ 
+  │ def consts(body):
+  │     return ", ".join(c for c in JS if c in body) or "-"
+  │ 
+  │ def indirect(body):
+  │     if "self._evaluate(" in body:
+  │         return "Runtime.evaluate（經 _evaluate）"
+  │     if "self._page_info(" in body:
+  │         return "Runtime.evaluate（經 _page_info）"
+  │     return "-"
+  │ 
+  │ ms = methods()
+  │ ov = [m for m in ms if m["override"]]
+  │ print("cdp_browser.py 共", len(lines), "行；grep 到", len(grep(CDP, "^    @override")), "行 @override，對應方法", len(ov), "個")
+  │ print()
+  │ print("【表一】@override 方法 → 直接送的 CDP 指令")
+  │ print("{:<15} | {:<15} | {:<28} | {:<12} | {}".format("方法", "行號(@/def)", "直接送的 CDP 指令", "JS 常數", "間接用到"))
+  │ print("-" * 110)
+  │ for m in ov:
+  │     print("{:<15} | {:<15} | {:<28} | {:<12} | {}".format(m["name"], "{}/{}".format(m["override"], m["def"]), direct(m["body"]), consts(m["body"]), indirect(m["body"])))
+  │ print()
+  │ for name in ("read_page", "get_page_text"):
+  │     body = [m for m in ms if m["name"] == name][0]["body"]
+  │     print("  {} 直接呼叫 _send：{}".format(name, "是" if "self._send(" in body else "否"))
+  │ print()
+  │ print("【補充】不是 @override、但直接送指令或用到 JS 常數的方法")
+  │ for m in ms:
+  │     if m["override"]:
+  │         continue
+  │     d, c = direct(m["body"]), consts(m["body"])
+  │     if d != "-" or c != "-":
+  │         print("  {:<12} 第 {:>3} 行 | 指令：{} | JS 常數：{}".format(m["name"], m["def"], d, c))
+  │ print()
+  │ print("JS 常數定義在檔尾：")
+  │ for no, line in grep(CDP, "^(READ_PAGE|RESOLVE_REF|PAGE_INFO|PAGE_TEXT) = "):
+  │     print("  第 {} 行：{}".format(no, line.strip()[:60]))
+  │ for no, line in grep(CDP, "for kind in"):
+  │     print("left_click 第 {} 行：{}".format(no, line.strip()))
+  │ print("→ 程式裡寫了 2 處 Input.dispatchMouseEvent，執行時送 3 個滑鼠事件：mouseMoved、mousePressed、mouseReleased。")
+▶ 執行結果：
+cdp_browser.py 共 295 行；grep 到 7 行 @override，對應方法 7 個
+
+【表一】@override 方法 → 直接送的 CDP 指令
+方法              | 行號(@/def)       | 直接送的 CDP 指令                  | JS 常數        | 間接用到
+--------------------------------------------------------------------------------------------------------------
+close           | 130/131         | Browser.close                | -            | -
+navigate        | 201/202         | Page.navigate                | -            | Runtime.evaluate（經 _page_info）
+read_page       | 225/226         | -                            | READ_PAGE    | Runtime.evaluate（經 _evaluate）
+left_click      | 229/230         | Input.dispatchMouseEvent×2   | RESOLVE_REF  | Runtime.evaluate（經 _evaluate）
+get_page_text   | 243/244         | -                            | PAGE_TEXT    | Runtime.evaluate（經 _evaluate）
+wait            | 247/248         | -                            | -            | -
+_browser_state  | 254/255         | -                            | -            | Runtime.evaluate（經 _page_info）
+
+  read_page 直接呼叫 _send：否
+  get_page_text 直接呼叫 _send：否
+
+【補充】不是 @override、但直接送指令或用到 JS 常數的方法
+  _connect     第 121 行 | 指令：Target.createTarget, Target.attachToTarget, Page.enable, Page.setLifecycleEventsEnabled, Runtime.enable | JS 常數：-
+  _evaluate    第 188 行 | 指令：Runtime.evaluate | JS 常數：-
+  _page_info   第 196 行 | 指令：- | JS 常數：PAGE_INFO
+
+JS 常數定義在檔尾：
+  第 267 行：READ_PAGE = """(() => {
+  第 286 行：RESOLVE_REF = """((ref) => {
+  第 294 行：PAGE_INFO = "({ url: location.href, title: document.title })
+  第 295 行：PAGE_TEXT = "document.body ? document.body.innerText : ''"
+left_click 第 239 行：for kind in ("mousePressed", "mouseReleased"):
+→ 程式裡寫了 2 處 Input.dispatchMouseEvent，執行時送 3 個滑鼠事件：mouseMoved、mousePressed、mouseReleased。
+
+👉 第 2 步完成
+
+===== 第 3 步 =====
+指令：bash ch04.sh 3
+exit code：0　耗時：0.2 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K902 第 4 章｜瀏覽器工具組 browser-toolset　第 3 / 8 步
+  練習 1 之二：全檔 CDP 字串、常數與啟動參數，存成 driver_map.md
+╚══════════════════════════════════════════════════════╝
+
+💡 不呼叫模型。把整支驅動程式的 CDP 用量收斂成 9 個指令加 1 個事件，看逾時常數和 10 個啟動參數；再用計數證明型別字串 browser_toolset_20260801 不在三支 .py 裡，程式只看得到 SDK 的抽象類別名稱。
+
+▶ 要執行的程式：
+  │ import os, re, sys
+  │ from pathlib import Path
+  │ sys.path.insert(0, os.getcwd())
+  │ from qs_source import read_text, grep
+  │ 
+  │ Q = chr(34)
+  │ B = "browser-toolset/"
+  │ CDP = B + "python/cdp_browser.py"
+  │ full = read_text(CDP)
+  │ lines = full.splitlines()
+  │ JS = ["READ_PAGE", "RESOLVE_REF", "PAGE_INFO", "PAGE_TEXT"]
+  │ SEND = re.compile("self[.]_send[(]" + Q + "([A-Za-z]+[.][A-Za-z]+)" + Q)
+  │ DEF = re.compile("    def ([A-Za-z_]+)[(]")
+  │ DM = re.compile(Q + "([A-Z][A-Za-z]*[.][a-z][A-Za-z]*)" + Q)
+  │ ARG = re.compile(Q + "(--[^" + Q + "]+)" + Q)
+  │ 
+  │ out = Path("ch04/interactive")
+  │ out.mkdir(parents=True, exist_ok=True)
+  │ map_path = out / "driver_map.md"
+  │ map_path.unlink(missing_ok=True)
+  │ 
+  │ def methods():
+  │     res = []
+  │     for j, line in enumerate(lines):
+  │         m = DEF.match(line)
+  │         if not m:
+  │             continue
+  │         k = j + 1
+  │         while k < len(lines):
+  │             nxt = lines[k]
+  │             if nxt.startswith("    @") or nxt.startswith("    def ") or (nxt and not nxt.startswith(" ")):
+  │                 break
+  │             k += 1
+  │         deco = j if j > 0 and lines[j - 1].strip() == "@override" else None
+  │         res.append({"name": m.group(1), "def": j + 1, "end": k, "override": deco, "body": "\n".join(lines[j + 1:k])})
+  │     return res
+  │ 
+  │ def direct(body):
+  │     found = SEND.findall(body)
+  │     seen = []
+  │     for f in found:
+  │         if f not in seen:
+  │             seen.append(f)
+  │     return ", ".join(s + ("×" + str(found.count(s)) if found.count(s) > 1 else "") for s in seen) or "-"
+  │ 
+  │ def consts(body):
+  │     return ", ".join(c for c in JS if c in body) or "-"
+  │ 
+  │ ms = methods()
+  │ t1 = [(m["name"], "{}/{}".format(m["override"], m["def"]), direct(m["body"]), consts(m["body"])) for m in ms if m["override"]]
+  │ 
+  │ sent = set(SEND.findall(full))
+  │ seen = {}
+  │ for no, line in enumerate(lines, 1):
+  │     for name in DM.findall(line):
+  │         seen.setdefault(name, []).append(no)
+  │ 
+  │ def owner(no):
+  │     name = "-"
+  │     for m in ms:
+  │         if m["def"] <= no:
+  │             name = m["name"]
+  │     return name
+  │ 
+  │ t2 = [(name, ", ".join(str(n) for n in nos), "指令" if name in sent else "事件（不是指令）", owner(nos[0])) for name, nos in seen.items()]
+  │ print("【表二】全檔不重複的 Domain.method 字串")
+  │ print("{:<32} | {:<9} | {:<16} | {}".format("Domain.method", "行號", "種類", "所在方法"))
+  │ print("-" * 80)
+  │ for row in t2:
+  │     print("{:<32} | {:<9} | {:<16} | {}".format(*row))
+  │ n_cmd = sum(1 for r in t2 if r[2] == "指令")
+  │ print("共 {} 個：指令 {} 個、事件 {} 個".format(len(t2), n_cmd, len(t2) - n_cmd))
+  │ print()
+  │ 
+  │ t3c = []
+  │ for cname in ("COMMAND_TIMEOUT_S", "TAB_ID"):
+  │     no, line = grep(CDP, "^" + cname + " = ")[0]
+  │     value = line.split("=", 1)[1].split("#")[0].strip()
+  │     uses = ", ".join(str(n) for n, _ in grep(CDP, cname))
+  │     t3c.append((cname, value, str(no), uses))
+  │ launch = [m for m in ms if m["name"] == "_launch"][0]
+  │ t3a = []
+  │ for no in range(launch["def"], launch["end"] + 1):
+  │     line = lines[no - 1]
+  │     for arg in ARG.findall(line):
+  │         cond = "headless=True 才加" if "if headless" in line else ("以 root 執行才加" if "geteuid" in line else "一律")
+  │         t3a.append((arg, str(no), cond))
+  │ print("【表三】常數與 _launch 的啟動參數")
+  │ for row in t3c:
+  │     print("  {} = {}（第 {} 行定義；出現在第 {} 行）".format(*row))
+  │ print("  {:<40} | {:>4} | {}".format("啟動參數", "行號", "條件"))
+  │ for row in t3a:
+  │     print("  {:<40} | {:>4} | {}".format(*row))
+  │ print("  共", len(t3a), "個 -- 參數")
+  │ print()
+  │ 
+  │ counts = []
+  │ for rel in ("README.md", "python/cdp_browser.py", "python/run.py", "python/exercise.py"):
+  │     a = sum(l.count("browser_toolset_20260801") for _, l in grep(B + rel, "browser_toolset_20260801"))
+  │     b = sum(l.count("BetaAbstractBrowserToolset20260801") for _, l in grep(B + rel, "BetaAbstractBrowserToolset20260801"))
+  │     counts.append((rel, a, b))
+  │ print("【計數】型別字串與類別名稱出現次數")
+  │ print("  {:<24} | {:>24} | {}".format("檔案", "browser_toolset_20260801", "BetaAbstractBrowserToolset20260801"))
+  │ for row in counts:
+  │     print("  {:<24} | {:>24} | {}".format(*row))
+  │ print("→ 型別字串只在 README 出現；.py 裡只有類別名稱。送出型別字串的是 SDK 那一側（細節從這個資料夾看不出來）。")
+  │ 
+  │ md = ["# 第 4 章練習 1：CdpBrowser 驅動程式對照表", "", "來源：browser-toolset/python/cdp_browser.py（只讀、純文字分析，未執行）", "",
+  │       "## 表一：@override 方法", "", "| 方法 | 行號(@/def) | 直接送的 CDP 指令 | JS 常數 |", "| --- | --- | --- | --- |"]
+  │ md += ["| {} | {} | {} | {} |".format(*r) for r in t1]
+  │ md += ["", "## 表二：不重複的 Domain.method", "", "| Domain.method | 行號 | 種類 | 所在方法 |", "| --- | --- | --- | --- |"]
+  │ md += ["| {} | {} | {} | {} |".format(*r) for r in t2]
+  │ md += ["", "- 共 {} 個：指令 {} 個、事件 {} 個".format(len(t2), n_cmd, len(t2) - n_cmd)]
+  │ md += ["", "## 表三：常數與啟動參數", "", "| 常數 | 值 | 定義行 | 出現行 |", "| --- | --- | --- | --- |"]
+  │ md += ["| {} | {} | {} | {} |".format(*r) for r in t3c]
+  │ md += ["", "| 啟動參數 | 行號 | 條件 |", "| --- | --- | --- |"]
+  │ md += ["| {} | {} | {} |".format(*r) for r in t3a]
+  │ md += ["", "## 型別字串計數", "", "| 檔案 | browser_toolset_20260801 | BetaAbstractBrowserToolset20260801 |", "| --- | --- | --- |"]
+  │ md += ["| {} | {} | {} |".format(*r) for r in counts]
+  │ map_path.write_text("\n".join(md) + "\n", encoding="utf-8")
+  │ print()
+  │ print("已寫入", map_path)
+▶ 執行結果：
+【表二】全檔不重複的 Domain.method 字串
+Domain.method                    | 行號        | 種類               | 所在方法
+--------------------------------------------------------------------------------
+Target.createTarget              | 124       | 指令               | _connect
+Target.attachToTarget            | 125       | 指令               | _connect
+Page.enable                      | 126       | 指令               | _connect
+Page.setLifecycleEventsEnabled   | 127       | 指令               | _connect
+Runtime.enable                   | 128       | 指令               | _connect
+Browser.close                    | 136       | 指令               | close
+Page.lifecycleEvent              | 184       | 事件（不是指令）         | _receive
+Runtime.evaluate                 | 190       | 指令               | _evaluate
+Page.navigate                    | 208       | 指令               | navigate
+Input.dispatchMouseEvent         | 238, 240  | 指令               | left_click
+共 10 個：指令 9 個、事件 1 個
+
+【表三】常數與 _launch 的啟動參數
+  COMMAND_TIMEOUT_S = 30（第 46 行定義；出現在第 46, 165, 215, 220 行）
+  TAB_ID = "tab_1"（第 47 行定義；出現在第 47, 260 行）
+  啟動參數                                     |   行號 | 條件
+  --headless=new                           |   90 | headless=True 才加
+  --remote-debugging-port=0                |   91 | 一律
+  --user-data-dir={self._profile_dir}      |   92 | 一律
+  --no-first-run                           |   93 | 一律
+  --no-default-browser-check               |   94 | 一律
+  --disable-background-networking          |   95 | 一律
+  --disable-extensions                     |   96 | 一律
+  --disable-sync                           |   97 | 一律
+  --window-size=1280,720                   |   98 | 一律
+  --no-sandbox                             |  100 | 以 root 執行才加
+  共 10 個 -- 參數
+
+【計數】型別字串與類別名稱出現次數
+  檔案                       | browser_toolset_20260801 | BetaAbstractBrowserToolset20260801
+  README.md                |                        1 | 0
+  python/cdp_browser.py    |                        0 | 3
+  python/run.py            |                        0 | 0
+  python/exercise.py       |                        0 | 2
+→ 型別字串只在 README 出現；.py 裡只有類別名稱。送出型別字串的是 SDK 那一側（細節從這個資料夾看不出來）。
+
+已寫入 ch04\interactive\driver_map.md
+
+👉 第 3 步完成
+
+===== 第 4 步 =====
+指令：bash ch04.sh 4
+exit code：0　耗時：0.2 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K902 第 4 章｜瀏覽器工具組 browser-toolset　第 4 / 8 步
+  練習 2 之一：假瀏覽器 FakeBrowser 與程式自己做的三步（離線）
+╚══════════════════════════════════════════════════════╝
+
+💡 不呼叫模型。FakeBrowser 是假的環境：只有一頁 localhost:8000、幾十行的文字狀態物件，不是 Chromium。程式自己做 navigate、read_page、navigate 到 127.0.0.1（被拒絕），再對照原始碼分清楚：官方做法裡 127.0.0.1 是 SDK 擋的、wait 31 秒是驅動程式擋的。
+
+▶ 要執行的程式：
+  │ import json, os, sys
+  │ from pathlib import Path
+  │ from urllib.parse import urlsplit
+  │ sys.path.insert(0, os.getcwd())
+  │ from qs_source import grep
+  │ 
+  │ Q = chr(34)
+  │ APOS = chr(39)
+  │ HOME = "http://localhost:8000"
+  │ B = "browser-toolset/python/"
+  │ out = Path("ch04/interactive")
+  │ out.mkdir(parents=True, exist_ok=True)
+  │ steps_path = out / "program_steps.json"
+  │ steps_path.unlink(missing_ok=True)
+  │ 
+  │ class FakeToolError(Exception):
+  │     pass
+  │ 
+  │ class FakeBrowser:
+  │     """假環境：只有一頁 http://localhost:8000/ 的文字狀態瀏覽器，不是 Chromium。"""
+  │     def __init__(self):
+  │         self.url = "about:blank"
+  │         self.clicked = False
+  │ 
+  │     def navigate(self, url):
+  │         if not url.startswith(HOME):
+  │             raise FakeToolError("blocked: " + url + " is outside this exercise" + APOS + "s page")
+  │         self.url = url
+  │         return json.dumps({"url": url, "title": "Exercise page"})
+  │ 
+  │     def read_page(self):
+  │         return "\n".join([
+  │             "- heading " + Q + "Exercise page" + Q + " [ref_1]",
+  │             "- button " + Q + "Click me" + Q + " [ref_2]",
+  │             "- link " + Q + "About this page" + Q + " [ref_3]",
+  │         ])
+  │ 
+  │     def left_click(self, ref):
+  │         if ref == "ref_2":
+  │             self.clicked = True
+  │             return "clicked " + ref
+  │         if ref in ("ref_1", "ref_3"):
+  │             return "clicked " + ref + "（假環境：不換頁、狀態不變）"
+  │         raise FakeToolError("Unknown or stale ref: " + str(ref) + ". Call read_page again for current refs.")
+  │ 
+  │     def get_page_text(self):
+  │         return "The button was clicked." if self.clicked else "The button has not been clicked."
+  │ 
+  │ browser = FakeBrowser()
+  │ rows = []
+  │ 
+  │ def record(tool, tool_input, fn):
+  │     try:
+  │         result, err = str(fn()), False
+  │     except FakeToolError as exc:
+  │         result, err = str(exc), True
+  │     rows.append({"step": len(rows) + 1, "who": "程式", "call": 0, "tool": tool, "input": tool_input, "result": result, "is_error": err})
+  │ 
+  │ print("假環境：FakeBrowser 只是幾十行的文字狀態物件（clicked=False），不是 Chromium；這一步不呼叫模型。")
+  │ print()
+  │ record("navigate", {"url": HOME + "/"}, lambda: browser.navigate(HOME + "/"))
+  │ record("read_page", {}, browser.read_page)
+  │ record("navigate", {"url": "http://127.0.0.1:8000/"}, lambda: browser.navigate("http://127.0.0.1:8000/"))
+  │ print("{:>4} | {:<6} | {:<10} | {:<36} | {:<8} | {}".format("步驟", "誰發起", "工具", "輸入", "is_error", "結果"))
+  │ print("-" * 140)
+  │ for r in rows:
+  │     print("{:>4} | {:<6} | {:<10} | {:<36} | {:<8} | {}".format(r["step"], r["who"], r["tool"], json.dumps(r["input"]), str(r["is_error"]), r["result"].replace("\n", " / ")))
+  │ print()
+  │ print("三步之後：url =", browser.url, "｜clicked =", browser.clicked)
+  │ print()
+  │ 
+  │ print("【額外檢查，不記錄】")
+  │ try:
+  │     browser.left_click("ref_9")
+  │ except FakeToolError as exc:
+  │     print("  left_click ref_9 →", exc)
+  │ 
+  │ def official_like(url):
+  │     parts = urlsplit(url)
+  │     return "{}://{}".format(parts.scheme, parts.netloc) == HOME
+  │ 
+  │ print("  網址檢查比較：假環境用 startswith，官方 exercise.py 的 only() 比對 scheme://netloc 是否完全相同")
+  │ for url in (HOME + "/", "http://127.0.0.1:8000/", "http://localhost:8000.evil.example/"):
+  │     print("  {:<38} | 假環境：{} | 官方式：{}".format(url, "放行" if url.startswith(HOME) else "擋", "放行" if official_like(url) else "擋"))
+  │ print()
+  │ 
+  │ who = [
+  │     ("navigate 到 127.0.0.1", "SDK 套用 url_policy", "驅動程式執行前", "exercise.py", "is outside this exercise"),
+  │     ("（同上，原始碼註解）", "SDK", "驅動程式執行前", "exercise.py", "refuses this call before the driver"),
+  │     ("wait 31 秒", "驅動程式的 wait", "sleep 之前自己檢查", "cdp_browser.py", "between 0 and 30"),
+  │     ("（wait 的理由）", "驅動程式", "SDK 沒限制 duration", "cdp_browser.py", "SDK leaves"),
+  │     ("left_click 失效的 ref_N", "驅動程式的 left_click", "RESOLVE_REF 回傳 null 後", "cdp_browser.py", "Unknown or stale ref"),
+  │     ("沒實作的工具（如截圖）", "SDK", "根本不提供給模型", "cdp_browser.py", "turns off every other tool"),
+  │ ]
+  │ print("【誰擋下了什麼（官方做法）】")
+  │ print("{:<24} | {:<20} | {:<22} | {}".format("被擋的呼叫", "誰擋", "什麼時候", "原始碼"))
+  │ print("-" * 140)
+  │ for call, by, when, rel, pat in who:
+  │     hits = grep(B + rel, pat)
+  │     src = "{}:{} {}".format(rel, hits[0][0], hits[0][1].strip()[:70]) if hits else rel + "：找不到"
+  │     print("{:<24} | {:<20} | {:<22} | {}".format(call, by, when, src))
+  │ 
+  │ steps_path.write_text(json.dumps({"rows": rows, "read_page": rows[1]["result"], "url": browser.url, "clicked": browser.clicked}, ensure_ascii=False, indent=2), encoding="utf-8")
+  │ print()
+  │ print("已寫入", steps_path)
+▶ 執行結果：
+假環境：FakeBrowser 只是幾十行的文字狀態物件（clicked=False），不是 Chromium；這一步不呼叫模型。
+
+  步驟 | 誰發起    | 工具         | 輸入                                   | is_error | 結果
+--------------------------------------------------------------------------------------------------------------------------------------------
+   1 | 程式     | navigate   | {"url": "http://localhost:8000/"}    | False    | {"url": "http://localhost:8000/", "title": "Exercise page"}
+   2 | 程式     | read_page  | {}                                   | False    | - heading "Exercise page" [ref_1] / - button "Click me" [ref_2] / - link "About this page" [ref_3]
+   3 | 程式     | navigate   | {"url": "http://127.0.0.1:8000/"}    | True     | blocked: http://127.0.0.1:8000/ is outside this exercise's page
+
+三步之後：url = http://localhost:8000/ ｜clicked = False
+
+【額外檢查，不記錄】
+  left_click ref_9 → Unknown or stale ref: ref_9. Call read_page again for current refs.
+  網址檢查比較：假環境用 startswith，官方 exercise.py 的 only() 比對 scheme://netloc 是否完全相同
+  http://localhost:8000/                 | 假環境：放行 | 官方式：放行
+  http://127.0.0.1:8000/                 | 假環境：擋 | 官方式：擋
+  http://localhost:8000.evil.example/    | 假環境：放行 | 官方式：擋
+
+【誰擋下了什麼（官方做法）】
+被擋的呼叫                    | 誰擋                   | 什麼時候                   | 原始碼
+--------------------------------------------------------------------------------------------------------------------------------------------
+navigate 到 127.0.0.1     | SDK 套用 url_policy    | 驅動程式執行前                | exercise.py:72 raise ToolError(f"blocked: {url} is outside this exercise's page")
+（同上，原始碼註解）               | SDK                  | 驅動程式執行前                | exercise.py:125 # Same page, but the policy admits only the localhost address, so the 
+wait 31 秒                | 驅動程式的 wait           | sleep 之前自己檢查           | cdp_browser.py:251 raise ToolError("duration: must be between 0 and 30 seconds")
+（wait 的理由）               | 驅動程式                 | SDK 沒限制 duration       | cdp_browser.py:249 # The SDK leaves `duration` unbounded, and the tool's documented maxim
+left_click 失效的 ref_N     | 驅動程式的 left_click     | RESOLVE_REF 回傳 null 後  | cdp_browser.py:234 raise ToolError(f"Unknown or stale ref: {input.target.ref}. Call read_
+沒實作的工具（如截圖）              | SDK                  | 根本不提供給模型               | cdp_browser.py:6 launches. The SDK turns off every other tool in the toolset's `configs
+
+已寫入 ch04\interactive\program_steps.json
+
+👉 第 4 步完成
+
+===== 第 5 步 =====
+指令：bash ch04.sh 5
+exit code：0　耗時：0.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K902 第 4 章｜瀏覽器工具組 browser-toolset　第 5 / 8 步
+  練習 2 之二：模型實際會收到什麼（離線看轉接層的提示詞與解析）
+╚══════════════════════════════════════════════════════╝
+
+💡 還不呼叫模型。先看 left_click、get_page_text、read_page 三個自訂工具怎麼被轉接層寫進系統提示、模型回覆怎麼解析成 tool_use。這是「用提示詞模擬的工具呼叫」，不是 API 原生 tool use；真的工具組項目 browser_toolset_20260801 會被轉接層直接忽略。
+
+▶ 要執行的程式：
+  │ import json, os, sys
+  │ from pathlib import Path
+  │ from types import SimpleNamespace
+  │ sys.path.insert(0, os.getcwd())
+  │ import claude_cli_client
+  │ 
+  │ Q = chr(34)
+  │ SAMPLE_PAGE = "\n".join([
+  │     "- heading " + Q + "Exercise page" + Q + " [ref_1]",
+  │     "- button " + Q + "Click me" + Q + " [ref_2]",
+  │     "- link " + Q + "About this page" + Q + " [ref_3]",
+  │ ])
+  │ page, src = SAMPLE_PAGE, "內建範例（找不到第 4 步的 program_steps.json）"
+  │ p = Path("ch04/interactive/program_steps.json")
+  │ if p.exists():
+  │     try:
+  │         data = json.loads(p.read_text(encoding="utf-8"))
+  │         if isinstance(data, dict) and isinstance(data.get("read_page"), str) and data["read_page"]:
+  │             page, src = data["read_page"], "ch04/interactive/program_steps.json（第 4 步）"
+  │     except ValueError:
+  │         pass
+  │ print("read_page 結果來源：", src)
+  │ print()
+  │ 
+  │ TOOLS = [
+  │     {"name": "left_click", "description": "點擊頁面上的一個元素。用 read_page 給的編號 ref_N 指定元素。",
+  │      "input_schema": {"type": "object", "properties": {"ref": {"type": "string", "description": "read_page 給的編號（ref_N）"}}, "required": ["ref"]}},
+  │     {"name": "get_page_text", "description": "取得目前頁面的純文字內容。", "input_schema": {"type": "object", "properties": {}}},
+  │     {"name": "read_page", "description": "列出頁面上的標題、連結、按鈕與表單控制項，每個附一個 ref_N。", "input_schema": {"type": "object", "properties": {}}},
+  │ ]
+  │ SYSTEM = "你是瀏覽器操作助理，正在操作一個分頁。只能用提供的工具操作頁面；點擊時用 read_page 給的 ref_N 指定元素。不要假裝做了沒做的動作。用繁體中文回報。"
+  │ TASK = "目前分頁在 http://localhost:8000/。剛才 read_page 的結果如下：\n" + page + "\n\n任務：按下 Click me，再確認頁面文字有沒有改變。"
+  │ 
+  │ client_tools, ignored = claude_cli_client.split_tools(TOOLS)
+  │ print("可模擬的自訂工具：", [t["name"] for t in client_tools], "｜忽略：", ignored)
+  │ _, ignored2 = claude_cli_client.split_tools(TOOLS + [{"type": "browser_toolset_20260801", "name": "browser"}])
+  │ print("若照官方把工具組項目也放進 tools，轉接層會忽略：", ignored2, "（沒有 input_schema 的伺服器端型別）")
+  │ print()
+  │ print("=== 轉接層送給 claude -p 的系統提示 ===")
+  │ print(claude_cli_client.system_text(SYSTEM, client_tools))
+  │ print()
+  │ print("=== 第 1 次呼叫送進 stdin 的內容 ===")
+  │ print(claude_cli_client.flatten_messages([{"role": "user", "content": TASK}]))
+  │ print()
+  │ demo = [
+  │     {"role": "user", "content": TASK},
+  │     {"role": "assistant", "content": [SimpleNamespace(type="tool_use", id="toolu_demo", name="left_click", input={"ref": "ref_2"})]},
+  │     {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_demo", "content": "clicked ref_2"}]},
+  │ ]
+  │ print("=== 示意：第 2 次呼叫的 stdin（歷史攤平成逐字稿整份重送，每次都是全新的 claude -p 行程） ===")
+  │ print(claude_cli_client.flatten_messages(demo))
+  │ print()
+  │ names = {t["name"] for t in client_tools}
+  │ tag = "<tool_use>" + json.dumps({"name": "left_click", "input": {"ref": "ref_2"}}) + "</tool_use>"
+  │ cases = [
+  │     ("照格式", "我來按下按鈕。" + tag),
+  │     ("沒照格式", "我已經按下 Click me 了，頁面應該變了。"),
+  │     ("工具不在清單", tag.replace("left_click", "navigate")),
+  │ ]
+  │ print("【parse_reply 怎麼解析模型回覆】")
+  │ for label, text in cases:
+  │     blocks = claude_cli_client.parse_reply(text, names)
+  │     calls = [(b.name, b.input) for b in blocks if b.type == "tool_use"]
+  │     print("  {:<8} → block 種類 {}；tool_use {}".format(label, [b.type for b in blocks], calls if calls else "無（下一步會當成沒呼叫工具）"))
+  │ print()
+  │ print("→ 這一步沒有給模型 navigate 工具：換頁與網址政策在第 4 步已由程式自己演示過。")
+▶ 執行結果：
+read_page 結果來源： ch04/interactive/program_steps.json（第 4 步）
+
+可模擬的自訂工具： ['left_click', 'get_page_text', 'read_page'] ｜忽略： []
+若照官方把工具組項目也放進 tools，轉接層會忽略： ['browser'] （沒有 input_schema 的伺服器端型別）
+
+=== 轉接層送給 claude -p 的系統提示 ===
+你是瀏覽器操作助理，正在操作一個分頁。只能用提供的工具操作頁面；點擊時用 read_page 給的 ref_N 指定元素。不要假裝做了沒做的動作。用繁體中文回報。
+
+# 工具
+你可以呼叫下列工具。要呼叫工具時，為每一個呼叫輸出一段（JSON 必須合法、放在同一段標記內）：
+<tool_use>{"name": "工具名稱", "input": {"參數名": "參數值"}}</tool_use>
+規則：
+- 標記前可以寫一句簡短說明；輸出標記後立刻停止，等待工具結果。
+- 絕對不要自己編造工具結果，也不要輸出 <tool_result>。
+- 不需要工具、或已經拿到足夠的工具結果時，直接用文字回答，不要輸出任何標記。
+可用工具（JSON）：
+[
+ {
+  "name": "left_click",
+  "description": "點擊頁面上的一個元素。用 read_page 給的編號 ref_N 指定元素。",
+  "input_schema": {
+   "type": "object",
+   "properties": {
+    "ref": {
+     "type": "string",
+     "description": "read_page 給的編號（ref_N）"
+    }
+   },
+   "required": [
+    "ref"
+   ]
+  }
+ },
+ {
+  "name": "get_page_text",
+  "description": "取得目前頁面的純文字內容。",
+  "input_schema": {
+   "type": "object",
+   "properties": {}
+  }
+ },
+ {
+  "name": "read_page",
+  "description": "列出頁面上的標題、連結、按鈕與表單控制項，每個附一個 ref_N。",
+  "input_schema": {
+   "type": "object",
+   "properties": {}
+  }
+ }
+]
+
+=== 第 1 次呼叫送進 stdin 的內容 ===
+目前分頁在 http://localhost:8000/。剛才 read_page 的結果如下：
+- heading "Exercise page" [ref_1]
+- button "Click me" [ref_2]
+- link "About this page" [ref_3]
+
+任務：按下 Click me，再確認頁面文字有沒有改變。
+
+=== 示意：第 2 次呼叫的 stdin（歷史攤平成逐字稿整份重送，每次都是全新的 claude -p 行程） ===
+以下是到目前為止的對話紀錄（含工具呼叫與工具結果）。請以 assistant 身分接著回覆。
+
+<user>
+目前分頁在 http://localhost:8000/。剛才 read_page 的結果如下：
+- heading "Exercise page" [ref_1]
+- button "Click me" [ref_2]
+- link "About this page" [ref_3]
+
+任務：按下 Click me，再確認頁面文字有沒有改變。
+</user>
+<assistant>
+<tool_use>{"name": "left_click", "input": {"ref": "ref_2"}}</tool_use>
+</assistant>
+<user>
+<tool_result>
+clicked ref_2
+</tool_result>
+</user>
+
+【parse_reply 怎麼解析模型回覆】
+  照格式      → block 種類 ['text', 'tool_use']；tool_use [('left_click', {'ref': 'ref_2'})]
+  沒照格式     → block 種類 ['text']；tool_use 無（下一步會當成沒呼叫工具）
+  工具不在清單   → block 種類 ['text']；tool_use 無（下一步會當成沒呼叫工具）
+
+→ 這一步沒有給模型 navigate 工具：換頁與網址政策在第 4 步已由程式自己演示過。
+
+👉 第 5 步完成
+
+===== 第 6 步 =====
+指令：bash ch04.sh 6
+exit code：0　耗時：13.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K902 第 4 章｜瀏覽器工具組 browser-toolset　第 6 / 8 步
+  練習 2 之三：真模型＋假瀏覽器，跑兩回合工具迴圈，存成 loop_log.md
+╚══════════════════════════════════════════════════════╝
+
+💡 這一步會呼叫模型最多 2 次（claude -p，每次約 5～15 秒；第 1 次沒有 tool_use 時用第 2 次重試 1 次）。模型是真的，但瀏覽器是假的環境 FakeBrowser，工具呼叫是用提示詞模擬的，不是真的瀏覽器工具組。模型只看 read_page 的文字清單，自己決定點哪個 ref_N；每次結果可能不同，照實記錄。
+
+▶ 要執行的程式：
+  │ import json, os, sys
+  │ from pathlib import Path
+  │ sys.path.insert(0, os.getcwd())
+  │ os.environ["K902_CLI_MAX_CALLS"] = "2"  # 保險：本行程最多呼叫 claude -p 2 次
+  │ import claude_cli_client
+  │ 
+  │ Q = chr(34)
+  │ APOS = chr(39)
+  │ HOME = "http://localhost:8000"
+  │ MAX_CALLS = 2
+  │ out = Path("ch04/interactive")
+  │ out.mkdir(parents=True, exist_ok=True)
+  │ md_path = out / "loop_log.md"
+  │ json_path = out / "loop_log.json"
+  │ md_path.unlink(missing_ok=True)
+  │ json_path.unlink(missing_ok=True)
+  │ 
+  │ class FakeToolError(Exception):
+  │     pass
+  │ 
+  │ class FakeBrowser:
+  │     """假環境：只有一頁 http://localhost:8000/ 的文字狀態瀏覽器，不是 Chromium。"""
+  │     def __init__(self):
+  │         self.url = "about:blank"
+  │         self.clicked = False
+  │ 
+  │     def navigate(self, url):
+  │         if not url.startswith(HOME):
+  │             raise FakeToolError("blocked: " + url + " is outside this exercise" + APOS + "s page")
+  │         self.url = url
+  │         return json.dumps({"url": url, "title": "Exercise page"})
+  │ 
+  │     def read_page(self):
+  │         return "\n".join([
+  │             "- heading " + Q + "Exercise page" + Q + " [ref_1]",
+  │             "- button " + Q + "Click me" + Q + " [ref_2]",
+  │             "- link " + Q + "About this page" + Q + " [ref_3]",
+  │         ])
+  │ 
+  │     def left_click(self, ref):
+  │         if ref == "ref_2":
+  │             self.clicked = True
+  │             return "clicked " + ref
+  │         if ref in ("ref_1", "ref_3"):
+  │             return "clicked " + ref + "（假環境：不換頁、狀態不變）"
+  │         raise FakeToolError("Unknown or stale ref: " + str(ref) + ". Call read_page again for current refs.")
+  │ 
+  │     def get_page_text(self):
+  │         return "The button was clicked." if self.clicked else "The button has not been clicked."
+  │ 
+  │ browser = FakeBrowser()
+  │ rows = []
+  │ 
+  │ def record(who, call_no, tool, tool_input, fn):
+  │     try:
+  │         result, err = str(fn()), False
+  │     except FakeToolError as exc:
+  │         result, err = str(exc), True
+  │     rows.append({"step": len(rows) + 1, "who": who, "call": call_no, "tool": tool, "input": tool_input, "result": result, "is_error": err})
+  │     return result, err
+  │ 
+  │ print("假環境：FakeBrowser 是文字狀態物件，不是 Chromium；模型是真的（claude -p）；工具呼叫用提示詞模擬，不是 API 原生 tool use，也不是真的 browser_toolset_20260801。")
+  │ print()
+  │ record("程式", 0, "navigate", {"url": HOME + "/"}, lambda: browser.navigate(HOME + "/"))
+  │ page, _ = record("程式", 0, "read_page", {}, browser.read_page)
+  │ record("程式", 0, "navigate", {"url": "http://127.0.0.1:8000/"}, lambda: browser.navigate("http://127.0.0.1:8000/"))
+  │ print("程式先做三步（不經模型）：", [(r["tool"], r["is_error"]) for r in rows])
+  │ 
+  │ TOOLS = [
+  │     {"name": "left_click", "description": "點擊頁面上的一個元素。用 read_page 給的編號 ref_N 指定元素。",
+  │      "input_schema": {"type": "object", "properties": {"ref": {"type": "string", "description": "read_page 給的編號（ref_N）"}}, "required": ["ref"]}},
+  │     {"name": "get_page_text", "description": "取得目前頁面的純文字內容。", "input_schema": {"type": "object", "properties": {}}},
+  │     {"name": "read_page", "description": "列出頁面上的標題、連結、按鈕與表單控制項，每個附一個 ref_N。", "input_schema": {"type": "object", "properties": {}}},
+  │ ]
+  │ SYSTEM = "你是瀏覽器操作助理，正在操作一個分頁。只能用提供的工具操作頁面；點擊時用 read_page 給的 ref_N 指定元素。不要假裝做了沒做的動作。用繁體中文回報。"
+  │ TASK = "目前分頁在 http://localhost:8000/。剛才 read_page 的結果如下：\n" + page + "\n\n任務：按下 Click me，再確認頁面文字有沒有改變。"
+  │ 
+  │ def ref_of(tool_input):
+  │     ref = tool_input.get("ref")
+  │     target = tool_input.get("target")
+  │     if not ref and isinstance(target, dict):
+  │         ref = target.get("ref")
+  │     return str(ref or "")
+  │ 
+  │ def run_tool(name, tool_input):
+  │     if name == "left_click":
+  │         return browser.left_click(ref_of(tool_input))
+  │     if name == "get_page_text":
+  │         return browser.get_page_text()
+  │     if name == "read_page":
+  │         return browser.read_page()
+  │     raise FakeToolError("unknown tool: " + str(name))
+  │ 
+  │ client = claude_cli_client.Anthropic()
+  │ messages = [{"role": "user", "content": TASK}]
+  │ details = []
+  │ final_text = ""
+  │ error = None
+  │ retried = False
+  │ print()
+  │ print("=== 工具迴圈（最多 {} 次 claude -p，每次約 5～15 秒） ===".format(MAX_CALLS))
+  │ while claude_cli_client.calls_made() < MAX_CALLS:
+  │     try:
+  │         reply = client.messages.create(model="claude-sonnet-5-5", max_tokens=1024, system=SYSTEM, messages=messages, tools=TOOLS)
+  │     except (claude_cli_client.APIError, RuntimeError, ValueError) as exc:
+  │         error = type(exc).__name__ + "：" + str(exc)
+  │         print("這次呼叫失敗，原因：" + error + "（照樣把已有的紀錄存檔，結束碼 0）")
+  │         break
+  │     call_no = claude_cli_client.calls_made()
+  │     texts = [str(b.text) for b in reply.content if b.type == "text"]
+  │     uses = [b for b in reply.content if b.type == "tool_use"]
+  │     details.append({"call": call_no, "stop_reason": reply.stop_reason, "tool_uses": [[u.name, u.input] for u in uses], "text": "\n".join(texts)})
+  │     print("第 {} 次呼叫：stop_reason = {}｜tool_use = {}".format(call_no, reply.stop_reason, [(u.name, u.input) for u in uses] if uses else "無"))
+  │     if texts:
+  │         print("  模型文字：" + " ".join(texts).replace("\n", " ")[:200])
+  │     if not uses:
+  │         final_text = "\n".join(texts)
+  │         if call_no == 1 and call_no < MAX_CALLS:
+  │             retried = True
+  │             print("  這次模型沒有照格式呼叫工具（回覆裡沒有 tool_use），這是提示詞模擬工具呼叫的限制。在上限內重試 1 次，並提醒它用 <tool_use> 標記。")
+  │             messages = [{"role": "user", "content": TASK + "\n\n提醒：請實際用 <tool_use> 標記呼叫工具，不要只用文字描述。"}]
+  │             continue
+  │         if not any(r["who"] == "模型" for r in rows):
+  │             print("  模型這次也沒有照格式呼叫工具（提示詞模擬工具呼叫的限制）；照實記錄拿到的文字，不再呼叫。")
+  │         break
+  │     results = []
+  │     for u in uses:
+  │         res, err = record("模型", call_no, u.name, u.input, lambda u=u: run_tool(u.name, u.input))
+  │         print("  執行 {} {} → {}{}".format(u.name, json.dumps(u.input, ensure_ascii=False), res.replace("\n", " / "), "（is_error）" if err else ""))
+  │         block = {"type": "tool_result", "tool_use_id": u.id, "content": res}
+  │         if err:
+  │             block["is_error"] = True
+  │         results.append(block)
+  │     messages = messages + [{"role": "assistant", "content": reply.content}, {"role": "user", "content": results}]
+  │     if claude_cli_client.calls_made() >= MAX_CALLS:
+  │         print("  已用完 {} 次呼叫上限：這回合的工具已執行並記錄，但不再送回模型拿最後的文字回答。".format(MAX_CALLS))
+  │ 
+  │ calls = claude_cli_client.calls_made()
+  │ 
+  │ def cell(v):
+  │     return str(v).replace("\n", " / ").replace("|", "／")
+  │ 
+  │ print()
+  │ print("{:>4} | {:<6} | {:<14} | {:<30} | {:<8} | {}".format("步驟", "誰發起", "工具", "輸入", "is_error", "結果"))
+  │ print("-" * 140)
+  │ for r in rows:
+  │     print("{:>4} | {:<6} | {:<14} | {:<30} | {:<8} | {}".format(r["step"], r["who"], r["tool"], json.dumps(r["input"], ensure_ascii=False), str(r["is_error"]), cell(r["result"])))
+  │ summary = "clicked = {}｜calls_made() = {}｜假瀏覽器＋提示詞模擬的工具呼叫（不是 API 原生 tool use，也不是真的瀏覽器工具組）".format(browser.clicked, calls)
+  │ print()
+  │ print(summary)
+  │ if error:
+  │     print("錯誤：", error)
+  │ if final_text:
+  │     print("模型最後的文字：", final_text.replace("\n", " ")[:300])
+  │ 
+  │ md = ["# 第 4 章練習 2：真模型＋假瀏覽器的工具迴圈紀錄", "",
+  │       "- 假環境：FakeBrowser（只有 http://localhost:8000/ 一頁，文字狀態）；模型是真的（claude -p）。",
+  │       "- 是否重試：" + str(retried) + "｜錯誤：" + (error or "無"), "",
+  │       "| 步驟 | 誰發起 | 工具 | 輸入 | 結果 | is_error |", "| --- | --- | --- | --- | --- | --- |"]
+  │ md += ["| {} | {} | {} | {} | {} | {} |".format(r["step"], r["who"], r["tool"], cell(json.dumps(r["input"], ensure_ascii=False)), cell(r["result"]), r["is_error"]) for r in rows]
+  │ md += ["", "模型最後的文字：" + (cell(final_text) if final_text else "（無）"), "", summary]
+  │ md_path.write_text("\n".join(md) + "\n", encoding="utf-8")
+  │ json_path.write_text(json.dumps({"rows": rows, "details": details, "clicked": browser.clicked, "calls": calls, "retried": retried,
+  │                                  "final_text": final_text, "error": error}, ensure_ascii=False, indent=2), encoding="utf-8")
+  │ print()
+  │ print("已寫入", md_path, "與", json_path)
+▶ 執行結果：
+假環境：FakeBrowser 是文字狀態物件，不是 Chromium；模型是真的（claude -p）；工具呼叫用提示詞模擬，不是 API 原生 tool use，也不是真的 browser_toolset_20260801。
+
+程式先做三步（不經模型）： [('navigate', False), ('read_page', False), ('navigate', True)]
+
+=== 工具迴圈（最多 2 次 claude -p，每次約 5～15 秒） ===
+第 1 次呼叫：stop_reason = tool_use｜tool_use = [('get_page_text', {})]
+  模型文字：先取得點擊前的頁面文字，方便之後比對。
+  執行 get_page_text {} → The button has not been clicked.
+第 2 次呼叫：stop_reason = tool_use｜tool_use = [('left_click', {'ref': 'ref_2'})]
+  模型文字：點擊前的文字是「The button has not been clicked.」。接著按下 Click me。
+  執行 left_click {"ref": "ref_2"} → clicked ref_2
+  已用完 2 次呼叫上限：這回合的工具已執行並記錄，但不再送回模型拿最後的文字回答。
+
+  步驟 | 誰發起    | 工具             | 輸入                             | is_error | 結果
+--------------------------------------------------------------------------------------------------------------------------------------------
+   1 | 程式     | navigate       | {"url": "http://localhost:8000/"} | False    | {"url": "http://localhost:8000/", "title": "Exercise page"}
+   2 | 程式     | read_page      | {}                             | False    | - heading "Exercise page" [ref_1] / - button "Click me" [ref_2] / - link "About this page" [ref_3]
+   3 | 程式     | navigate       | {"url": "http://127.0.0.1:8000/"} | True     | blocked: http://127.0.0.1:8000/ is outside this exercise's page
+   4 | 模型     | get_page_text  | {}                             | False    | The button has not been clicked.
+   5 | 模型     | left_click     | {"ref": "ref_2"}               | False    | clicked ref_2
+
+clicked = True｜calls_made() = 2｜假瀏覽器＋提示詞模擬的工具呼叫（不是 API 原生 tool use，也不是真的瀏覽器工具組）
+
+已寫入 ch04\interactive\loop_log.md 與 ch04\interactive\loop_log.json
+
+👉 第 6 步完成
+
+===== 第 7 步 =====
+指令：bash ch04.sh 7
+exit code：0　耗時：0.2 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K902 第 4 章｜瀏覽器工具組 browser-toolset　第 7 / 8 步
+  練習 2 之四：檢查觀察重點，並逐項對回官方 exercise.py 的六個呼叫
+╚══════════════════════════════════════════════════════╝
+
+💡 不再呼叫模型。讀第 6 步的 loop_log.json；找不到就改用內建範例（照常見結果編的）。回答三個觀察重點，再把演練每一步對回 exercise.py 的六個呼叫，說清楚官方做法是誰擋的，以及假瀏覽器省略了什麼：ref 不會過期、也沒有 wait。
+
+▶ 要執行的程式：
+  │ import json, os, re, sys
+  │ from pathlib import Path
+  │ sys.path.insert(0, os.getcwd())
+  │ from qs_source import grep
+  │ 
+  │ Q = chr(34)
+  │ APOS = chr(39)
+  │ EX = "browser-toolset/python/exercise.py"
+  │ CDP = "browser-toolset/python/cdp_browser.py"
+  │ out = Path("ch04/interactive")
+  │ out.mkdir(parents=True, exist_ok=True)
+  │ review_path = out / "loop_review.md"
+  │ review_path.unlink(missing_ok=True)
+  │ 
+  │ BLOCKED = "blocked: http://127.0.0.1:8000/ is outside this exercise" + APOS + "s page"
+  │ SAMPLE = {
+  │     "calls": 2, "clicked": True, "retried": False, "error": None, "final_text": "",
+  │     "details": [
+  │         {"call": 1, "tool_uses": [["left_click", {"ref": "ref_2"}]], "text": "我先按下 Click me 按鈕。"},
+  │         {"call": 2, "tool_uses": [["get_page_text", {}]], "text": "按下後確認頁面文字。"},
+  │     ],
+  │     "rows": [
+  │         {"step": 1, "who": "程式", "call": 0, "tool": "navigate", "input": {"url": "http://localhost:8000/"}, "result": json.dumps({"url": "http://localhost:8000/", "title": "Exercise page"}), "is_error": False},
+  │         {"step": 2, "who": "程式", "call": 0, "tool": "read_page", "input": {}, "result": "(三行 ref 清單)", "is_error": False},
+  │         {"step": 3, "who": "程式", "call": 0, "tool": "navigate", "input": {"url": "http://127.0.0.1:8000/"}, "result": BLOCKED, "is_error": True},
+  │         {"step": 4, "who": "模型", "call": 1, "tool": "left_click", "input": {"ref": "ref_2"}, "result": "clicked ref_2", "is_error": False},
+  │         {"step": 5, "who": "模型", "call": 2, "tool": "get_page_text", "input": {}, "result": "The button was clicked.", "is_error": False},
+  │     ],
+  │ }
+  │ data, src = SAMPLE, "內建範例（找不到第 6 步的 loop_log.json；照常見結果編的）"
+  │ p = out / "loop_log.json"
+  │ if p.exists():
+  │     try:
+  │         loaded = json.loads(p.read_text(encoding="utf-8"))
+  │         if isinstance(loaded, dict) and isinstance(loaded.get("rows"), list) and loaded["rows"]:
+  │             data, src = loaded, "ch04/interactive/loop_log.json（第 6 步的真模型紀錄）"
+  │     except ValueError:
+  │         pass
+  │ print("資料來源：", src)
+  │ rows = data["rows"]
+  │ details = data.get("details") or []
+  │ model_rows = [r for r in rows if r.get("who") == "模型"]
+  │ print("模型發起的工具呼叫：", [(r["tool"], r["input"], r["result"]) for r in model_rows] if model_rows else "無")
+  │ print("是否重試過：", data.get("retried"), "｜錯誤：", data.get("error") or "無")
+  │ print()
+  │ 
+  │ first = model_rows[0] if model_rows else None
+  │ q1 = first is not None and first["tool"] == "left_click" and "ref_2" in json.dumps(first["input"])
+  │ last_call = details[-1] if details else None
+  │ if last_call is None:
+  │     a2 = "沒有任何一次呼叫成功"
+  │ elif len(details) < 2:
+  │     a2 = "只有 1 次呼叫"
+  │ else:
+  │     kinds = [t[0] for t in last_call.get("tool_uses", [])]
+  │     a2 = "呼叫 " + ", ".join(kinds) if kinds else "直接用文字回答（沒有 tool_use）"
+  │ blocked = [r for r in rows if r.get("who") == "程式" and "127.0.0.1" in json.dumps(r.get("input"))]
+  │ q3 = bool(blocked) and str(blocked[0]["result"]).startswith("blocked:") and blocked[0]["is_error"] is True
+  │ print("【觀察重點】")
+  │ print("  1. 模型第一個工具呼叫就是 left_click 且 ref 是 ref_2：", "是" if q1 else "否（照實記錄：{}）".format((first["tool"], first["input"]) if first else "沒有工具呼叫"))
+  │ print("  2. 第 2 次呼叫：", a2)
+  │ print("  3. 最後 clicked：", data.get("clicked"), "｜calls_made()：", data.get("calls"))
+  │ print("  4. 127.0.0.1 那一步以 blocked: 開頭且 is_error 為 True：", "是" if q3 else "否")
+  │ print()
+  │ 
+  │ official = ["answered", "answered", "answered", "answered", "refused", "refused"]
+  │ ours = ["第 4/6 步程式第 1 步", "第 4/6 步程式第 2 步", "第 6 步模型 left_click", "第 6 步模型 get_page_text", "第 4/6 步程式第 3 步", "沒做：FakeBrowser 沒有 wait"]
+  │ blocker = ["-", "-", "-", "-", "SDK 套 url_policy，驅動程式執行前", "驅動程式的 wait 自己檢查 0～30 秒"]
+  │ hits = grep(EX, "call[(]browser, " + Q)
+  │ table = []
+  │ for i, (no, line) in enumerate(hits):
+  │     m = re.search("call[(]browser, " + Q + "([a-z_]+)" + Q, line)
+  │     table.append((no, m.group(1) if m else "?", official[i] if i < 6 else "?", blocker[i] if i < 6 else "?", ours[i] if i < 6 else "?"))
+  │ print("【對回官方 exercise.py 的六個呼叫】（answered／refused 照 README 的記錄）")
+  │ print("{:>4} | {:<14} | {:<9} | {:<34} | {}".format("行號", "工具", "官方結果", "誰擋", "本演練對應"))
+  │ print("-" * 120)
+  │ for row in table:
+  │     print("{:>4} | {:<14} | {:<9} | {:<34} | {}".format(*row))
+  │ print("共", len(table), "個呼叫")
+  │ print()
+  │ print("【假瀏覽器省略了什麼】")
+  │ for pat in ("a navigation drops them", "Unknown or stale ref"):
+  │     for no, line in grep(CDP, pat)[:1]:
+  │         print("  cdp_browser.py 第 {} 行：{}".format(no, line.strip()[:110]))
+  │ print("  → 官方的 ref_N 存在 window 上，換頁就失效，錯誤訊息直接叫模型 Call read_page again；FakeBrowser 的 ref 永遠有效，也沒有截圖、捲動、打字。")
+  │ 
+  │ md = ["# 第 4 章練習 2：檢查與對照", "", "- 資料來源：" + src,
+  │       "- 第一個工具呼叫是 left_click＋ref_2：" + str(q1), "- 第 2 次呼叫：" + a2,
+  │       "- clicked：" + str(data.get("clicked")) + "｜calls_made()：" + str(data.get("calls")),
+  │       "- 127.0.0.1 被擋且 is_error：" + str(q3), "",
+  │       "| exercise.py 行號 | 工具 | 官方結果 | 誰擋 | 本演練對應 |", "| --- | --- | --- | --- | --- |"]
+  │ md += ["| {} | {} | {} | {} | {} |".format(*r) for r in table]
+  │ review_path.write_text("\n".join(md) + "\n", encoding="utf-8")
+  │ print()
+  │ print("已寫入", review_path)
+▶ 執行結果：
+資料來源： ch04/interactive/loop_log.json（第 6 步的真模型紀錄）
+模型發起的工具呼叫： [('get_page_text', {}, 'The button has not been clicked.'), ('left_click', {'ref': 'ref_2'}, 'clicked ref_2')]
+是否重試過： False ｜錯誤： 無
+
+【觀察重點】
+  1. 模型第一個工具呼叫就是 left_click 且 ref 是 ref_2： 否（照實記錄：('get_page_text', {})）
+  2. 第 2 次呼叫： 呼叫 left_click
+  3. 最後 clicked： True ｜calls_made()： 2
+  4. 127.0.0.1 那一步以 blocked: 開頭且 is_error 為 True： 是
+
+【對回官方 exercise.py 的六個呼叫】（answered／refused 照 README 的記錄）
+  行號 | 工具             | 官方結果      | 誰擋                                 | 本演練對應
+------------------------------------------------------------------------------------------------------------------------
+ 114 | navigate       | answered  | -                                  | 第 4/6 步程式第 1 步
+ 117 | read_page      | answered  | -                                  | 第 4/6 步程式第 2 步
+ 121 | left_click     | answered  | -                                  | 第 6 步模型 left_click
+ 123 | get_page_text  | answered  | -                                  | 第 6 步模型 get_page_text
+ 127 | navigate       | refused   | SDK 套 url_policy，驅動程式執行前           | 第 4/6 步程式第 3 步
+ 134 | wait           | refused   | 驅動程式的 wait 自己檢查 0～30 秒             | 沒做：FakeBrowser 沒有 wait
+共 6 個呼叫
+
+【假瀏覽器省略了什麼】
+  cdp_browser.py 第 266 行：# line. The refs are stored on `window`, so a navigation drops them.
+  cdp_browser.py 第 234 行：raise ToolError(f"Unknown or stale ref: {input.target.ref}. Call read_page again for current refs.")
+  → 官方的 ref_N 存在 window 上，換頁就失效，錯誤訊息直接叫模型 Call read_page again；FakeBrowser 的 ref 永遠有效，也沒有截圖、捲動、打字。
+
+已寫入 ch04\interactive\loop_review.md
+
+👉 第 7 步完成
+
+===== 第 8 步 =====
+指令：bash ch04.sh 8
+exit code：0　耗時：0.4 秒
+----- 輸出 -----
+╔══════════════════════════════════════════════════════╗
+  K902 第 4 章｜瀏覽器工具組 browser-toolset　第 8 / 8 步
+  總結：本章 6 個重點與產出檔案
+╚══════════════════════════════════════════════════════╝
+
+💡 不呼叫模型。把工具組的宣告方式、SDK 與驅動程式的分工、9 個 CDP 指令加 1 個事件、誰擋下了什麼、URL 政策管不到的地方，以及演練裡哪些是假的，收成 6 句話，並確認本章檔案都在。
+
+▶ 要執行的程式：
+  │ import json
+  │ from pathlib import Path
+  │ 
+  │ points = [
+  │     "瀏覽器工具組是在 tools 宣告一個項目、模型看到多個工具（navigate、read_page、left_click…各自是獨立的工具呼叫）。型別字串 browser_toolset_20260801 只在 README 出現 1 次，三支 .py 都是 0 次，程式裡只看得到類別 BetaAbstractBrowserToolset20260801。",
+  │     "分工：SDK 管工具 schema、包住 url_policy 的網址檢查、拒絕沒實作的工具與 tool runner；CdpBrowser 只管把動作做出來。7 個 @override＝五個工具（navigate、read_page、left_click、get_page_text、wait）＋close＋_browser_state。",
+  │     "驅動程式不用瀏覽器函式庫：用 --remote-debugging-port=0 自己啟動 Chromium、讀 DevToolsActivePort 拿端點，再用 WebSocket 送 9 種 CDP 指令＋監聽 1 個事件 Page.lifecycleEvent；每個指令最多等 COMMAND_TIMEOUT_S = 30 秒。",
+  │     "模型看頁面靠文字：read_page 與 get_page_text 不直接 _send，而是經 _evaluate 用 Runtime.evaluate 跑 READ_PAGE／PAGE_TEXT；read_page 替元素編 ref_N，left_click 用 RESOLVE_REF 換回座標再送 3 個滑鼠事件。這個範例沒有截圖。",
+  │     "分清楚誰擋的：127.0.0.1 是 SDK 在驅動程式執行前用政策擋的（exercise.py 第 72、125 行）；wait 31 秒是驅動程式自己擋的（cdp_browser.py 第 249～251 行，SDK 沒限制 duration）；ref 失效時錯誤訊息叫模型 Call read_page again（第 234 行），錯誤是寫給模型看的。",
+  │     "URL 政策只判斷模型要求的網址，管不到轉址與頁面上的圖片、腳本，所以 README 要求拋棄式 profile、沙箱與對外連線管制。本章演練是真模型＋假瀏覽器，工具呼叫用提示詞模擬，不是 API 原生 tool use，也不是真的工具組（轉接層會忽略工具組項目）。",
+  │ ]
+  │ print("第 4 章重點：")
+  │ for i, p in enumerate(points, 1):
+  │     print("  {}. {}".format(i, p))
+  │ print()
+  │ note = "第 6 步沒有留下紀錄"
+  │ lp = Path("ch04/interactive/loop_log.json")
+  │ if lp.exists():
+  │     try:
+  │         rec = json.loads(lp.read_text(encoding="utf-8"))
+  │         note = "第 6 步呼叫模型 {} 次、clicked = {}、重試過：{}".format(rec.get("calls"), rec.get("clicked"), rec.get("retried"))
+  │     except ValueError:
+  │         note = "loop_log.json 讀不懂"
+  │ print("本章模型呼叫：", note, "（本章只有第 6 步呼叫，最多 2 次；規則上限整章 4 次）")
+  │ print()
+  │ print("本章產出檔案：")
+  │ for name in ("driver_map.md", "program_steps.json", "loop_log.md", "loop_log.json", "loop_review.md"):
+  │     p = Path("ch04/interactive") / name
+  │     print("  {} {}".format("OK" if p.exists() else "缺", p))
+▶ 執行結果：
+第 4 章重點：
+  1. 瀏覽器工具組是在 tools 宣告一個項目、模型看到多個工具（navigate、read_page、left_click…各自是獨立的工具呼叫）。型別字串 browser_toolset_20260801 只在 README 出現 1 次，三支 .py 都是 0 次，程式裡只看得到類別 BetaAbstractBrowserToolset20260801。
+  2. 分工：SDK 管工具 schema、包住 url_policy 的網址檢查、拒絕沒實作的工具與 tool runner；CdpBrowser 只管把動作做出來。7 個 @override＝五個工具（navigate、read_page、left_click、get_page_text、wait）＋close＋_browser_state。
+  3. 驅動程式不用瀏覽器函式庫：用 --remote-debugging-port=0 自己啟動 Chromium、讀 DevToolsActivePort 拿端點，再用 WebSocket 送 9 種 CDP 指令＋監聽 1 個事件 Page.lifecycleEvent；每個指令最多等 COMMAND_TIMEOUT_S = 30 秒。
+  4. 模型看頁面靠文字：read_page 與 get_page_text 不直接 _send，而是經 _evaluate 用 Runtime.evaluate 跑 READ_PAGE／PAGE_TEXT；read_page 替元素編 ref_N，left_click 用 RESOLVE_REF 換回座標再送 3 個滑鼠事件。這個範例沒有截圖。
+  5. 分清楚誰擋的：127.0.0.1 是 SDK 在驅動程式執行前用政策擋的（exercise.py 第 72、125 行）；wait 31 秒是驅動程式自己擋的（cdp_browser.py 第 249～251 行，SDK 沒限制 duration）；ref 失效時錯誤訊息叫模型 Call read_page again（第 234 行），錯誤是寫給模型看的。
+  6. URL 政策只判斷模型要求的網址，管不到轉址與頁面上的圖片、腳本，所以 README 要求拋棄式 profile、沙箱與對外連線管制。本章演練是真模型＋假瀏覽器，工具呼叫用提示詞模擬，不是 API 原生 tool use，也不是真的工具組（轉接層會忽略工具組項目）。
+
+本章模型呼叫： 第 6 步呼叫模型 2 次、clicked = True、重試過：False （本章只有第 6 步呼叫，最多 2 次；規則上限整章 4 次）
+
+本章產出檔案：
+  OK ch04\interactive\driver_map.md
+  OK ch04\interactive\program_steps.json
+  OK ch04\interactive\loop_log.md
+  OK ch04\interactive\loop_log.json
+  OK ch04\interactive\loop_review.md
+
+👉 第 8 步完成

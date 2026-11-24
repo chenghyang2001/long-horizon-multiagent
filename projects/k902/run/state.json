@@ -1,5 +1,5 @@
 {
-  "round": 0,
+  "round": 5,
   "queue": [
     "ch01",
     "ch02",
@@ -14,94 +14,326 @@
   ],
   "units": {
     "ch01": {
-      "status": "pending",
-      "station": "plan",
+      "status": "done",
+      "station": "commit",
       "retries": {},
-      "verdicts": [],
-      "calls": 0,
-      "started": null,
-      "finished": null,
-      "round": null,
+      "verdicts": [
+        {
+          "ts": "2026-11-25 03:12:35",
+          "station": "judge",
+          "verdict": "PASS",
+          "note": ""
+        },
+        {
+          "ts": "2026-11-25 03:13:54",
+          "station": "review",
+          "verdict": "PASS",
+          "note": ""
+        }
+      ],
+      "calls": 4,
+      "started": "2026-11-25 03:00:33",
+      "finished": "2026-11-25 03:13:54",
+      "round": 1,
       "once_done": [],
       "feedback": null,
-      "cost_usd": 0.0,
-      "sessions": [],
+      "cost_usd": 3.939586,
+      "sessions": [
+        {
+          "role": "planner",
+          "session_id": "c5f5e96a-ae67-4ef9-b1e5-2b8c28a0ff08",
+          "cost_usd": 1.927697,
+          "turns": 20
+        },
+        {
+          "role": "writer",
+          "session_id": "d585666b-10bf-4c5b-aa29-39ff1b6249e3",
+          "cost_usd": 0.9630721999999999,
+          "turns": 11
+        },
+        {
+          "role": "tester",
+          "session_id": "d0f79000-91f2-4d76-853a-9dd5e809f210",
+          "cost_usd": 0.507017,
+          "turns": 4
+        },
+        {
+          "role": "reviewer",
+          "session_id": "2e65959d-a7fb-4dce-ae6b-0425ab8203c0",
+          "cost_usd": 0.5418004,
+          "turns": 12
+        }
+      ],
       "approved": [],
       "approval": null,
       "engine_errors": 0,
-      "commits": []
+      "commits": [
+        "d28fb59fffa8dec96934e77b55f46daf500e00d9"
+      ]
     },
     "ch02": {
-      "status": "pending",
-      "station": "plan",
+      "status": "done",
+      "station": "commit",
       "retries": {},
-      "verdicts": [],
-      "calls": 0,
-      "started": null,
-      "finished": null,
-      "round": null,
+      "verdicts": [
+        {
+          "ts": "2026-11-25 03:26:17",
+          "station": "judge",
+          "verdict": "PASS",
+          "note": ""
+        },
+        {
+          "ts": "2026-11-25 03:28:52",
+          "station": "review",
+          "verdict": "PASS",
+          "note": ""
+        }
+      ],
+      "calls": 4,
+      "started": "2026-11-25 03:14:25",
+      "finished": "2026-11-25 03:28:52",
+      "round": 2,
       "once_done": [],
       "feedback": null,
-      "cost_usd": 0.0,
-      "sessions": [],
+      "cost_usd": 4.360416,
+      "sessions": [
+        {
+          "role": "planner",
+          "session_id": "1f1bc59f-1628-48c0-b227-3c8b0c924574",
+          "cost_usd": 2.1395154,
+          "turns": 27
+        },
+        {
+          "role": "writer",
+          "session_id": "7303e52c-9f2d-4fbd-a709-d4d14822efe7",
+          "cost_usd": 1.0452792000000002,
+          "turns": 7
+        },
+        {
+          "role": "tester",
+          "session_id": "9926cc7a-1275-45d7-8eee-13ace955c01c",
+          "cost_usd": 0.5954436,
+          "turns": 6
+        },
+        {
+          "role": "reviewer",
+          "session_id": "5c823a24-d063-4cf0-99c4-4f1f20ea17d0",
+          "cost_usd": 0.580178,
+          "turns": 14
+        }
+      ],
       "approved": [],
       "approval": null,
       "engine_errors": 0,
-      "commits": []
+      "commits": [
+        "1b619ea19dc301e5ee69c50e57eda7f75b2200b0"
+      ]
     },
     "ch03": {
-      "status": "pending",
-      "station": "plan",
-      "retries": {},
-      "verdicts": [],
-      "calls": 0,
-      "started": null,
-      "finished": null,
-      "round": null,
+      "status": "done",
+      "station": "commit",
+      "retries": {
+        "review_retries": 1
+      },
+      "verdicts": [
+        {
+          "ts": "2026-11-25 03:40:11",
+          "station": "judge",
+          "verdict": "PASS",
+          "note": ""
+        },
+        {
+          "ts": "2026-11-25 03:42:03",
+          "station": "review",
+          "verdict": "REJECT",
+          "note": ""
+        },
+        {
+          "ts": "2026-11-25 03:44:18",
+          "station": "judge",
+          "verdict": "PASS",
+          "note": ""
+        },
+        {
+          "ts": "2026-11-25 03:45:37",
+          "station": "review",
+          "verdict": "PASS",
+          "note": ""
+        }
+      ],
+      "calls": 7,
+      "started": "2026-11-25 03:29:22",
+      "finished": "2026-11-25 03:45:37",
+      "round": 3,
       "once_done": [],
       "feedback": null,
-      "cost_usd": 0.0,
-      "sessions": [],
+      "cost_usd": 5.317539,
+      "sessions": [
+        {
+          "role": "planner",
+          "session_id": "58b3c8ba-d499-40d5-8758-4a7e57d04e91",
+          "cost_usd": 1.9127898,
+          "turns": 28
+        },
+        {
+          "role": "writer",
+          "session_id": "00e7633a-a078-442c-8fd3-dddcc13b25dc",
+          "cost_usd": 0.9216762000000001,
+          "turns": 7
+        },
+        {
+          "role": "tester",
+          "session_id": "7bdd4736-332b-44b5-92ce-30c3e65701d8",
+          "cost_usd": 0.48560539999999996,
+          "turns": 4
+        },
+        {
+          "role": "reviewer",
+          "session_id": "c1f50253-5a32-4bc6-a85c-bbe8b90a72a3",
+          "cost_usd": 0.5658863999999999,
+          "turns": 14
+        },
+        {
+          "role": "writer",
+          "session_id": "9c59edfc-78d4-43e5-832d-4596e284ca36",
+          "cost_usd": 0.4793254,
+          "turns": 14
+        },
+        {
+          "role": "tester",
+          "session_id": "db61d74b-9ee4-4759-bcd9-c56813b9e4ff",
+          "cost_usd": 0.4780066,
+          "turns": 4
+        },
+        {
+          "role": "reviewer",
+          "session_id": "bc0b69c9-799d-4abd-b96d-d1c76d4dcd26",
+          "cost_usd": 0.47425000000000006,
+          "turns": 15
+        }
+      ],
       "approved": [],
       "approval": null,
       "engine_errors": 0,
-      "commits": []
+      "commits": [
+        "3dac2f419f79b5799fa8072016d2b6534f07ba94"
+      ]
     },
     "ch04": {
-      "status": "pending",
-      "station": "plan",
+      "status": "done",
+      "station": "commit",
       "retries": {},
-      "verdicts": [],
-      "calls": 0,
-      "started": null,
-      "finished": null,
-      "round": null,
+      "verdicts": [
+        {
+          "ts": "2026-11-25 03:58:19",
+          "station": "judge",
+          "verdict": "PASS",
+          "note": ""
+        },
+        {
+          "ts": "2026-11-25 03:59:54",
+          "station": "review",
+          "verdict": "PASS",
+          "note": ""
+        }
+      ],
+      "calls": 4,
+      "started": "2026-11-25 03:46:07",
+      "finished": "2026-11-25 03:59:54",
+      "round": 4,
       "once_done": [],
       "feedback": null,
-      "cost_usd": 0.0,
-      "sessions": [],
+      "cost_usd": 4.696041,
+      "sessions": [
+        {
+          "role": "planner",
+          "session_id": "aae9ad77-d8e7-4296-9d9d-7fd05bd674f4",
+          "cost_usd": 2.1481019999999997,
+          "turns": 20
+        },
+        {
+          "role": "writer",
+          "session_id": "ef255074-f8b7-4e72-84db-0fd9553a4b3c",
+          "cost_usd": 1.1158952000000002,
+          "turns": 9
+        },
+        {
+          "role": "tester",
+          "session_id": "dfa7432a-33cf-4e9f-8045-f07ba66f08b8",
+          "cost_usd": 0.5894262,
+          "turns": 5
+        },
+        {
+          "role": "reviewer",
+          "session_id": "4bc5ae30-447f-4819-b888-6c91f917a51b",
+          "cost_usd": 0.8426176,
+          "turns": 14
+        }
+      ],
       "approved": [],
       "approval": null,
       "engine_errors": 0,
-      "commits": []
+      "commits": [
+        "95fb6a2e6582a6f13d131f90b22c59d35e22dee9"
+      ]
     },
     "ch05": {
-      "status": "pending",
-      "station": "plan",
+      "status": "done",
+      "station": "commit",
       "retries": {},
-      "verdicts": [],
-      "calls": 0,
-      "started": null,
-      "finished": null,
-      "round": null,
+      "verdicts": [
+        {
+          "ts": "2026-11-25 04:14:38",
+          "station": "judge",
+          "verdict": "PASS",
+          "note": ""
+        },
+        {
+          "ts": "2026-11-25 04:15:50",
+          "station": "review",
+          "verdict": "PASS",
+          "note": ""
+        }
+      ],
+      "calls": 4,
+      "started": "2026-11-25 04:00:24",
+      "finished": "2026-11-25 04:15:51",
+      "round": 5,
       "once_done": [],
       "feedback": null,
-      "cost_usd": 0.0,
-      "sessions": [],
+      "cost_usd": 5.26692,
+      "sessions": [
+        {
+          "role": "planner",
+          "session_id": "c6d947d1-9f5b-42ab-9317-c2091aaaa11c",
+          "cost_usd": 2.8418498,
+          "turns": 35
+        },
+        {
+          "role": "writer",
+          "session_id": "4074ba96-f3df-4b71-b163-d445a8ae498d",
+          "cost_usd": 1.2751524,
+          "turns": 9
+        },
+        {
+          "role": "tester",
+          "session_id": "2ce4e0a6-3097-4a8f-936a-898a4999c630",
+          "cost_usd": 0.6613892,
+          "turns": 6
+        },
+        {
+          "role": "reviewer",
+          "session_id": "8aca0df7-37cf-4c7f-ad5f-32266875af8a",
+          "cost_usd": 0.4885292,
+          "turns": 12
+        }
+      ],
       "approved": [],
       "approval": null,
       "engine_errors": 0,
-      "commits": []
+      "commits": [
+        "20e16eac95b546eaa5c47ef94064331fe6de9043"
+      ]
     },
     "ch06": {
       "status": "pending",
@@ -200,6 +432,253 @@
       "round": 0,
       "unit": "-",
       "event": "建立 queue：ch01 ch02 ch03 ch04 ch05 ch06 ch07 ch08 ch09 ch10"
+    },
+    {
+      "ts": "2026-11-25 03:00:33",
+      "round": 1,
+      "unit": "ch01",
+      "event": "第 1 輪開始"
+    },
+    {
+      "ts": "2026-11-25 03:08:27",
+      "round": 1,
+      "unit": "ch01",
+      "event": "1 規劃 完成"
+    },
+    {
+      "ts": "2026-11-25 03:11:31",
+      "round": 1,
+      "unit": "ch01",
+      "event": "2 寫腳本＋教練稿 完成"
+    },
+    {
+      "ts": "2026-11-25 03:11:52",
+      "round": 1,
+      "unit": "ch01",
+      "event": "3 執行腳本 完成 → ch01-raw.log"
+    },
+    {
+      "ts": "2026-11-25 03:12:35",
+      "round": 1,
+      "unit": "ch01",
+      "event": "4 測試判定 PASS"
+    },
+    {
+      "ts": "2026-11-25 03:13:54",
+      "round": 1,
+      "unit": "ch01",
+      "event": "5 審查 PASS"
+    },
+    {
+      "ts": "2026-11-25 03:13:54",
+      "round": 1,
+      "unit": "ch01",
+      "event": "完成並 commit：工廠：新增 K902 ch01 互動演練腳本（第 1 輪）"
+    },
+    {
+      "ts": "2026-11-25 03:14:25",
+      "round": 2,
+      "unit": "ch02",
+      "event": "第 2 輪開始"
+    },
+    {
+      "ts": "2026-11-25 03:22:16",
+      "round": 2,
+      "unit": "ch02",
+      "event": "1 規劃 完成"
+    },
+    {
+      "ts": "2026-11-25 03:25:06",
+      "round": 2,
+      "unit": "ch02",
+      "event": "2 寫腳本＋教練稿 完成"
+    },
+    {
+      "ts": "2026-11-25 03:25:23",
+      "round": 2,
+      "unit": "ch02",
+      "event": "3 執行腳本 完成 → ch02-raw.log"
+    },
+    {
+      "ts": "2026-11-25 03:26:17",
+      "round": 2,
+      "unit": "ch02",
+      "event": "4 測試判定 PASS"
+    },
+    {
+      "ts": "2026-11-25 03:28:52",
+      "round": 2,
+      "unit": "ch02",
+      "event": "5 審查 PASS"
+    },
+    {
+      "ts": "2026-11-25 03:28:52",
+      "round": 2,
+      "unit": "ch02",
+      "event": "完成並 commit：工廠：新增 K902 ch02 互動演練腳本（第 2 輪）"
+    },
+    {
+      "ts": "2026-11-25 03:29:22",
+      "round": 3,
+      "unit": "ch03",
+      "event": "第 3 輪開始"
+    },
+    {
+      "ts": "2026-11-25 03:36:47",
+      "round": 3,
+      "unit": "ch03",
+      "event": "1 規劃 完成"
+    },
+    {
+      "ts": "2026-11-25 03:39:23",
+      "round": 3,
+      "unit": "ch03",
+      "event": "2 寫腳本＋教練稿 完成"
+    },
+    {
+      "ts": "2026-11-25 03:39:39",
+      "round": 3,
+      "unit": "ch03",
+      "event": "3 執行腳本 完成 → ch03-raw.log"
+    },
+    {
+      "ts": "2026-11-25 03:40:11",
+      "round": 3,
+      "unit": "ch03",
+      "event": "4 測試判定 PASS"
+    },
+    {
+      "ts": "2026-11-25 03:42:03",
+      "round": 3,
+      "unit": "ch03",
+      "event": "5 審查 REJECT → 退回 write（review_retries 第 1 次）"
+    },
+    {
+      "ts": "2026-11-25 03:43:29",
+      "round": 3,
+      "unit": "ch03",
+      "event": "2 寫腳本＋教練稿 完成"
+    },
+    {
+      "ts": "2026-11-25 03:43:45",
+      "round": 3,
+      "unit": "ch03",
+      "event": "3 執行腳本 完成 → ch03-raw.log"
+    },
+    {
+      "ts": "2026-11-25 03:44:18",
+      "round": 3,
+      "unit": "ch03",
+      "event": "4 測試判定 PASS"
+    },
+    {
+      "ts": "2026-11-25 03:45:37",
+      "round": 3,
+      "unit": "ch03",
+      "event": "5 審查 PASS"
+    },
+    {
+      "ts": "2026-11-25 03:45:37",
+      "round": 3,
+      "unit": "ch03",
+      "event": "完成並 commit：工廠：新增 K902 ch03 互動演練腳本（第 3 輪）"
+    },
+    {
+      "ts": "2026-11-25 03:46:07",
+      "round": 4,
+      "unit": "ch04",
+      "event": "第 4 輪開始"
+    },
+    {
+      "ts": "2026-11-25 03:54:09",
+      "round": 4,
+      "unit": "ch04",
+      "event": "1 規劃 完成"
+    },
+    {
+      "ts": "2026-11-25 03:57:18",
+      "round": 4,
+      "unit": "ch04",
+      "event": "2 寫腳本＋教練稿 完成"
+    },
+    {
+      "ts": "2026-11-25 03:57:34",
+      "round": 4,
+      "unit": "ch04",
+      "event": "3 執行腳本 完成 → ch04-raw.log"
+    },
+    {
+      "ts": "2026-11-25 03:58:19",
+      "round": 4,
+      "unit": "ch04",
+      "event": "4 測試判定 PASS"
+    },
+    {
+      "ts": "2026-11-25 03:59:54",
+      "round": 4,
+      "unit": "ch04",
+      "event": "5 審查 PASS"
+    },
+    {
+      "ts": "2026-11-25 03:59:54",
+      "round": 4,
+      "unit": "ch04",
+      "event": "完成並 commit：工廠：新增 K902 ch04 互動演練腳本（第 4 輪）"
+    },
+    {
+      "ts": "2026-11-25 04:00:24",
+      "round": 5,
+      "unit": "ch05",
+      "event": "第 5 輪開始"
+    },
+    {
+      "ts": "2026-11-25 04:10:11",
+      "round": 5,
+      "unit": "ch05",
+      "event": "1 規劃 完成"
+    },
+    {
+      "ts": "2026-11-25 04:13:41",
+      "round": 5,
+      "unit": "ch05",
+      "event": "2 寫腳本＋教練稿 完成"
+    },
+    {
+      "ts": "2026-11-25 04:13:41",
+      "round": 5,
+      "unit": "ch05",
+      "event": "收到停止要求（stop），停在站 run 之前"
+    },
+    {
+      "ts": "2026-11-25 04:13:47",
+      "round": 5,
+      "unit": "ch05",
+      "event": "接續第 5 輪（目前站：run，已呼叫 2 次）"
+    },
+    {
+      "ts": "2026-11-25 04:13:59",
+      "round": 5,
+      "unit": "ch05",
+      "event": "3 執行腳本 完成 → ch05-raw.log"
+    },
+    {
+      "ts": "2026-11-25 04:14:38",
+      "round": 5,
+      "unit": "ch05",
+      "event": "4 測試判定 PASS"
+    },
+    {
+      "ts": "2026-11-25 04:15:50",
+      "round": 5,
+      "unit": "ch05",
+      "event": "5 審查 PASS"
+    },
+    {
+      "ts": "2026-11-25 04:15:51",
+      "round": 5,
+      "unit": "ch05",
+      "event": "完成並 commit：工廠：新增 K902 ch05 互動演練腳本（第 5 輪）"
     }
-  ]
+  ],
+  "applied_commands": []
 }
